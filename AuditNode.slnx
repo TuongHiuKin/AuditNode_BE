@@ -3,4 +3,5 @@
   <Project Path="AuditNode.Application/AuditNode.Application.csproj" />
   <Project Path="AuditNode.Domain/AuditNode.Domain.csproj" />
   <Project Path="AuditNode.Infrastructure/AuditNode.Infrastructure.csproj" />
+  <Project Path="AuditNode.Tests/AuditNode.Tests.csproj" />
 </Solution>
