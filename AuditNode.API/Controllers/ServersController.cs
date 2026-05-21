@@ -35,16 +35,6 @@ public class ServersController : ControllerBase
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(serverDto.Hostname) ||
-                string.IsNullOrWhiteSpace(serverDto.IpAddress) ||
-                string.IsNullOrWhiteSpace(serverDto.OsType) ||
-                string.IsNullOrWhiteSpace(serverDto.Environment) ||
-                string.IsNullOrWhiteSpace(serverDto.Status) ||
-                serverDto.DatacenterId == Guid.Empty)
-            {
-                return BadRequest(new { error = "All fields are required" });
-            }
-
             var server = new Server
             {
                 Id = Guid.NewGuid(),

@@ -1,3 +1,5 @@
+using AuditNode.Domain.Enums;
+
 namespace AuditNode.Domain.Entities;
 
 public class Application
@@ -6,8 +8,15 @@ public class Application
     public string AppCode { get; set; } = string.Empty;
     public string AppName { get; set; } = string.Empty;
     public Guid OwnerId { get; set; }
+    public int PortNumber { get; set; }
+    public string Protocol { get; set; } = string.Empty;
+    public RiskLevel RiskLevel { get; set; }
+    public Guid? TargetApplicationId { get; set; }
+    public Guid ServerId { get; set; }
 
     // Navigation properties
+    public Application? TargetApplication { get; set; }
+    public Server? Server { get; set; }
     public ICollection<PortMapping> PortMappings { get; set; } = new List<PortMapping>();
     public ICollection<AppDependency> SourceDependencies { get; set; } = new List<AppDependency>();
     public ICollection<AppDependency> DestinationDependencies { get; set; } = new List<AppDependency>();
