@@ -2,6 +2,9 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using FluentValidation.AspNetCore;
+using AuditNode.Application.Validators;
+using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -17,6 +20,12 @@ builder.Services.AddDbContext<AuditDbContext>(options =>
 builder.Services.AddScoped<IServerRepository, ServerRepository>();
 builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
+builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
+builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
+
+// Register FluentValidation
+builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateServerDtoValidator>();
 
 // Add CORS policy
 builder.Services.AddCors(options =>
