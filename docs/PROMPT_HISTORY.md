@@ -45,3 +45,27 @@ Optimize the Backend API performance layer to serve real-time infrastructure dat
 - Implemented a default `take` guard of 100 in `TopologyController` with a hard limit enforcement.
 - Verified `DependencyMapDto` structure for clean, un-nested JSON output.
 - Updated xUnit tests to cover default thresholds, large `take` capping, and empty database scenarios (21 passing tests).
+
+## [2026-05-23] Native OpenAPI 3.1 & Scalar API Reference Implementation
+
+**Prompt:**
+Act as a Senior .NET Architect. Implement native OpenAPI 3.1 support and Scalar API Reference UI.
+
+1. PACKAGE INSTALLATION:
+- Install 'Microsoft.AspNetCore.OpenApi'.
+- Install 'Scalar.AspNetCore'.
+
+2. PROGRAM.CS CONFIGURATION:
+- Register OpenAPI services with metadata: Title "AuditNode API", Version "v1", Description "Infrastructure Audit, Port & Monitoring API Gateway".
+- Map OpenAPI endpoint and Scalar UI reference (/scalar/v1) in development environment.
+- Correctly sequence 'UseHttpsRedirection()' and 'UseAuthorization()'.
+
+3. API DISCOVERY COMPLIANCE:
+- Verify controllers use '[ApiController]' and proper attribute routing.
+- Ensure JSON contract schema streams at '/openapi/v1.json' in camelCase.
+
+**Outcome:**
+- Installed Scalar.AspNetCore and configured professional metadata via DocumentTransformer.
+- Enabled Scalar UI with Moon theme at /scalar/v1.
+- Verified discovery compliance across all infrastructure controllers.
+- Validated integrity via successful build and 21 passing xUnit tests.
