@@ -35,16 +35,6 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Environment).HasColumnName("environment").IsRequired();
             entity.Property(e => e.Datacenter).HasColumnName("datacenter").IsRequired();
             entity.Property(e => e.Status).HasColumnName("status").IsRequired();
-<<<<<<< Updated upstream
-=======
-
-            entity.HasIndex(e => e.IpAddress).IsUnique();
-
-            entity.HasOne(s => s.DatacenterNavigation)
-                .WithMany(d => d.Servers)
-                .HasForeignKey(s => s.DatacenterId)
-                .OnDelete(DeleteBehavior.Cascade);
->>>>>>> Stashed changes
         });
 
         // Application
@@ -56,8 +46,6 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.AppCode).HasColumnName("app_code").IsRequired();
             entity.Property(e => e.AppName).HasColumnName("app_name").IsRequired();
             entity.Property(e => e.OwnerId).HasColumnName("owner_id").IsRequired();
-<<<<<<< Updated upstream
-=======
             entity.Property(e => e.PortNumber).HasColumnName("port_number").IsRequired();
             entity.Property(e => e.Protocol).HasColumnName("protocol").IsRequired();
             entity.Property(e => e.Risk).HasColumnName("risk").IsRequired();
@@ -66,8 +54,6 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.RiskLevel).HasColumnName("risk_level").HasConversion<string>().IsRequired();
             entity.Property(e => e.TargetApplicationId).HasColumnName("target_app_id");
             entity.Property(e => e.ServerId).HasColumnName("server_id").IsRequired();
-
-            entity.HasIndex(e => new { e.ServerId, e.PortNumber }).IsUnique();
 
             entity.HasOne(a => a.Server)
                 .WithMany(s => s.Applications)
@@ -78,7 +64,6 @@ public class AuditDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(a => a.TargetApplicationId)
                 .OnDelete(DeleteBehavior.NoAction);
->>>>>>> Stashed changes
         });
 
         // ApplicationDependency (Many-to-Many)

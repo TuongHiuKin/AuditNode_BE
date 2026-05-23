@@ -38,7 +38,7 @@ public class ApplicationsController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(appDto.AppCode) ||
                 string.IsNullOrWhiteSpace(appDto.AppName) ||
-                appDto.OwnerId == Guid.Empty)
+                string.IsNullOrWhiteSpace(appDto.OwnerId))
             {
                 return BadRequest(new { error = "Required fields are missing" });
             }
@@ -48,9 +48,6 @@ public class ApplicationsController : ControllerBase
                 Id = Guid.NewGuid(),
                 AppCode = appDto.AppCode.ToUpper(),
                 AppName = appDto.AppName,
-<<<<<<< Updated upstream
-                OwnerId = appDto.OwnerId
-=======
                 OwnerId = appDto.OwnerId,
                 PortNumber = appDto.PortNumber,
                 Protocol = appDto.Protocol,
@@ -60,7 +57,6 @@ public class ApplicationsController : ControllerBase
                 RiskLevel = appDto.RiskLevel,
                 TargetApplicationId = appDto.TargetApplicationId,
                 ServerId = appDto.ServerId
->>>>>>> Stashed changes
             };
 
             await _applicationRepository.CreateApplicationAsync(application);
