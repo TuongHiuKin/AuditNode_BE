@@ -5,11 +5,21 @@ using Microsoft.EntityFrameworkCore;
 using FluentValidation.AspNetCore;
 using AuditNode.Application.Validators;
 using FluentValidation;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info.Title = "AuditNode API";
+        document.Info.Version = "v1";
+        document.Info.Description = "Infrastructure Audit, Port & Monitoring API Gateway";
+        return Task.CompletedTask;
+    });
+});
 
 // Register DbContext with PostgreSQL provider
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -40,6 +50,7 @@ builder.Services.AddCors(options =>
 });
 
 // Add controllers
+builder.Services.AddAuthorization();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -52,9 +63,17 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.WithTitle("AuditNode API Reference")
+               .WithTheme(ScalarTheme.Moon)
+               .WithDefaultHttpClient(ScalarTarget.CSharp, ScalarClient.HttpClient);
+    });
 }
 
 app.UseHttpsRedirection();
+
+app.UseAuthorization();
 
 // Enable CORS
 app.UseCors("AllowReact");
