@@ -16,7 +16,7 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("tree")]
-    public async Task<ActionResult<IEnumerable<ServerTopologyDto>>> GetTree(
+    public async Task<ActionResult<IEnumerable<TopologyTreeDto>>> GetTree(
         [FromQuery] Guid? datacenterId,
         [FromQuery] int skip = 0,
         [FromQuery] int? take = null)

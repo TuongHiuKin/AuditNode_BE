@@ -23,18 +23,25 @@ public class TopologyControllerTests
     public async Task GetTree_ShouldReturnOk_WithTreeData()
     {
         // Arrange
-        var mockTree = new List<ServerTopologyDto>
+        var mockTree = new List<TopologyTreeDto>
         {
-            new ServerTopologyDto
+            new TopologyTreeDto
             {
                 Id = Guid.NewGuid(),
-                Hostname = "srv1",
-                IpAddress = "10.0.0.1",
-                Environment = "PROD",
-                Datacenter = "DC1",
-                Ports = new List<PortTopologyDto>
+                Name = "DC1",
+                Location = "US",
+                Servers = new List<ServerNodeDto>
                 {
-                    new PortTopologyDto { AppName = "App1", PortNumber = 80, Protocol = "HTTP", AppCode = "APP1" }
+                    new ServerNodeDto
+                    {
+                        Id = Guid.NewGuid(),
+                        Hostname = "srv1",
+                        IpAddress = "10.0.0.1",
+                        Applications = new List<ApplicationNodeDto>
+                        {
+                            new ApplicationNodeDto { Id = Guid.NewGuid(), Name = "App1", Port = 80, Protocol = "HTTP", RiskLevel = "LOW" }
+                        }
+                    }
                 }
             }
         };
@@ -57,7 +64,7 @@ public class TopologyControllerTests
         // Arrange
         int take = 50;
         _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, take))
-            .ReturnsAsync(new List<ServerTopologyDto>());
+            .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
         await _controller.GetTree(null, 0, take);
@@ -72,7 +79,7 @@ public class TopologyControllerTests
         // Arrange
         int largeTake = 500;
         _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
-            .ReturnsAsync(new List<ServerTopologyDto>());
+            .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
         await _controller.GetTree(null, 0, largeTake);
@@ -86,7 +93,7 @@ public class TopologyControllerTests
     {
         // Arrange
         _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
-            .ReturnsAsync(new List<ServerTopologyDto>());
+            .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
         var result = await _controller.GetTree(null, 0, null);
@@ -94,7 +101,7 @@ public class TopologyControllerTests
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
         okResult.Should().NotBeNull();
-        okResult.Value.As<IEnumerable<ServerTopologyDto>>().Should().BeEmpty();
+        okResult.Value.As<IEnumerable<TopologyTreeDto>>().Should().BeEmpty();
     }
 
     [Fact]

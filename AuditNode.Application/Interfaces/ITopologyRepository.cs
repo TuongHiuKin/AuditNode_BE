@@ -4,6 +4,6 @@ namespace AuditNode.Application.Interfaces;
 
 public interface ITopologyRepository
 {
-    Task<IEnumerable<ServerTopologyDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take);
+    Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take);
     Task<DependencyMapDto> GetDependencyMapAsync();
 }

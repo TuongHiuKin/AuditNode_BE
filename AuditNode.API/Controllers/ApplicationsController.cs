@@ -38,7 +38,7 @@ public class ApplicationsController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(appDto.AppCode) ||
                 string.IsNullOrWhiteSpace(appDto.AppName) ||
-                string.IsNullOrWhiteSpace(appDto.OwnerId))
+                appDto.OwnerId == Guid.Empty)
             {
                 return BadRequest(new { error = "Required fields are missing" });
             }

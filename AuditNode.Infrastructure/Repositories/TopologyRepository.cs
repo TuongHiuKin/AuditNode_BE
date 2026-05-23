@@ -14,73 +14,79 @@ public class TopologyRepository : ITopologyRepository
         _context = context;
     }
 
-    public async Task<IEnumerable<ServerTopologyDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take)
+    public async Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take)
     {
-        var query = _context.Servers
-            .Include(s => s.Applications)
+        var query = _context.Datacenters
+            .Include(d => d.Servers)
+                .ThenInclude(s => s.Applications)
             .AsNoTracking();
 
         if (datacenterId.HasValue)
         {
-            query = query.Where(s => s.DatacenterId == datacenterId.Value);
+            query = query.Where(d => d.Id == datacenterId.Value);
         }
 
-        var servers = await query
+        var datacenters = await query
             .Skip(skip)
             .Take(take)
             .ToListAsync();
 
-        return servers.Select(s => new ServerTopologyDto
+        return datacenters.Select(d => new TopologyTreeDto
         {
-            Id = s.Id,
-            Hostname = s.Hostname,
-            IpAddress = s.IpAddress,
-            Environment = s.Environment,
-            Datacenter = s.Datacenter,
-            Ports = s.Applications.Select(a => new PortTopologyDto
+            Id = d.Id,
+            Name = d.Name,
+            Location = d.Location,
+            Servers = d.Servers.Select(s => new ServerNodeDto
             {
-                PortNumber = a.PortNumber,
-                Protocol = a.Protocol,
-                AppName = a.AppName,
-                AppCode = a.AppCode
+                Id = s.Id,
+                Hostname = s.Hostname,
+                IpAddress = s.IpAddress,
+                Applications = s.Applications.Select(a => new ApplicationNodeDto
+                {
+                    Id = a.Id,
+                    Name = a.AppName,
+                    Port = a.PortNumber,
+                    Protocol = a.Protocol,
+                    RiskLevel = a.RiskLevel.ToString()
+                }).ToList()
             }).ToList()
         });
     }
 
     public async Task<DependencyMapDto> GetDependencyMapAsync()
     {
-        var applications = await _context.Applications
+        var servers = await _context.Servers
+            .Include(s => s.Applications)
             .AsNoTracking()
             .ToListAsync();
 
-        var nodes = applications.Select(a => new NodeDto
-        {
-            Id = a.Id.ToString(),
-            Data = new NodeDataDto
-            {
-                Label = a.AppName,
-                AppCode = a.AppCode,
-                Risk = a.Risk
-            },
-            Position = new PositionDto { X = 0, Y = 0 } // Default position
-        }).ToList();
-
-        var edges = await _context.Applications
+        var connections = await _context.Applications
             .Where(a => a.TargetApplicationId != null)
             .AsNoTracking()
-            .Select(a => new EdgeDto
+            .Select(a => new ConnectionDto
             {
-                Id = $"e-{a.Id}-{a.TargetApplicationId}",
-                Source = a.Id.ToString(),
-                Target = a.TargetApplicationId!.Value.ToString(),
-                Label = a.Protocol
+                SourceAppId = a.Id,
+                TargetAppId = a.TargetApplicationId!.Value
             })
             .ToListAsync();
 
         return new DependencyMapDto
         {
-            Nodes = nodes,
-            Edges = edges
+            Servers = servers.Select(s => new ServerNodeDto
+            {
+                Id = s.Id,
+                Hostname = s.Hostname,
+                IpAddress = s.IpAddress,
+                Applications = s.Applications.Select(a => new ApplicationNodeDto
+                {
+                    Id = a.Id,
+                    Name = a.AppName,
+                    Port = a.PortNumber,
+                    Protocol = a.Protocol,
+                    RiskLevel = a.RiskLevel.ToString()
+                }).ToList()
+            }).ToList(),
+            Connections = connections
         };
     }
 }

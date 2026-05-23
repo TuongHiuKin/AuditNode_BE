@@ -1,19 +1,13 @@
-namespace AuditNode.Domain.Entities;
+using AuditNode.Domain.Enums;
 
-public enum RiskLevel
-{
-    Low,
-    Medium,
-    High,
-    Critical
-}
+namespace AuditNode.Domain.Entities;
 
 public class Application
 {
     public Guid Id { get; set; }
     public string AppCode { get; set; } = string.Empty;
     public string AppName { get; set; } = string.Empty;
-    public string OwnerId { get; set; } = string.Empty;
+    public Guid OwnerId { get; set; }
     public int PortNumber { get; set; }
     public string Protocol { get; set; } = string.Empty;
     public string Risk { get; set; } = string.Empty;
@@ -24,8 +18,8 @@ public class Application
     public Guid ServerId { get; set; }
 
     // Navigation properties
-    public Server? Server { get; set; }
     public Application? TargetApplication { get; set; }
+    public Server? Server { get; set; }
     public ICollection<PortMapping> PortMappings { get; set; } = new List<PortMapping>();
     public ICollection<ApplicationDependency> Dependencies { get; set; } = new List<ApplicationDependency>();
     public ICollection<ApplicationDependency> Dependents { get; set; } = new List<ApplicationDependency>();

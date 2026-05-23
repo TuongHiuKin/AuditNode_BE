@@ -18,6 +18,7 @@ public class ServerRepository : IServerRepository
     public async Task<IEnumerable<ServerResponseDto>> GetAllWithAppsAsync(string? environment = null, Guid? datacenterId = null)
     {
         var query = _dbContext.Servers
+            .Include(s => s.Datacenter)
             .Include(s => s.PortMappings)
             .ThenInclude(pm => pm.Application)
             .AsQueryable();
@@ -41,7 +42,7 @@ public class ServerRepository : IServerRepository
                 Hostname = s.Hostname,
                 OsType = s.OsType,
                 Environment = s.Environment,
-                Datacenter = s.Datacenter,
+                Datacenter = s.Datacenter != null ? s.Datacenter.Name : string.Empty,
                 Status = s.Status,
                 Applications = s.PortMappings.Select(pm => new ApplicationOnServerDto
                 {

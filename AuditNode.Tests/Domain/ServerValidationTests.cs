@@ -141,5 +141,7 @@ public class ServerValidationTests
         app.PortMappings.Should().NotBeNull().And.BeEmpty();
         app.Dependencies.Should().NotBeNull().And.BeEmpty();
         app.Dependents.Should().NotBeNull().And.BeEmpty();
+        app.SourceDependencies.Should().NotBeNull().And.BeEmpty();
+        app.DestinationDependencies.Should().NotBeNull().And.BeEmpty();
     }
 }

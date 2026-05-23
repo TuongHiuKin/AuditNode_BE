@@ -10,5 +10,9 @@ public class CreateApplicationDtoValidator : AbstractValidator<CreateApplication
         RuleFor(x => x.AppCode).NotEmpty();
         RuleFor(x => x.AppName).NotEmpty();
         RuleFor(x => x.OwnerId).NotEmpty();
+        RuleFor(x => x.PortNumber).InclusiveBetween(1, 65535);
+        RuleFor(x => x.Protocol).NotEmpty();
+        RuleFor(x => x.RiskLevel).IsInEnum();
+        RuleFor(x => x.ServerId).NotEmpty();
     }
 }
