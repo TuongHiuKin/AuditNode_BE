@@ -41,6 +41,7 @@ public class ServerRepository : IServerRepository
                 Hostname = s.Hostname,
                 OsType = s.OsType,
                 Environment = s.Environment,
+                Datacenter = s.Datacenter,
                 Status = s.Status,
                 Applications = s.PortMappings.Select(pm => new ApplicationOnServerDto
                 {

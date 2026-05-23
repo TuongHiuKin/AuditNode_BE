@@ -14,6 +14,7 @@ public class AuditDbContext : DbContext
     public DbSet<AppEntity> Applications { get; set; }
     public DbSet<PortMapping> PortMappings { get; set; }
     public DbSet<AppDependency> AppDependencies { get; set; }
+    public DbSet<ApplicationDependency> ApplicationDependencies { get; set; }
     public DbSet<TopologyView> TopologyViews { get; set; }
     public DbSet<DependencyView> DependencyViews { get; set; }
 
@@ -32,7 +33,18 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Hostname).HasColumnName("hostname").IsRequired();
             entity.Property(e => e.OsType).HasColumnName("os_type").IsRequired();
             entity.Property(e => e.Environment).HasColumnName("environment").IsRequired();
+            entity.Property(e => e.Datacenter).HasColumnName("datacenter").IsRequired();
             entity.Property(e => e.Status).HasColumnName("status").IsRequired();
+<<<<<<< Updated upstream
+=======
+
+            entity.HasIndex(e => e.IpAddress).IsUnique();
+
+            entity.HasOne(s => s.DatacenterNavigation)
+                .WithMany(d => d.Servers)
+                .HasForeignKey(s => s.DatacenterId)
+                .OnDelete(DeleteBehavior.Cascade);
+>>>>>>> Stashed changes
         });
 
         // Application
@@ -44,8 +56,47 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.AppCode).HasColumnName("app_code").IsRequired();
             entity.Property(e => e.AppName).HasColumnName("app_name").IsRequired();
             entity.Property(e => e.OwnerId).HasColumnName("owner_id").IsRequired();
+<<<<<<< Updated upstream
+=======
+            entity.Property(e => e.PortNumber).HasColumnName("port_number").IsRequired();
+            entity.Property(e => e.Protocol).HasColumnName("protocol").IsRequired();
+            entity.Property(e => e.Risk).HasColumnName("risk").IsRequired();
+            entity.Property(e => e.Icon).HasColumnName("icon");
+            entity.Property(e => e.TechStack).HasColumnName("tech_stack");
+            entity.Property(e => e.RiskLevel).HasColumnName("risk_level").HasConversion<string>().IsRequired();
+            entity.Property(e => e.TargetApplicationId).HasColumnName("target_app_id");
+            entity.Property(e => e.ServerId).HasColumnName("server_id").IsRequired();
+
+            entity.HasIndex(e => new { e.ServerId, e.PortNumber }).IsUnique();
+
+            entity.HasOne(a => a.Server)
+                .WithMany(s => s.Applications)
+                .HasForeignKey(a => a.ServerId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(a => a.TargetApplication)
+                .WithMany()
+                .HasForeignKey(a => a.TargetApplicationId)
+                .OnDelete(DeleteBehavior.NoAction);
+>>>>>>> Stashed changes
         });
 
+        // ApplicationDependency (Many-to-Many)
+        modelBuilder.Entity<ApplicationDependency>(entity =>
+        {
+            entity.ToTable("application_dependencies");
+            entity.HasKey(ad => new { ad.SourceAppId, ad.TargetAppId });
+
+            entity.HasOne(ad => ad.SourceApp)
+                .WithMany(a => a.Dependencies)
+                .HasForeignKey(ad => ad.SourceAppId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(ad => ad.TargetApp)
+                .WithMany(a => a.Dependents)
+                .HasForeignKey(ad => ad.TargetAppId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
         // PortMapping
         modelBuilder.Entity<PortMapping>(entity =>
         {

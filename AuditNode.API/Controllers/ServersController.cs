@@ -53,6 +53,7 @@ public class ServersController : ControllerBase
                 Hostname = serverDto.Hostname,
                 OsType = serverDto.OsType,
                 Environment = serverDto.Environment,
+                Datacenter = serverDto.Datacenter,
                 Status = serverDto.Status
             };
 
