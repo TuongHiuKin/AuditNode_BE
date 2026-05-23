@@ -36,14 +36,24 @@ public class ApplicationsController : ControllerBase
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(appDto.AppCode) ||
+                string.IsNullOrWhiteSpace(appDto.AppName) ||
+                appDto.OwnerId == Guid.Empty)
+            {
+                return BadRequest(new { error = "Required fields are missing" });
+            }
+
             var application = new AppEntity
             {
                 Id = Guid.NewGuid(),
-                AppCode = appDto.AppCode,
+                AppCode = appDto.AppCode.ToUpper(),
                 AppName = appDto.AppName,
                 OwnerId = appDto.OwnerId,
                 PortNumber = appDto.PortNumber,
                 Protocol = appDto.Protocol,
+                Risk = appDto.Risk,
+                Icon = appDto.Icon,
+                TechStack = appDto.TechStack,
                 RiskLevel = appDto.RiskLevel,
                 TargetApplicationId = appDto.TargetApplicationId,
                 ServerId = appDto.ServerId

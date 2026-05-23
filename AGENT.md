@@ -6,7 +6,7 @@
 
 ## 2. Automated Prompt Archiving Contract
 - Monitor the conversation for user confirmation keywords such as 'Confirm', 'Lưu prompt', or 'Đã chốt'.
-- Upon detecting these keywords, you must automatically extract the core successful prompt context/structure used in that turn and append it chronologically into a log file named 'PROMPT_HISTORY.md' at the project root.
+- Upon detecting these keywords, you must automatically extract the core successful prompt context/structure used in that turn and append it chronologically into a log file named 'PROMPT_HISTORY.md' inside the 'docs/' directory.
 
 ## 3. Architectural Integrity Guardrails
 - **Backend:** Strictly enforce .NET Clean Architecture standards. Keep clear separation between Domain, Application, Infrastructure, and API layers.

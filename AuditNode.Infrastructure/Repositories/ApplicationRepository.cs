@@ -24,7 +24,10 @@ public class ApplicationRepository : IApplicationRepository
                 Id = a.Id,
                 AppCode = a.AppCode,
                 AppName = a.AppName,
-                OwnerId = a.OwnerId
+                OwnerId = a.OwnerId,
+                Risk = a.Risk,
+                Icon = a.Icon,
+                TechStack = a.TechStack
             })
             .ToListAsync();
     }
