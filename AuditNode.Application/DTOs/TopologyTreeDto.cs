@@ -22,5 +22,4 @@ public class ApplicationNodeDto
     public string Name { get; set; } = string.Empty;
     public int Port { get; set; }
     public string Protocol { get; set; } = string.Empty;
-    public string RiskLevel { get; set; } = string.Empty;
 }

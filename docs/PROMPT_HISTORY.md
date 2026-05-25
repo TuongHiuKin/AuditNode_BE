@@ -69,3 +69,39 @@ Act as a Senior .NET Architect. Implement native OpenAPI 3.1 support and Scalar 
 - Enabled Scalar UI with Moon theme at /scalar/v1.
 - Verified discovery compliance across all infrastructure controllers.
 - Validated integrity via successful build and 21 passing xUnit tests.
+
+## [2026-05-24] Application OwnerId Data Type Refactor (Guid to String)
+
+**Prompt:**
+Refactor the 'OwnerId' data type mapping inside the Domain Entity configurations to align with the updated VARCHAR database schema.
+
+1. ENTITY MODEL REFACTOR (Domain/Entities/Application.cs):
+- Locate the 'Application' core domain entity.
+- Change 'OwnerId' property data type from 'Guid' (or 'Guid?') to 'string':
+  ```csharp
+  public string OwnerId { get; set; } = string.Empty;
+  ```
+
+2. EF CORE FLUENT API CONFIGURATION ALIGNMENT (Infrastructure/Data/AuditDbContext.cs):
+- Update the property builder block to explicitly inform EF Core that 'OwnerId' is a string/varchar field:
+  ```csharp
+  builder.Entity<Application>()
+         .Property(a => a.OwnerId)
+         .HasColumnName("owner_id")
+         .HasColumnType("character varying")
+         .HasMaxLength(255);
+  ```
+
+3. DTO & CONTROLLER PROPAGATION:
+- Synchronize `CreateApplicationDto`, `ApplicationResponseDto`, and `ServerResponseDto` to use `string` for `OwnerId`.
+- Update `ApplicationsController` to use `string.IsNullOrWhiteSpace` for `OwnerId` validation instead of `Guid.Empty`.
+
+4. DOCUMENTATION SYNC:
+- Update `API.md`, `HISTORY.md`, and `tech-stack-summary-be.md` to reflect the change from UUID/Guid to string/VARCHAR.
+
+**Outcome:**
+- Successfully refactored `OwnerId` from `Guid` to `string` across all architecture layers (Domain, Infrastructure, Application, API).
+- Configured explicit PostgreSQL `character varying(255)` mapping in EF Core.
+- Synchronized all related DTOs and validation logic.
+- Updated project documentation to maintain a single source of truth.
+- Verified code consistency through manual audit and structural validation.

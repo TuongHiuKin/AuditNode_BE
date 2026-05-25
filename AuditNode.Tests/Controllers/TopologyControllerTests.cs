@@ -39,7 +39,7 @@ public class TopologyControllerTests
                         IpAddress = "10.0.0.1",
                         Applications = new List<ApplicationNodeDto>
                         {
-                            new ApplicationNodeDto { Id = Guid.NewGuid(), Name = "App1", Port = 80, Protocol = "HTTP", RiskLevel = "LOW" }
+                            new ApplicationNodeDto { Id = Guid.NewGuid(), Name = "App1", Port = 80, Protocol = "HTTP" }
                         }
                     }
                 }
@@ -109,11 +109,11 @@ public class TopologyControllerTests
     {
         // Arrange
         var emptyMap = new DependencyMapDto();
-        _mockRepo.Setup(repo => repo.GetDependencyMapAsync())
+        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(It.IsAny<string>(), It.IsAny<Guid?>()))
             .ReturnsAsync(emptyMap);
 
         // Act
-        var result = await _controller.GetDependencyMap();
+        var result = await _controller.GetDependencyMap(null, null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
