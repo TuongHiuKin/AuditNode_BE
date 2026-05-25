@@ -4,6 +4,21 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 May 24, 2026 - Application OwnerId Schema Alignment
+**Status:** ✅ Complete
+
+### Changes:
+- **`OwnerId` Type Refactor**: Reverted `OwnerId` from `Guid` to `string` (VARCHAR(255)) in `Application.cs` and related DTOs to align with the updated database schema.
+- **Fluent API Update**: Configured `OwnerId` in `AuditDbContext` to explicitly use `character varying(255)` column type.
+- **Validation Update**: Updated `ApplicationsController` to use `string.IsNullOrWhiteSpace` for `OwnerId` validation.
+- **DTO Consistency**: Synchronized `CreateApplicationDto`, `ApplicationResponseDto`, and `ServerResponseDto` to use `string` for `OwnerId`.
+
+### Impact:
+- **Flexibility**: Supports non-UUID owner identifiers while maintaining compatibility with Keycloak UUID strings.
+- **Schema Alignment**: Matches the target database's `VARCHAR` definition for the `owner_id` column.
+
+---
+
 ## 📅 May 18, 2026 - Project Documentation Synchronization
 **Status:** ✅ Complete
 

@@ -29,9 +29,11 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("map")]
-    public async Task<ActionResult<DependencyMapDto>> GetDependencyMap()
+    public async Task<ActionResult<DependencyMapDto>> GetDependencyMap(
+        [FromQuery] string? environment,
+        [FromQuery] Guid? datacenterId)
     {
-        var map = await _topologyRepository.GetDependencyMapAsync();
+        var map = await _topologyRepository.GetDependencyMapAsync(environment, datacenterId);
         return Ok(map);
     }
 }

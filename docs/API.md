@@ -32,7 +32,7 @@ Retrieves all servers with bound applications.
         "id": "uuid",
         "appCode": "string",
         "appName": "string",
-        "ownerId": "uuid",
+        "ownerId": "string",
         "portNumber": 0,
         "protocol": "string"
       }
@@ -70,7 +70,7 @@ Retrieves all registered applications.
     "id": "uuid",
     "appCode": "string",
     "appName": "string",
-    "ownerId": "uuid"
+    "ownerId": "string"
   }
 ]
 ```
@@ -83,7 +83,7 @@ Registers a new application.
 {
   "appCode": "string",
   "appName": "string",
-  "ownerId": "uuid"
+  "ownerId": "string"
 }
 ```
 

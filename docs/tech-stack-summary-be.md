@@ -18,7 +18,7 @@ Hệ thống sử dụng **Entity Framework Core 10** kết hợp với **Postgr
 ## 3. Khả năng phục hồi và Bảo mật (Resilience & Security)
 - **Cơ chế bảo vệ phân trang (Pagination Guards)**: Tại `TopologyController`, tham số `take` được giới hạn cứng ở mức tối đa **100 node**. Điều này ngăn chặn các cuộc tấn công từ chối dịch vụ (DoS) vô tình hoặc hữu ý bằng cách yêu cầu toàn bộ dữ liệu hạ tầng khổng lồ trong một yêu cầu JSON duy nhất.
 - **Tích hợp Keycloak OAuth2**:
-  - Thực thể `Application` đã được thiết lập trường `OwnerId` (kiểu UUID) để ánh xạ trực tiếp với User ID từ Keycloak.
+  - Thực thể `Application` đã được thiết lập trường `OwnerId` (kiểu VARCHAR) để ánh xạ linh hoạt với User ID từ Keycloak hoặc các hệ thống định danh khác.
   - Cấu hình `JwtBearer` sẵn sàng cho việc xác thực tập trung thông qua container Keycloak, đảm bảo an toàn dữ liệu theo tiêu chuẩn công nghiệp.
 
 ## 4. Bộ kiểm thử xUnit (xUnit Test Suite)
