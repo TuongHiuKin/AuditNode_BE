@@ -2,6 +2,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
+using System.Collections.Generic;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.API.Controllers;
@@ -38,7 +39,7 @@ public class ApplicationsController : ControllerBase
         {
             if (string.IsNullOrWhiteSpace(appDto.AppCode) ||
                 string.IsNullOrWhiteSpace(appDto.AppName) ||
-                appDto.OwnerId == Guid.Empty)
+                string.IsNullOrWhiteSpace(appDto.OwnerId))
             {
                 return BadRequest(new { error = "Required fields are missing" });
             }
@@ -49,14 +50,20 @@ public class ApplicationsController : ControllerBase
                 AppCode = appDto.AppCode.ToUpper(),
                 AppName = appDto.AppName,
                 OwnerId = appDto.OwnerId,
-                PortNumber = appDto.PortNumber,
-                Protocol = appDto.Protocol,
                 Risk = appDto.Risk,
                 Icon = appDto.Icon,
                 TechStack = appDto.TechStack,
-                RiskLevel = appDto.RiskLevel,
-                TargetApplicationId = appDto.TargetApplicationId,
-                ServerId = appDto.ServerId
+                ServerId = appDto.ServerId,
+                PortMappings = new List<PortMapping>
+                {
+                    new PortMapping
+                    {
+                        Id = Guid.NewGuid(),
+                        ServerId = appDto.ServerId,
+                        PortNumber = appDto.PortNumber,
+                        Protocol = appDto.Protocol
+                    }
+                }
             };
 
             await _applicationRepository.CreateApplicationAsync(application);

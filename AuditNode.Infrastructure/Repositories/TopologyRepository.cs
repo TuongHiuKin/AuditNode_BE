@@ -18,7 +18,8 @@ public class TopologyRepository : ITopologyRepository
     {
         var query = _context.Datacenters
             .Include(d => d.Servers)
-                .ThenInclude(s => s.Applications)
+                .ThenInclude(s => s.PortMappings)
+                    .ThenInclude(pm => pm.Application)
             .AsNoTracking();
 
         if (datacenterId.HasValue)
@@ -41,32 +42,42 @@ public class TopologyRepository : ITopologyRepository
                 Id = s.Id,
                 Hostname = s.Hostname,
                 IpAddress = s.IpAddress,
-                Applications = s.Applications.Select(a => new ApplicationNodeDto
+                Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
                 {
-                    Id = a.Id,
-                    Name = a.AppName,
-                    Port = a.PortNumber,
-                    Protocol = a.Protocol,
-                    RiskLevel = a.RiskLevel.ToString()
+                    Id = pm.Application!.Id,
+                    Name = pm.Application.AppName,
+                    Port = pm.PortNumber,
+                    Protocol = pm.Protocol
                 }).ToList()
             }).ToList()
         });
     }
 
-    public async Task<DependencyMapDto> GetDependencyMapAsync()
+    public async Task<DependencyMapDto> GetDependencyMapAsync(string? environment = null, Guid? datacenterId = null)
     {
-        var servers = await _context.Servers
-            .Include(s => s.Applications)
-            .AsNoTracking()
-            .ToListAsync();
+        var serverQuery = _context.Servers
+            .Include(s => s.PortMappings)
+                .ThenInclude(pm => pm.Application)
+            .AsNoTracking();
 
-        var connections = await _context.Applications
-            .Where(a => a.TargetApplicationId != null)
+        if (!string.IsNullOrWhiteSpace(environment))
+        {
+            serverQuery = serverQuery.Where(s => s.Environment == environment);
+        }
+
+        if (datacenterId.HasValue && datacenterId.Value != Guid.Empty)
+        {
+            serverQuery = serverQuery.Where(s => s.DatacenterId == datacenterId.Value);
+        }
+
+        var servers = await serverQuery.ToListAsync();
+
+        var connections = await _context.AppDependencies
             .AsNoTracking()
-            .Select(a => new ConnectionDto
+            .Select(ad => new ConnectionDto
             {
-                SourceAppId = a.Id,
-                TargetAppId = a.TargetApplicationId!.Value
+                SourceAppId = ad.SourceAppId,
+                TargetAppId = ad.DestAppId
             })
             .ToListAsync();
 
@@ -77,13 +88,12 @@ public class TopologyRepository : ITopologyRepository
                 Id = s.Id,
                 Hostname = s.Hostname,
                 IpAddress = s.IpAddress,
-                Applications = s.Applications.Select(a => new ApplicationNodeDto
+                Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
                 {
-                    Id = a.Id,
-                    Name = a.AppName,
-                    Port = a.PortNumber,
-                    Protocol = a.Protocol,
-                    RiskLevel = a.RiskLevel.ToString()
+                    Id = pm.Application!.Id,
+                    Name = pm.Application.AppName,
+                    Port = pm.PortNumber,
+                    Protocol = pm.Protocol
                 }).ToList()
             }).ToList(),
             Connections = connections
