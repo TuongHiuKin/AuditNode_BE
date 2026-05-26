@@ -99,4 +99,24 @@ public class TopologyRepository : ITopologyRepository
             Connections = connections
         };
     }
+
+    public async Task<IEnumerable<ApplicationStatusDto>> GetApplicationStatusAsync()
+    {
+        var mappedAppIds = await _context.AppDependencies
+            .AsNoTracking()
+            .Select(ad => ad.SourceAppId)
+            .Union(_context.AppDependencies.AsNoTracking().Select(ad => ad.DestAppId))
+            .Distinct()
+            .ToListAsync();
+
+        return await _context.Applications
+            .AsNoTracking()
+            .Select(a => new ApplicationStatusDto
+            {
+                Id = a.Id,
+                AppName = a.AppName,
+                IsMapped = mappedAppIds.Contains(a.Id)
+            })
+            .ToListAsync();
+    }
 }
