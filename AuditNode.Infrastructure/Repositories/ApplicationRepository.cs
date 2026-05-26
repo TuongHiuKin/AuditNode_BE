@@ -19,6 +19,8 @@ public class ApplicationRepository : IApplicationRepository
     public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync()
     {
         return await _dbContext.Applications
+            .Include(a => a.PortMappings)
+                .ThenInclude(pm => pm.Server)
             .Select(a => new ApplicationResponseDto
             {
                 Id = a.Id,
@@ -27,7 +29,15 @@ public class ApplicationRepository : IApplicationRepository
                 OwnerId = a.OwnerId,
                 Risk = a.Risk,
                 Icon = a.Icon,
-                TechStack = a.TechStack
+                TechStack = a.TechStack,
+                Servers = a.PortMappings.Select(pm => new ServerOnApplicationDto
+                {
+                    Id = pm.Server!.Id,
+                    Hostname = pm.Server!.Hostname,
+                    IpAddress = pm.Server!.IpAddress,
+                    PortNumber = pm.PortNumber,
+                    Protocol = pm.Protocol
+                }).ToList()
             })
             .ToListAsync();
     }

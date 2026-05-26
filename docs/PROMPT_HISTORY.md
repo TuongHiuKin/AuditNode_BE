@@ -105,3 +105,24 @@ Refactor the 'OwnerId' data type mapping inside the Domain Entity configurations
 - Synchronized all related DTOs and validation logic.
 - Updated project documentation to maintain a single source of truth.
 - Verified code consistency through manual audit and structural validation.
+
+## [2026-05-26] Application Eager Loading & DTO Projection Fix
+
+**Prompt:**
+Act as a Senior .NET Backend Engineer. Fix the EF Core eager loading issue where the Application queries are missing their associated deployed servers.
+
+1. REFACTOR APPLICATION REPOSITORY:
+- Update the EF Core LINQ query in `ApplicationRepository.GetApplicationsAsync` to explicitly eagerly load the associated Server entities through the `PortMappings` navigation property.
+- Modify the query to use `.Include(a => a.PortMappings).ThenInclude(pm => pm.Server)`.
+- Update the `.Select()` projection to correctly populate a new `Servers` array in `ApplicationResponseDto`.
+
+2. VERIFICATION COMPLIANCE:
+- Run `dotnet build` to verify there are zero compilation errors.
+- Comply with the Strict TDD Contract by creating/updating unit tests to verify the eager loading logic.
+- Follow Main Branch Protection rules by pushing to an isolated branch after all tests pass.
+
+**Outcome:**
+- Modified `ApplicationResponseDto` to include a list of `ServerOnApplicationDto`.
+- Refactored `ApplicationRepository.GetApplicationsAsync` with optimized `.Include()` and `.ThenInclude()` logic.
+- Created `ApplicationRepositoryTests.cs` using an In-Memory database to verify eager loading (all 22 tests passing).
+- Successfully pushed changes to isolated branch `feature/fix-application-eager-loading` in compliance with `AGENT.md` mandates.
