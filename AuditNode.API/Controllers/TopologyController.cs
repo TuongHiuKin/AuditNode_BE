@@ -36,4 +36,11 @@ public class TopologyController : ControllerBase
         var map = await _topologyRepository.GetDependencyMapAsync(environment, datacenterId);
         return Ok(map);
     }
+
+    [HttpGet("status")]
+    public async Task<ActionResult<IEnumerable<ApplicationStatusDto>>> GetStatus()
+    {
+        var status = await _topologyRepository.GetApplicationStatusAsync();
+        return Ok(status);
+    }
 }

@@ -6,4 +6,5 @@ public interface ITopologyRepository
 {
     Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take);
     Task<DependencyMapDto> GetDependencyMapAsync(string? environment = null, Guid? datacenterId = null);
+    Task<IEnumerable<ApplicationStatusDto>> GetApplicationStatusAsync();
 }
