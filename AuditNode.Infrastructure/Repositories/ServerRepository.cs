@@ -49,7 +49,7 @@ public class ServerRepository : IServerRepository
                     Id = pm.Application!.Id,
                     AppCode = pm.Application.AppCode,
                     AppName = pm.Application.AppName,
-                    OwnerId = pm.Application.OwnerId,
+                    OwnerTeam = pm.Application.OwnerTeam,
                     PortNumber = pm.PortNumber,
                     Protocol = pm.Protocol
                 }).ToList()

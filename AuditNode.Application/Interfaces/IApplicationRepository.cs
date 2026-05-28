@@ -6,5 +6,5 @@ namespace AuditNode.Application.Interfaces;
 public interface IApplicationRepository
 {
     Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync();
-    Task<Domain.Entities.Application> CreateApplicationAsync(Domain.Entities.Application application);
+    Task<Domain.Entities.Application> RegisterApplicationAsync(Domain.Entities.Application application);
 }
