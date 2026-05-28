@@ -26,7 +26,7 @@ public class ApplicationRepository : IApplicationRepository
                 Id = a.Id,
                 AppCode = a.AppCode,
                 AppName = a.AppName,
-                OwnerId = a.OwnerId,
+                OwnerTeam = a.OwnerTeam,
                 Risk = a.Risk,
                 Icon = a.Icon,
                 TechStack = a.TechStack,
@@ -42,10 +42,46 @@ public class ApplicationRepository : IApplicationRepository
             .ToListAsync();
     }
 
-    public async Task<AppEntity> CreateApplicationAsync(AppEntity application)
+    public async Task<AppEntity> RegisterApplicationAsync(AppEntity application)
     {
-        _dbContext.Applications.Add(application);
-        await _dbContext.SaveChangesAsync();
-        return application;
+        using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        try
+        {
+            var existingApp = await _dbContext.Applications
+                .FirstOrDefaultAsync(a => a.AppCode == application.AppCode);
+
+            if (existingApp == null)
+            {
+                _dbContext.Applications.Add(application);
+                await _dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return application;
+            }
+            else
+            {
+                // Update non-key fields if business rules dictate
+                existingApp.AppName = application.AppName;
+                existingApp.OwnerTeam = application.OwnerTeam;
+                existingApp.Risk = application.Risk;
+                existingApp.Icon = application.Icon;
+                existingApp.TechStack = application.TechStack;
+
+                // Transfer port mappings to existing app
+                foreach (var pm in application.PortMappings)
+                {
+                    pm.AppId = existingApp.Id;
+                    _dbContext.PortMappings.Add(pm);
+                }
+
+                await _dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return existingApp;
+            }
+        }
+        catch (Exception)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 }

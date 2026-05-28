@@ -35,44 +35,73 @@ public class ApplicationsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult> PostApplication([FromBody] CreateApplicationDto appDto)
     {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
         try
         {
             if (string.IsNullOrWhiteSpace(appDto.AppCode) ||
                 string.IsNullOrWhiteSpace(appDto.AppName) ||
-                string.IsNullOrWhiteSpace(appDto.OwnerId))
+                string.IsNullOrWhiteSpace(appDto.OwnerTeam) ||
+                appDto.ServerId == Guid.Empty)
             {
-                return BadRequest(new { error = "Required fields are missing" });
+                return BadRequest(new { error = "Required fields are missing or invalid" });
             }
 
+            var appId = Guid.NewGuid();
             var application = new AppEntity
             {
-                Id = Guid.NewGuid(),
+                Id = appId,
                 AppCode = appDto.AppCode.ToUpper(),
                 AppName = appDto.AppName,
-                OwnerId = appDto.OwnerId,
-                Risk = appDto.Risk,
-                Icon = appDto.Icon,
-                TechStack = appDto.TechStack,
+                OwnerTeam = appDto.OwnerTeam,
+                Risk = string.IsNullOrWhiteSpace(appDto.Risk) ? "LOW" : appDto.Risk,
+                Icon = appDto.Icon ?? string.Empty,
+                TechStack = appDto.TechStack ?? string.Empty,
+                ServerId = appDto.ServerId
+            };
+
+            var portMapping = new PortMapping
+            {
+                Id = Guid.NewGuid(),
+                AppId = appId,
                 ServerId = appDto.ServerId,
-                PortMappings = new List<PortMapping>
+                PortNumber = appDto.PortNumber,
+                Protocol = appDto.Protocol
+            };
+
+            application.PortMappings.Add(portMapping);
+
+            var registeredApp = await _applicationRepository.RegisterApplicationAsync(application);
+
+            var responseDto = new ApplicationResponseDto
+            {
+                Id = registeredApp.Id,
+                AppCode = registeredApp.AppCode,
+                AppName = registeredApp.AppName,
+                OwnerTeam = registeredApp.OwnerTeam,
+                Risk = registeredApp.Risk,
+                Icon = registeredApp.Icon,
+                TechStack = registeredApp.TechStack,
+                Servers = new List<ServerOnApplicationDto>
                 {
-                    new PortMapping
+                    new ServerOnApplicationDto
                     {
-                        Id = Guid.NewGuid(),
-                        ServerId = appDto.ServerId,
+                        Id = appDto.ServerId,
                         PortNumber = appDto.PortNumber,
                         Protocol = appDto.Protocol
                     }
                 }
             };
 
-            await _applicationRepository.CreateApplicationAsync(application);
-
-            return CreatedAtAction(nameof(GetApplications), new { id = application.Id }, application);
+            return CreatedAtAction(nameof(GetApplications), new { id = registeredApp.Id }, responseDto);
         }
         catch (Exception ex)
         {
-            return BadRequest(new { error = ex.Message });
+            // Log full exception details if possible, or return detailed message for debugging
+            return StatusCode(500, new { error = ex.Message, details = ex.InnerException?.Message });
         }
     }
 }

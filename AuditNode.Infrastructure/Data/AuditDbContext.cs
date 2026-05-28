@@ -61,15 +61,16 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.AppCode).HasColumnName("app_code").IsRequired();
             entity.Property(e => e.AppName).HasColumnName("app_name").IsRequired();
-            entity.Property(e => e.OwnerId)
-                .HasColumnName("owner_id")
-                .HasColumnType("character varying")
+            entity.Property(e => e.OwnerTeam)
+                .HasColumnName("owner_team")
                 .HasMaxLength(255)
                 .IsRequired();
             entity.Property(e => e.Risk).HasColumnName("risk").IsRequired();
             entity.Property(e => e.Icon).HasColumnName("icon");
             entity.Property(e => e.TechStack).HasColumnName("tech_stack");
             entity.Property(e => e.ServerId).HasColumnName("server_id").IsRequired();
+
+            entity.HasIndex(e => e.AppCode).IsUnique();
 
             entity.HasOne(a => a.Server)
                 .WithMany(s => s.Applications)

@@ -4,6 +4,23 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 May 28, 2026 - Application Registration "Find or Create" (Upsert) Implementation
+**Status:** ✅ Complete
+
+### Changes:
+- **Upsert Logic Implementation**: Refactored `ApplicationRepository.RegisterApplicationAsync` to check for existing applications by `AppCode`. If found, the application is updated and a new `PortMapping` is added; otherwise, a new application is created.
+- **Transaction Support**: Wrapped the registration logic in a database transaction to ensure atomicity.
+- **OwnerTeam Refactor**: Renamed `OwnerId` to `OwnerTeam` across Domain, Application, and API layers to reflect team-based ownership.
+- **Unique Constraint**: Added an explicit unique index on `AppCode` in `AuditDbContext` and updated the PostgreSQL schema (conceptually, via EF Core model).
+- **Enum Cleanup**: Deleted `RiskLevel.cs` and moved to string-based risk management ("LOW", "MEDIUM", "HIGH") for better flexibility and consistency with frontend requirements.
+- **TDD Compliance**: Added unit tests to `ApplicationRepositoryTests` verifying "Find or Create" behavior.
+
+### Impact:
+- **Scalability**: Allows a single application definition to be deployed across multiple servers via port mappings without violating unique constraints.
+- **Data Integrity**: Prevents duplicate `AppCode` entries while allowing rich relationship mapping.
+
+---
+
 ## 📅 May 24, 2026 - Application OwnerId Schema Alignment
 **Status:** ✅ Complete
 

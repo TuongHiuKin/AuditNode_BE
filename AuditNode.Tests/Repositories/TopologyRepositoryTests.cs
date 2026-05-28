@@ -23,9 +23,9 @@ public class TopologyRepositoryTests
     {
         // Arrange
         using var context = GetDbContext();
-        var app1 = new AppEntity { Id = Guid.NewGuid(), AppName = "App 1", AppCode = "A1", OwnerId = "O1", Risk = "L", ServerId = Guid.NewGuid() };
-        var app2 = new AppEntity { Id = Guid.NewGuid(), AppName = "App 2", AppCode = "A2", OwnerId = "O2", Risk = "L", ServerId = Guid.NewGuid() };
-        var app3 = new AppEntity { Id = Guid.NewGuid(), AppName = "App 3", AppCode = "A3", OwnerId = "O3", Risk = "L", ServerId = Guid.NewGuid() };
+        var app1 = new AppEntity { Id = Guid.NewGuid(), AppName = "App 1", AppCode = "A1", OwnerTeam = "O1", Risk = "LOW", ServerId = Guid.NewGuid() };
+        var app2 = new AppEntity { Id = Guid.NewGuid(), AppName = "App 2", AppCode = "A2", OwnerTeam = "O2", Risk = "LOW", ServerId = Guid.NewGuid() };
+        var app3 = new AppEntity { Id = Guid.NewGuid(), AppName = "App 3", AppCode = "A3", OwnerTeam = "O3", Risk = "LOW", ServerId = Guid.NewGuid() };
         
         context.Applications.AddRange(app1, app2, app3);
 

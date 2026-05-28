@@ -126,3 +126,29 @@ Act as a Senior .NET Backend Engineer. Fix the EF Core eager loading issue where
 - Refactored `ApplicationRepository.GetApplicationsAsync` with optimized `.Include()` and `.ThenInclude()` logic.
 - Created `ApplicationRepositoryTests.cs` using an In-Memory database to verify eager loading (all 22 tests passing).
 - Successfully pushed changes to isolated branch `feature/fix-application-eager-loading` in compliance with `AGENT.md` mandates.
+
+## [2026-05-28] Application Registration "Find or Create" (Upsert) Implementation
+
+**Prompt:**
+Act as a Lead .NET Backend Architect. We are updating the Application Registration logic to follow a "Find or Create" (Upsert) pattern to respect the `UNIQUE` constraint on `AppCode` while allowing an existing Application to be deployed to multiple Servers.
+
+1. REFACTOR CREATION LOGIC (FIND OR CREATE):
+- Modify the registration flow inside the database transaction:
+  1. Check if an `Application` with the incoming `AppCode` already exists.
+  2. IF NOT EXISTS: Create the new `Application` entity and save it.
+  3. IF EXISTS: Do NOT create a new Application. Retrieve the existing `Application`'s `Id`. Optionally update its non-key fields (like AppName or OwnerTeam) if business rules dictate.
+  4. Create the `PortMapping` entity linking the `ServerId` from the request to the `Application.Id`.
+  5. Commit the transaction.
+
+2. ARCHITECTURAL & VALIDATION ALIGNMENT:
+- Rename `OwnerId` to `OwnerTeam` across the system to match team-based ownership model.
+- Add explicit Unique Index on `AppCode` in `AuditDbContext`.
+- Clean up legacy `RiskLevel` enum in favor of string-based Risk property.
+
+**Outcome:**
+- Refactored `ApplicationRepository.RegisterApplicationAsync` with "Find or Create" logic inside a transaction.
+- Updated `ApplicationsController` to handle the new registration DTO and workflow.
+- Aligned Domain and Application layers by renaming `OwnerId` to `OwnerTeam`.
+- Enforced `AppCode` uniqueness at the EF Core level.
+- Added comprehensive unit tests for upsert scenarios in `ApplicationRepositoryTests`.
+- Successfully pushed changes to isolated branch `feat/app-upsert-find-or-create`.
