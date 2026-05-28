@@ -32,7 +32,7 @@ Retrieves all servers with bound applications.
         "id": "uuid",
         "appCode": "string",
         "appName": "string",
-        "ownerId": "string",
+        "ownerTeam": "string",
         "portNumber": 0,
         "protocol": "string"
       }
@@ -61,7 +61,7 @@ Registers a new server.
 ## 2. Applications Endpoints
 
 ### GET `/api/applications`
-Retrieves all registered applications.
+Retrieves all registered applications with their associated servers.
 
 **Response (200 OK):**
 ```json
@@ -70,20 +70,38 @@ Retrieves all registered applications.
     "id": "uuid",
     "appCode": "string",
     "appName": "string",
-    "ownerId": "string"
+    "ownerTeam": "string",
+    "risk": "string",
+    "icon": "string",
+    "techStack": "string",
+    "servers": [
+      {
+        "id": "uuid",
+        "hostname": "string",
+        "ipAddress": "string",
+        "portNumber": 0,
+        "protocol": "string"
+      }
+    ]
   }
 ]
 ```
 
 ### POST `/api/applications`
-Registers a new application.
+Registers or updates an application (Find or Create). Links it to a specific server.
 
 **Request Body:**
 ```json
 {
   "appCode": "string",
   "appName": "string",
-  "ownerId": "string"
+  "ownerTeam": "string",
+  "serverId": "uuid",
+  "portNumber": 0,
+  "protocol": "string",
+  "risk": "string",
+  "icon": "string",
+  "techStack": "string"
 }
 ```
 
