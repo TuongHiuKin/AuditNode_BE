@@ -103,12 +103,40 @@ Registers or updates an application (Find or Create). Links it to a specific ser
   "icon": "string",
   "techStack": "string"
 }
+]
 ```
 
 ---
 
-## 3. Analytics Endpoints
+## 3. Datacenters Endpoints
 
+### GET `/api/datacenters`
+Retrieves a lightweight list of all datacenters.
+
+**Response (200 OK):**
+```json
+[
+{
+  "id": "uuid",
+  "name": "string"
+}
+]
+```
+
+### POST `/api/datacenters`
+Registers a new datacenter.
+
+**Request Body:**
+```json
+{
+"name": "string",
+"location": "string"
+}
+```
+
+---
+
+## 4. Analytics Endpoints
 ### GET `/api/analytics/topology`
 Retrieves topology data for tree view visualization. Joins servers, port mappings, and applications.
 

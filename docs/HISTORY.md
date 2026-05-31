@@ -4,6 +4,22 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 May 31, 2026 - Datacenter API Refactor for Frontend Dropdown
+**Status:** ✅ Complete
+
+### Changes:
+- **Lightweight DTO**: Created `DatacenterDto` containing only `Id` and `Name` to minimize payload for frontend dropdowns.
+- **Controller Refactor**: Updated `DatacentersController.GetDatacenters` to return `IEnumerable<DatacenterDto>` instead of the full `Datacenter` entity.
+- **TDD Implementation**: Created `DatacentersControllerTests.cs` using xUnit, Moq, and FluentAssertions to verify the new DTO mapping and controller behavior.
+- **HTTP Testing**: Updated `AuditNode.API.http` with a new request for the datacenters endpoint.
+
+### Impact:
+- **Performance**: Reduced network payload size for the datacenters listing.
+- **Consistency**: Follows the project's Clean Architecture standards for DTO usage.
+- **Maintainability**: New unit tests ensure the endpoint remains stable during future refactorings.
+
+---
+
 ## 📅 May 28, 2026 - Application Registration "Find or Create" (Upsert) Implementation
 **Status:** ✅ Complete
 
