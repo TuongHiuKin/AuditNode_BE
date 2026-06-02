@@ -24,4 +24,8 @@ To ensure absolute system safety and prevent source code conflicts, you MUST str
 
 4. **Mandatory Pre-push Testing:** - Before pushing any code to a remote branch, you MUST run all project tests (e.g., `dotnet test`) to verify that your changes do not introduce regressions. Pushing code with failing tests is strictly prohibited.
 
+## 5. Core Rule: Continuous Documentation
+- Whenever a major change is successfully implemented in the project—such as creating a new API endpoint, adding a new feature, modifying existing core logic, altering the database schema, or performing a significant UI refactor—you (the Agent) MUST automatically update the corresponding files in the `docs/` folder (e.g., `API.md`, `DATABASE.md`, `ARCHITECTURE.md`, `HISTORY.md`) and the `README.md`.
+- Do not wait for explicit user prompts to update the docs. Treat documentation synchronization as the mandatory final step of any feature development or major bug fix.
+
 *Note: Read and follow this file before initiating any code modification or generation task in this workspace.*

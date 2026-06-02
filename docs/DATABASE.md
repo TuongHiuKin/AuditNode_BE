@@ -20,12 +20,15 @@ Infrastructure nodes tracking physical or virtual machines.
 ### `applications`
 Software services registered in the system.
 - `id` (UUID, PK)
-- `app_code` (VARCHAR, UNIQUE)
+- `app_code` (VARCHAR, UNIQUE) - *Enforced via Unique Index to support Upsert logic*
 - `app_name` (VARCHAR)
-- `owner_id` (UUID) - *Maps to Keycloak User ID*
+- `owner_team` (VARCHAR) - *Identifies the team responsible for the app*
+- `risk` (VARCHAR) - *Risk level (LOW, MEDIUM, HIGH)*
+- `icon` (VARCHAR) - *Icon identifier for UI*
+- `tech_stack` (VARCHAR) - *Primary technology stack*
 
 ### `port_mappings`
-Bridge between servers and applications.
+The critical bridge between servers and applications, allowing many-to-many relationship mapping.
 - `id` (UUID, PK)
 - `server_id` (FK → servers.id, Cascade Delete)
 - `app_id` (FK → applications.id, Cascade Delete)
