@@ -33,6 +33,9 @@ builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
 
+// Register Services
+builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
+
 // Register FluentValidation
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateServerDtoValidator>();

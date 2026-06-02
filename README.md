@@ -92,9 +92,28 @@ For detailed information, please refer to the following:
 
 - 📖 [API Documentation](docs/API.md) - Endpoints, DTOs, and examples.
 - 🗄️ [Database Guide](docs/DATABASE.md) - Schema, Relationships, and Views.
+- 🏗️ [Architecture Overview](docs/ARCHITECTURE.md) - Design patterns and UI visualization logic.
 - 🕒 [Maintenance History](docs/HISTORY.md) - Records of refactorings and fixes.
 
 ---
 
-**Last Updated:** May 17, 2026  
-**Maintainer:** DevOps Team
+## 🚀 Current Progress (June 2026)
+
+- **Backend**: Implemented Transaction-based Upsert for application registration, ensuring a single `AppCode` can be mapped to multiple servers via `port_mappings`.
+- **Frontend**: Refactored the Topology Map into a "Static Resource Inventory" using React Flow with nested server-container nodes and automated grid layout.
+- **Data Integrity**: Enforced `AppCode` UNIQUE constraints and implemented state synchronization across navigation.
+- **API Optimization**: Refactored Datacenter endpoints to return lightweight DTOs for faster frontend dropdown rendering.
+
+---
+
+## 🛠️ Next Steps
+
+- **Identity Management**: Integrate **Keycloak IAM** for authenticated owner identification and RBAC (Role-Based Access Control).
+- **Audit Logging**: Implement a comprehensive audit trail for infrastructure changes.
+- **Real-time Monitoring**: Integrate Prometheus/Grafana hooks for live server status updates.
+- **Reporting**: Exportable PDF/Excel reports for G1/G3 inventory compliance.
+
+---
+
+**Last Updated:** June 1, 2026  
+**Maintainer:** Lead Architect & DevOps Team

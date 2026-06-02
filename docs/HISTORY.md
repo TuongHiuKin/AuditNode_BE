@@ -4,6 +4,108 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 2, 2026 - Bug Fix: Port Mapping Unique Constraint Violation in Bulk Import
+**Status:** ✅ Complete
+
+### Changes:
+- **Implemented Port Collision Detection**: Resolved `duplicate key value violates unique constraint "port_mappings_server_id_port_number_key"` by adding pre-persistence checks.
+- **Pre-fetch Strategy**: All existing `PortMapping` entries for involved servers are now batch-fetched into an in-memory dictionary (`mappingLookup`) using a `ServerId:PortNumber` key.
+- **Idempotency Support**: If an identical mapping (same Server, Port, App, and Protocol) already exists, the logic skips insertion while still counting the row as successful.
+- **Conflict Reporting**: If a port is already mapped to a *different* application or protocol, a detailed conflict message is returned, and the row is skipped.
+- **In-Memory Tracking**: Updated the tracking dictionary during the import loop to prevent duplicate mapping insertions within the same Excel file.
+
+### Impact:
+- **Transactional Integrity**: Prevents whole-batch failures caused by single-port collisions.
+- **Data Accuracy**: Ensures that port assignments are correctly audited and attributed to the right applications.
+
+---
+
+## 📅 June 2, 2026 - Performance Optimization: In-Memory Dictionary Pattern in Bulk Import
+**Status:** ✅ Complete
+
+### Changes:
+- **Eliminated N+1 Queries**: Replaced loop-based database lookups for Applications and Servers with a pre-fetched dictionary pattern.
+- **Batch Pre-fetching**: All `AppCode`s and `IpAddress`es are now extracted from the Excel file upfront and queried in single batches using `.Where(x => list.Contains(x.Key)).ToDictionaryAsync()`.
+- **Deterministic Queries**: Resolved EF Core warning 10103 by adding `.OrderBy(x => x.Id)` before `.FirstOrDefaultAsync()` calls, ensuring strictly consistent results.
+- **Improved Validation**: The conflict detection logic now utilizes the pre-fetched `existingAppsDict` for O(1) in-memory lookups instead of O(N) database calls.
+
+### Impact:
+- **Scalability**: Dramatically reduced database load and execution time for large Excel files.
+- **Stability**: Resolved non-deterministic query warnings that could lead to inconsistent data states in distributed environments.
+
+---
+
+## 📅 June 2, 2026 - Bug Fix: Duplicate Server Key Violation in Bulk Import
+**Status:** ✅ Complete
+
+### Changes:
+- **Refactored Upsert Logic**: Resolved `duplicate key value violates unique constraint "servers_ip_address_key"` by implementing proper entity grouping.
+- **Entity Grouping**: Implemented a multi-step process for bulk import:
+    1. Group incoming rows by `IpAddress` to identify distinct servers.
+    2. Batch-fetch existing servers and insert only new ones in a single `SaveChangesAsync` call.
+    3. Group rows by `AppCode` to identify distinct applications.
+    4. Batch-fetch and upsert applications.
+    5. Finalize by adding all `PortMapping` entries.
+- **TDD Verification**: Added a new test case `ImportInventoryAsync_ShouldHandleMultipleRowsForSameNewServer` to `InventoryImportServiceTests.cs` to ensure the scenario is handled correctly.
+- **Test Infrastructure**: Configured the in-memory database to ignore transaction warnings, allowing for more realistic service testing.
+
+### Impact:
+- **System Stability**: Prevents crashes during bulk imports when multiple applications reside on the same newly registered server.
+- **Performance**: Optimized database interactions by batching fetches and insertions.
+
+---
+
+## 📅 June 2, 2026 - Best-Effort Bulk Import & Excel Template Generation
+**Status:** ✅ Complete
+
+### Changes:
+- **Bulk Import Engine**: Implemented `InventoryImportService` using **ClosedXML** to process `.xlsx` files with a "Best-Effort" approach.
+- **Transactional Upsert**: Developed atomic transactional logic to upsert Servers (by IP) and Applications (by AppCode), ensuring data consistency across multiple entities (Servers, Apps, PortMappings).
+- **Conflict Resolution**: Implemented logic to detect and report metadata conflicts (e.g., AppCode reuse with different AppNames) while skipping only the conflicting rows.
+- **Template Generation**: Created a dynamic Excel template generator (`GET /api/inventory/import-template`) with built-in data validation dropdowns for Environment and Protocol.
+- **Clean Architecture Integration**: Registered `IInventoryImportService` in the DI container and implemented `InventoryImportController` in the API layer.
+- **Unit Testing**: Added `InventoryImportServiceTests.cs` using an in-memory database to verify validation, conflict logic, and template structure.
+
+### Impact:
+- **Efficiency**: Users can now import hundreds of infrastructure nodes in seconds via a single Excel upload.
+- **Data Quality**: Excel data validation and backend conflict detection prevent corrupt or inconsistent data from entering the system.
+- **User Experience**: Detailed Best-Effort responses provide clear feedback on which rows were saved, errored, or conflicted.
+
+---
+
+## 📅 June 1, 2026 - UI Topology Refactor & Backend Transaction Upsert
+**Status:** ✅ Complete
+
+### Changes:
+- **Refactored UI Topology**: Implemented "Static Resource Inventory" approach using React Flow with nested nodes (Servers as containers for Applications).
+- **Backend Transaction Upsert**: Implemented atomic transaction-based registration in `ApplicationRepository` to support many-to-many mapping and prevent duplicate `AppCode` entries.
+- **UI Bug Fixes**: Resolved z-index layering issues in React Flow and disabled node dragging to maintain a stable static layout.
+- **State Synchronization**: Implemented on-navigate state synchronization to maintain UI consistency when switching between infrastructure views.
+- **Documentation Overhaul**: Synchronized `README.md`, `API.md`, `DATABASE.md`, and created `ARCHITECTURE.md` to reflect the current system state.
+
+### Impact:
+- **Consistency**: Users experience a stable, reliable visualization of infrastructure.
+- **Scalability**: The backend can now handle complex application-to-server mappings without data corruption.
+- **Project Maturity**: Documentation now serves as a comprehensive "checkpoint" for the project's current state.
+
+---
+
+## 📅 May 31, 2026 - Datacenter API Refactor for Frontend Dropdown
+**Status:** ✅ Complete
+
+### Changes:
+- **Lightweight DTO**: Created `DatacenterDto` containing only `Id` and `Name` to minimize payload for frontend dropdowns.
+- **Controller Refactor**: Updated `DatacentersController.GetDatacenters` to return `IEnumerable<DatacenterDto>` instead of the full `Datacenter` entity.
+- **TDD Implementation**: Created `DatacentersControllerTests.cs` using xUnit, Moq, and FluentAssertions to verify the new DTO mapping and controller behavior.
+- **HTTP Testing**: Updated `AuditNode.API.http` with a new request for the datacenters endpoint.
+
+### Impact:
+- **Performance**: Reduced network payload size for the datacenters listing.
+- **Consistency**: Follows the project's Clean Architecture standards for DTO usage.
+- **Maintainability**: New unit tests ensure the endpoint remains stable during future refactorings.
+
+---
+
 ## 📅 May 28, 2026 - Application Registration "Find or Create" (Upsert) Implementation
 **Status:** ✅ Complete
 

@@ -17,10 +17,15 @@ public class DatacentersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<Datacenter>>> GetDatacenters()
+    public async Task<ActionResult<IEnumerable<DatacenterDto>>> GetDatacenters()
     {
         var datacenters = await _datacenterRepository.GetAllDatacentersAsync();
-        return Ok(datacenters);
+        var dtos = datacenters.Select(d => new DatacenterDto 
+        { 
+            Id = d.Id, 
+            Name = d.Name 
+        });
+        return Ok(dtos);
     }
 
     [HttpPost]
