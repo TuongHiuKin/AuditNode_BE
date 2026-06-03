@@ -1,3 +1,61 @@
+# Prompt Archive: Universal Search API Implementation
+
+**Date:** June 3, 2026
+**Status:** Success ✅
+
+## 1. Requirement Summary
+Implement a Universal Search API for an auditing and resource inventory system.
+- **Feature**: `GET /api/search?keyword=...` – Unified search across Servers and Applications.
+- **DTO**: `SearchResultDto` with `Id`, `Type` (SERVER/APP), `Title`, `Subtitle`, and `MatchReason`.
+- **Logic**: 
+  - Case-insensitive search on Server Hostname/IP and Application Name/Code.
+  - Subtitle includes hosting context: "On Server: Hostname (Port: X)".
+  - Result limit of 20.
+  - Keyword length validation (min 2 chars).
+- **Architecture**: Clean Architecture, EF Core direct queries (no caching), Strict TDD.
+
+## 2. Core Implementation Strategy
+### Backend Logic:
+- **Service Layer**: Created `IInventorySearchService` and `InventorySearchService`.
+- **Unified Query**:
+  - Performed two separate EF Core queries for Servers and Applications.
+  - Server search matches `Hostname` or `IpAddress`.
+  - Application search matches `AppName` or `AppCode`, including `Server` and `PortMappings` for subtitle context.
+- **Consolidation**: Concatenated results, took top 20, and returned as a list of `SearchResultDto`.
+- **Case-Insensitivity**: Used `.ToLower().Contains()` for compatibility with both InMemory and Npgsql providers.
+
+## 3. Key Code Structures
+```csharp
+// Search Logic Implementation
+var serverResults = await _context.Servers
+    .Where(s => s.Hostname.ToLower().Contains(lowerKeyword) || s.IpAddress.ToLower().Contains(lowerKeyword))
+    .Select(s => new SearchResultDto { ... })
+    .ToListAsync();
+
+var appResults = await _context.Applications
+    .Include(a => a.Server)
+    .Include(a => a.PortMappings)
+    .Where(a => a.AppName.ToLower().Contains(lowerKeyword) || a.AppCode.ToLower().Contains(lowerKeyword))
+    .Select(a => new SearchResultDto { ... })
+    .ToListAsync();
+
+return serverResults.Concat(appResults).Take(20).ToList();
+```
+
+## 4. Verification (TDD)
+- **InventorySearchServiceTests.cs**:
+  - `SearchAsync_ShouldReturnEmpty_WhenKeywordIsShortOrNull`: Verified validation logic.
+  - `SearchAsync_ShouldReturnServer_WhenHostnameMatches`: Verified server matching and reason.
+  - `SearchAsync_ShouldReturnApp_WhenAppNameMatches`: Verified application matching with hosting context in subtitle.
+  - `SearchAsync_ShouldLimitResultsTo20`: Verified the pagination/limit logic.
+
+## 5. Documentation
+- Updated `API.md` with new search endpoint documentation.
+- Updated `HISTORY.md` with implementation milestone.
+- Updated `README.md` to highlight the new search capability.
+
+---
+
 # Prompt Archive: Best-Effort Bulk Import & Excel Template Generation
 
 **Date:** June 2, 2026

@@ -35,6 +35,7 @@ builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
 
 // Register Services
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
+builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
 
 // Register FluentValidation
 builder.Services.AddFluentValidationAutoValidation();

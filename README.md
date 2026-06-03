@@ -22,12 +22,13 @@ AuditNode Backend is a comprehensive Infrastructure Management System built on A
 
 - **G1 Inventory:** Server and application infrastructure tracking.
 - **G3 Topology:** Application dependency mapping and visualization.
+- **Universal Search:** Unified, case-insensitive search across servers and apps.
 - **Multi-Datacenter Support:** Organize servers by datacenter.
-- **Keycloak Integration:** UUID-based owner identification.
 
 ### Key Features
 
 ✅ RESTful API with async/await patterns  
+✅ Universal Search Engine (Servers & Applications)  
 ✅ Entity Framework Core with PostgreSQL  
 ✅ Keyless read-only database views for optimized queries  
 ✅ CORS enabled for React frontend  
@@ -99,8 +100,7 @@ For detailed information, please refer to the following:
 
 ## 🚀 Current Progress (June 2026)
 
-- **Backend**: Implemented Transaction-based Upsert for application registration, ensuring a single `AppCode` can be mapped to multiple servers via `port_mappings`.
-- **Frontend**: Refactored the Topology Map into a "Static Resource Inventory" using React Flow with nested server-container nodes and automated grid layout.
+- **Backend**: Implemented **Universal Search API** providing unified results across servers (Hostname/IP) and apps (Name/Code) with hosting context.
 - **Data Integrity**: Enforced `AppCode` UNIQUE constraints and implemented state synchronization across navigation.
 - **API Optimization**: Refactored Datacenter endpoints to return lightweight DTOs for faster frontend dropdown rendering.
 
@@ -115,5 +115,5 @@ For detailed information, please refer to the following:
 
 ---
 
-**Last Updated:** June 1, 2026  
+**Last Updated:** June 3, 2026  
 **Maintainer:** Lead Architect & DevOps Team
