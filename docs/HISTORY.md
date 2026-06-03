@@ -4,6 +4,23 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 3, 2026 - Feature: Universal Search API Refactoring & Optimization
+**Status:** ✅ Complete
+
+### Changes:
+- **Server-Side Evaluation**: Refactored LINQ queries to use direct projection (`.Select()`) into `SearchResultDto`, ensuring all filtering and transformation happen at the SQL level (PostgreSQL).
+- **Duplication Prevention**: Optimized the Application-Server join using subqueries within the projection to fetch hosting context (Server/Port) without multiplying application records.
+- **Criteria Cleanup**: Removed all risk-related metadata from the search logic to focus strictly on identifiers (Hostname, IP, AppCode, AppName).
+- **Result Throttling**: Implemented strict `Top 20` limiting within the IQueryable pipeline to prevent over-fetching and massive payloads.
+- **Portability Fix**: Standardized on `.ToLower().Contains()` to ensure compatibility across both the `InMemory` test provider and the production `Npgsql` provider, while maintaining index friendliness.
+- **TDD Verification**: Confirmed all 6 test cases pass with the optimized logic.
+
+### Impact:
+- **Performance**: Significant reduction in memory overhead and database execution time.
+- **Reliability**: Eliminated duplicate records in search results caused by many-to-many port mappings.
+
+---
+
 ## 📅 June 2, 2026 - Bug Fix: Port Mapping Unique Constraint Violation in Bulk Import
 **Status:** ✅ Complete
 

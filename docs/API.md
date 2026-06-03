@@ -208,7 +208,37 @@ Processes a bulk import of servers and applications from an uploaded Excel file.
 
 ---
 
-## 6. Error Handling
+## 6. Universal Search Endpoints
+
+### GET `/api/search?keyword=...`
+Performs a case-insensitive unified search across Servers (Hostname, IP) and Applications (AppCode, AppName).
+
+**Query Parameters:**
+- `keyword` (string, required): The search term. Must be at least 2 characters long.
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": "uuid",
+    "type": "SERVER",
+    "title": "ProductionServer01",
+    "subtitle": "IP: 10.0.0.1",
+    "matchReason": "Matched by Server Hostname"
+  },
+  {
+    "id": "uuid",
+    "type": "APP",
+    "title": "CustomerPortal",
+    "subtitle": "On Server: Host01 (Port: 443)",
+    "matchReason": "Matched by App Name"
+  }
+]
+```
+
+---
+
+## 7. Error Handling
 Errors follow a consistent format:
 ```json
 {
