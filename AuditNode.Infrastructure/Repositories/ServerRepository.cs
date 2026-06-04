@@ -57,6 +57,21 @@ public class ServerRepository : IServerRepository
             .ToListAsync();
     }
 
+    public async Task<Server?> GetByIdAsync(Guid id)
+    {
+        return await _dbContext.Servers
+            .Include(s => s.Datacenter)
+            .Include(s => s.PortMappings)
+            .ThenInclude(pm => pm.Application)
+            .FirstOrDefaultAsync(s => s.Id == id);
+    }
+
+    public async Task UpdateAsync(Server server)
+    {
+        _dbContext.Entry(server).State = EntityState.Modified;
+        await _dbContext.SaveChangesAsync();
+    }
+
     public async Task<Server> CreateServerAsync(Server server)
     {
         _dbContext.Servers.Add(server);

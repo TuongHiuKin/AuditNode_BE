@@ -1,9 +1,7 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
-using AuditNode.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
-using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.API.Controllers;
 
@@ -11,11 +9,11 @@ namespace AuditNode.API.Controllers;
 [Route("api/[controller]")]
 public class ApplicationsController : ControllerBase
 {
-    private readonly IApplicationRepository _applicationRepository;
+    private readonly IApplicationService _applicationService;
 
-    public ApplicationsController(IApplicationRepository applicationRepository)
+    public ApplicationsController(IApplicationService applicationService)
     {
-        _applicationRepository = applicationRepository;
+        _applicationService = applicationService;
     }
 
     [HttpGet]
@@ -23,13 +21,24 @@ public class ApplicationsController : ControllerBase
     {
         try
         {
-            var applications = await _applicationRepository.GetApplicationsAsync();
+            var applications = await _applicationService.GetAllAsync();
             return Ok(applications);
         }
         catch (Exception ex)
         {
             return BadRequest(new { error = ex.Message });
         }
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<ApplicationResponseDto>> GetApplication(Guid id)
+    {
+        var application = await _applicationService.GetByIdAsync(id);
+        if (application == null)
+        {
+            return NotFound();
+        }
+        return Ok(application);
     }
 
     [HttpPost]
@@ -42,66 +51,36 @@ public class ApplicationsController : ControllerBase
 
         try
         {
-            if (string.IsNullOrWhiteSpace(appDto.AppCode) ||
-                string.IsNullOrWhiteSpace(appDto.AppName) ||
-                string.IsNullOrWhiteSpace(appDto.OwnerTeam) ||
-                appDto.ServerId == Guid.Empty)
-            {
-                return BadRequest(new { error = "Required fields are missing or invalid" });
-            }
-
-            var appId = Guid.NewGuid();
-            var application = new AppEntity
-            {
-                Id = appId,
-                AppCode = appDto.AppCode.ToUpper(),
-                AppName = appDto.AppName,
-                OwnerTeam = appDto.OwnerTeam,
-                Risk = string.IsNullOrWhiteSpace(appDto.Risk) ? "LOW" : appDto.Risk,
-                Icon = appDto.Icon ?? string.Empty,
-                TechStack = appDto.TechStack ?? string.Empty,
-                ServerId = appDto.ServerId
-            };
-
-            var portMapping = new PortMapping
-            {
-                Id = Guid.NewGuid(),
-                AppId = appId,
-                ServerId = appDto.ServerId,
-                PortNumber = appDto.PortNumber,
-                Protocol = appDto.Protocol
-            };
-
-            application.PortMappings.Add(portMapping);
-
-            var registeredApp = await _applicationRepository.RegisterApplicationAsync(application);
-
-            var responseDto = new ApplicationResponseDto
-            {
-                Id = registeredApp.Id,
-                AppCode = registeredApp.AppCode,
-                AppName = registeredApp.AppName,
-                OwnerTeam = registeredApp.OwnerTeam,
-                Risk = registeredApp.Risk,
-                Icon = registeredApp.Icon,
-                TechStack = registeredApp.TechStack,
-                Servers = new List<ServerOnApplicationDto>
-                {
-                    new ServerOnApplicationDto
-                    {
-                        Id = appDto.ServerId,
-                        PortNumber = appDto.PortNumber,
-                        Protocol = appDto.Protocol
-                    }
-                }
-            };
-
-            return CreatedAtAction(nameof(GetApplications), new { id = registeredApp.Id }, responseDto);
+            var responseDto = await _applicationService.CreateAsync(appDto);
+            return CreatedAtAction(nameof(GetApplication), new { id = responseDto.Id }, responseDto);
         }
         catch (Exception ex)
         {
-            // Log full exception details if possible, or return detailed message for debugging
             return StatusCode(500, new { error = ex.Message, details = ex.InnerException?.Message });
+        }
+    }
+
+    [HttpPut("{id}")]
+    public async Task<IActionResult> PutApplication(Guid id, [FromBody] UpdateApplicationDto updateDto)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest(ModelState);
+        }
+
+        try
+        {
+            var result = await _applicationService.UpdateAsync(id, updateDto);
+            if (!result)
+            {
+                return NotFound();
+            }
+
+            return NoContent();
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 }

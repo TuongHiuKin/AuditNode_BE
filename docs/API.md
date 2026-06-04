@@ -56,6 +56,51 @@ Registers a new server.
 }
 ```
 
+### GET `/api/servers/{id}`
+Retrieves detailed information about a single server by its ID, including hosted applications.
+
+**Response (200 OK):**
+```json
+{
+  "id": "uuid",
+  "datacenterId": "uuid",
+  "datacenterName": "string",
+  "ipAddress": "string",
+  "hostname": "string",
+  "osType": "string",
+  "environment": "string",
+  "status": "string",
+  "applications": [
+    {
+      "id": "uuid",
+      "appCode": "string",
+      "appName": "string",
+      "ownerTeam": "string",
+      "portNumber": 0,
+      "protocol": "string"
+    }
+  ]
+}
+```
+
+### PUT `/api/servers/{id}`
+Updates an existing server's metadata. `IpAddress` is immutable.
+
+**Request Body (`UpdateServerDto`):**
+```json
+{
+  "hostname": "string",
+  "osType": "string",
+  "environment": "string",
+  "status": "string",
+  "datacenterId": "uuid"
+}
+```
+
+**Response:**
+- `204 No Content`: Update successful.
+- `404 Not Found`: Server not found.
+
 ---
 
 ## 2. Applications Endpoints
@@ -104,6 +149,25 @@ Registers or updates an application (Find or Create / Upsert). If the `appCode` 
   "techStack": "string"
 }
 ```
+
+### PUT `/api/applications/{id}`
+Updates an existing application's metadata. The `id` is passed in the URL, and the fields to be updated are provided in the body. `AppCode` is immutable and cannot be updated.
+
+**Request Body (`UpdateApplicationDto`):**
+```json
+{
+  "appName": "string",
+  "ownerTeam": "string",
+  "risk": "string",
+  "icon": "string",
+  "techStack": "string"
+}
+```
+
+**Response:**
+- `204 No Content`: Update successful.
+- `400 Bad Request`: Validation failed.
+- `404 Not Found`: Application with the given ID does not exist.
 
 ---
 

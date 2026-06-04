@@ -100,7 +100,9 @@ For detailed information, please refer to the following:
 
 ## 🚀 Current Progress (June 2026)
 
-- **Backend**: Implemented **Universal Search API** providing unified results across servers (Hostname/IP) and apps (Name/Code) with hosting context.
+- **Backend**: Implemented **Server CRUD Endpoints** (Get/Update) and refactored logic into a dedicated Service layer, fixing frontend data fetching issues.
+- **Application Logic**: Implemented **Application Update API** with secure metadata modification.
+- **Universal Search**: Implemented unified results across servers and apps with hosting context.
 - **Data Integrity**: Enforced `AppCode` UNIQUE constraints and implemented state synchronization across navigation.
 - **API Optimization**: Refactored Datacenter endpoints to return lightweight DTOs for faster frontend dropdown rendering.
 
@@ -115,5 +117,5 @@ For detailed information, please refer to the following:
 
 ---
 
-**Last Updated:** June 3, 2026  
+**Last Updated:** June 4, 2026  
 **Maintainer:** Lead Architect & DevOps Team
