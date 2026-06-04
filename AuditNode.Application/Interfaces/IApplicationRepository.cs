@@ -1,10 +1,12 @@
-using AuditNode.Domain.Entities;
 using AuditNode.Application.DTOs;
+using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Application.Interfaces;
 
 public interface IApplicationRepository
 {
     Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync();
-    Task<Domain.Entities.Application> RegisterApplicationAsync(Domain.Entities.Application application);
+    Task<AppEntity?> GetByIdAsync(Guid id);
+    Task<AppEntity> RegisterApplicationAsync(AppEntity application);
+    Task UpdateAsync(AppEntity application);
 }

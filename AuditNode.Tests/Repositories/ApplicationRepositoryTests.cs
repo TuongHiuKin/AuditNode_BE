@@ -93,6 +93,36 @@ public class ApplicationRepositoryTests
     }
 
     [Fact]
+    public async Task UpdateAsync_ShouldUpdateFields()
+    {
+        // Arrange
+        using var context = GetDbContext();
+        var app = new AppEntity
+        {
+            Id = Guid.NewGuid(),
+            AppCode = "UPDATE_ME",
+            AppName = "Original Name",
+            OwnerTeam = "Original Team",
+            ServerId = Guid.NewGuid()
+        };
+        context.Applications.Add(app);
+        await context.SaveChangesAsync();
+
+        var repository = new ApplicationRepository(context);
+        app.AppName = "Updated Name";
+        app.OwnerTeam = "Updated Team";
+
+        // Act
+        await repository.UpdateAsync(app);
+
+        // Assert
+        var updatedApp = await context.Applications.FindAsync(app.Id);
+        updatedApp.Should().NotBeNull();
+        updatedApp!.AppName.Should().Be("Updated Name");
+        updatedApp!.OwnerTeam.Should().Be("Updated Team");
+    }
+
+    [Fact]
     public async Task RegisterApplicationAsync_ShouldReturnExisting_AndAddPortMapping_WhenAppCodeExists()
     {
         // Arrange

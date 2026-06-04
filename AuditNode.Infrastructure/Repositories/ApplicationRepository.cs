@@ -42,6 +42,20 @@ public class ApplicationRepository : IApplicationRepository
             .ToListAsync();
     }
 
+    public async Task<AppEntity?> GetByIdAsync(Guid id)
+    {
+        return await _dbContext.Applications
+            .Include(a => a.PortMappings)
+                .ThenInclude(pm => pm.Server)
+            .FirstOrDefaultAsync(a => a.Id == id);
+    }
+
+    public async Task UpdateAsync(AppEntity application)
+    {
+        _dbContext.Entry(application).State = EntityState.Modified;
+        await _dbContext.SaveChangesAsync();
+    }
+
     public async Task<AppEntity> RegisterApplicationAsync(AppEntity application)
     {
         using var transaction = await _dbContext.Database.BeginTransactionAsync();

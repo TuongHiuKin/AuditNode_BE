@@ -14,7 +14,7 @@ To maintain data integrity and prevent duplicate infrastructure entries, the sys
 
 ### Clean Architecture Layers
 - **Domain**: Pure POCO entities and enums.
-- **Application**: DTOs, Repository Interfaces, and Validation logic (FluentValidation).
+- **Application**: DTOs, Repository Interfaces, Services (Business Logic), and Validation logic (FluentValidation).
 - **Infrastructure**: Data access implementation via EF Core and PostgreSQL.
 - **API**: ASP.NET Core Controllers and Middleware.
 

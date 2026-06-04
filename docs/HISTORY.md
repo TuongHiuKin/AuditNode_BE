@@ -4,6 +4,40 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 4, 2026 - Feature: Server CRUD Endpoints & Service Refactoring
+**Status:** ✅ Complete
+
+### Changes:
+- **Server Detail API**: Implemented `GET /api/servers/{id}` providing detailed server metadata and its hosted applications, resolving frontend "Fetch Failed" errors in `EditEntityDrawer`.
+- **Server Update API**: Implemented `PUT /api/servers/{id}` with `UpdateServerDto`, allowing updates to `Hostname`, `OsType`, `Environment`, `Status`, and `DatacenterId`.
+- **Audit Integrity**: Enforced immutability for `IpAddress` to prevent topology breaks and maintain auditing consistency.
+- **Service Layer Implementation**: Created `IServerService` and `ServerService` to centralize business logic and mapping, mirroring the `ApplicationService` architecture.
+- **Repository Expansion**: Added `GetByIdAsync` (with eager loading of Datacenter and PortMappings) and `UpdateAsync` to `ServerRepository`.
+- **TDD Verification**: Added 6 new unit tests (`ServerServiceTests` and `ServerRepositoryTests`), achieving 100% pass rate for server CRUD logic.
+
+### Impact:
+- **Frontend Compatibility**: Fixed critical data fetching bug for infrastructure nodes.
+- **Data Governance**: Secure update path for server infrastructure with protection for key identifiers.
+
+---
+
+## 📅 June 4, 2026 - Feature: Application Update API & Service Refactoring
+**Status:** ✅ Complete
+
+### Changes:
+- **Clean Architecture Refactoring**: Introduced `IApplicationService` and `ApplicationService` to encapsulate business logic, decoupling the API layer (`ApplicationsController`) from the data access layer (`IApplicationRepository`).
+- **Update Functionality**: Implemented `PUT /api/applications/{id}` endpoint to allow partial updates of application metadata (`AppName`, `OwnerTeam`, `Risk`, `Icon`, `TechStack`).
+- **Immutability Enforcement**: Ensured `AppCode` remains read-only as the primary business identifier for applications.
+- **Ambiguity Resolution**: Standardized the use of `AppEntity` alias for the `Application` domain entity to resolve naming conflicts with the project namespace.
+- **Repository Expansion**: Extended `IApplicationRepository` with `GetByIdAsync` (with eager loading of port mappings and servers) and `UpdateAsync` methods.
+- **TDD Verification**: Added full test coverage for both the Service layer (`ApplicationServiceTests`) and Repository layer (`ApplicationRepositoryTests`), confirming 100% success across 40 test cases.
+
+### Impact:
+- **Maintainability**: Clearer separation of concerns makes the codebase easier to extend and test.
+- **User Experience**: Frontend can now correctly update application details without recreating the entire record or its mappings.
+
+---
+
 ## 📅 June 3, 2026 - Feature: Universal Search API Refactoring & Optimization
 **Status:** ✅ Complete
 

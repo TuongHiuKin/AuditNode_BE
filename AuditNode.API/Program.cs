@@ -34,6 +34,8 @@ builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
 
 // Register Services
+builder.Services.AddScoped<IApplicationService, AuditNode.Application.Services.ApplicationService>();
+builder.Services.AddScoped<IServerService, AuditNode.Application.Services.ServerService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
 
