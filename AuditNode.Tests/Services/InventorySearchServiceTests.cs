@@ -58,8 +58,8 @@ public class InventorySearchServiceTests
     {
         // Arrange
         var server = new Server { Id = Guid.NewGuid(), Hostname = "Host01", IpAddress = "10.0.0.2", Environment = "Prod", Status = "Active", DatacenterId = Guid.NewGuid() };
-        var app = new AppEntity { Id = Guid.NewGuid(), AppName = "CustomerPortal", AppCode = "CP01", ServerId = server.Id, Server = server };
-        var pm = new PortMapping { Id = Guid.NewGuid(), AppId = app.Id, ServerId = server.Id, PortNumber = 443 };
+        var app = new AppEntity { Id = Guid.NewGuid(), AppName = "CustomerPortal", AppCode = "CP01" };
+        var pm = new PortMapping { Id = Guid.NewGuid(), AppId = app.Id, ServerId = server.Id, PortNumber = 443, Application = app, Server = server };
         
         _context.Servers.Add(server);
         _context.Applications.Add(app);

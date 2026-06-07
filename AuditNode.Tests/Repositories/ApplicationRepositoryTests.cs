@@ -33,8 +33,7 @@ public class ApplicationRepositoryTests
             AppCode = "APP01", 
             AppName = "Test App", 
             OwnerTeam = "Owner1", 
-            Risk = "LOW",
-            ServerId = server.Id 
+            Risk = "LOW"
         };
         var portMapping = new PortMapping 
         { 
@@ -79,8 +78,7 @@ public class ApplicationRepositoryTests
             Id = appId,
             AppCode = "NEWAPP",
             AppName = "New App",
-            OwnerTeam = "Team A",
-            ServerId = Guid.NewGuid()
+            OwnerTeam = "Team A"
         };
 
         // Act
@@ -102,8 +100,7 @@ public class ApplicationRepositoryTests
             Id = Guid.NewGuid(),
             AppCode = "UPDATE_ME",
             AppName = "Original Name",
-            OwnerTeam = "Original Team",
-            ServerId = Guid.NewGuid()
+            OwnerTeam = "Original Team"
         };
         context.Applications.Add(app);
         await context.SaveChangesAsync();
@@ -133,8 +130,7 @@ public class ApplicationRepositoryTests
             Id = Guid.NewGuid(),
             AppCode = "EXISTING",
             AppName = "Existing App",
-            OwnerTeam = "Team B",
-            ServerId = server1Id
+            OwnerTeam = "Team B"
         };
         context.Applications.Add(existingApp);
         await context.SaveChangesAsync();
@@ -146,8 +142,7 @@ public class ApplicationRepositoryTests
             Id = Guid.NewGuid(),
             AppCode = "EXISTING",
             AppName = "Updated App Name",
-            OwnerTeam = "Team B",
-            ServerId = server2Id
+            OwnerTeam = "Team B"
         };
         var newPortMapping = new PortMapping
         {

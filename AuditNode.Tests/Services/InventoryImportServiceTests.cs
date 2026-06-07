@@ -87,8 +87,7 @@ public class InventoryImportServiceTests
             Id = Guid.NewGuid(), 
             AppCode = "APP01", 
             AppName = "Original Name", 
-            OwnerTeam = "Original Team",
-            ServerId = Guid.NewGuid() // Dummy
+            OwnerTeam = "Original Team"
         };
         _context.Applications.Add(existingApp);
         await _context.SaveChangesAsync();

@@ -68,14 +68,8 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Risk).HasColumnName("risk").IsRequired();
             entity.Property(e => e.Icon).HasColumnName("icon");
             entity.Property(e => e.TechStack).HasColumnName("tech_stack");
-            entity.Property(e => e.ServerId).HasColumnName("server_id").IsRequired();
 
             entity.HasIndex(e => e.AppCode).IsUnique();
-
-            entity.HasOne(a => a.Server)
-                .WithMany(s => s.Applications)
-                .HasForeignKey(a => a.ServerId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // PortMapping

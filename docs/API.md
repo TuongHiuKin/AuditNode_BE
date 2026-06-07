@@ -133,7 +133,7 @@ Retrieves all registered applications with their associated servers.
 ```
 
 ### POST `/api/applications`
-Registers or updates an application (Find or Create / Upsert). If the `appCode` already exists, the application metadata is updated and a new `PortMapping` is created for the specified `serverId`.
+Registers or updates an application (Find or Create / Upsert). Applications are now created independently of servers.
 
 **Request Body:**
 ```json
@@ -141,9 +141,6 @@ Registers or updates an application (Find or Create / Upsert). If the `appCode` 
   "appCode": "string",
   "appName": "string",
   "ownerTeam": "string",
-  "serverId": "uuid",
-  "portNumber": 0,
-  "protocol": "string",
   "risk": "string",
   "icon": "string",
   "techStack": "string"
