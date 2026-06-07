@@ -21,23 +21,26 @@ public class DependencyService : IDependencyService
         var existingDependencies = await _dbContext.AppDependencies.ToListAsync();
 
         // 2. Calculate connectionsToDelete: Existing records that do NOT exist in the incoming DTO payload
-        // Match by SourceAppId & DestAppId
+        // Match by SourceAppId, DestAppId & DestPortId
         var connectionsToDelete = existingDependencies
             .Where(existing => !dto.Dependencies.Any(incoming => 
                 incoming.SourceAppId == existing.SourceAppId && 
-                incoming.DestAppId == existing.DestAppId))
+                incoming.DestAppId == existing.DestAppId &&
+                incoming.DestPortId == existing.DestPortId))
             .ToList();
 
         // 3. Calculate connectionsToInsert: Incoming payload items that do NOT exist in the database
         var connectionsToInsert = dto.Dependencies
             .Where(incoming => !existingDependencies.Any(existing => 
                 existing.SourceAppId == incoming.SourceAppId && 
-                existing.DestAppId == incoming.DestAppId))
+                existing.DestAppId == incoming.DestAppId &&
+                existing.DestPortId == incoming.DestPortId))
             .Select(incoming => new AppDependency
             {
                 Id = Guid.NewGuid(),
                 SourceAppId = incoming.SourceAppId,
                 DestAppId = incoming.DestAppId,
+                DestPortId = incoming.DestPortId,
                 ConnectionType = "Automatic", // Default connection type
                 CreatedAt = DateTime.UtcNow
             })
