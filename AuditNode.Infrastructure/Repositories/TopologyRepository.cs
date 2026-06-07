@@ -46,6 +46,7 @@ public class TopologyRepository : ITopologyRepository
                 {
                     Id = pm.Application!.Id,
                     Name = pm.Application.AppName,
+                    PortMappingId = pm.Id,
                     Port = pm.PortNumber,
                     Protocol = pm.Protocol
                 }).ToList()
@@ -92,6 +93,7 @@ public class TopologyRepository : ITopologyRepository
                 {
                     Id = pm.Application!.Id,
                     Name = pm.Application.AppName,
+                    PortMappingId = pm.Id,
                     Port = pm.PortNumber,
                     Protocol = pm.Protocol
                 }).ToList()
