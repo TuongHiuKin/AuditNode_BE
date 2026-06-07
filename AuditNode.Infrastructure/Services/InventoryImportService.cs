@@ -177,14 +177,12 @@ public class InventoryImportService : IInventoryImportService
             {
                 if (!currentApps.TryGetValue(da.AppCode, out var application))
                 {
-                    var server = currentServers[da.Ip];
                     application = new Domain.Entities.Application
                     {
                         Id = Guid.NewGuid(),
                         AppCode = da.AppCode,
                         AppName = da.AppName,
                         OwnerTeam = da.OwnerTeam,
-                        ServerId = server.Id,
                         Risk = "Medium"
                     };
                     _context.Applications.Add(application);
@@ -194,7 +192,6 @@ public class InventoryImportService : IInventoryImportService
                 {
                     // If App exists, ensure it's attached to the Context before modifying
                     _context.Attach(application); 
-                    application.ServerId = currentServers[da.Ip].Id;
                 }
             }
             await _context.SaveChangesAsync(); // Persist applications

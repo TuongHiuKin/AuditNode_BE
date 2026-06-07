@@ -55,20 +55,8 @@ public class ApplicationService : IApplicationService
             OwnerTeam = appDto.OwnerTeam,
             Risk = string.IsNullOrWhiteSpace(appDto.Risk) ? "LOW" : appDto.Risk,
             Icon = appDto.Icon ?? string.Empty,
-            TechStack = appDto.TechStack ?? string.Empty,
-            ServerId = appDto.ServerId
+            TechStack = appDto.TechStack ?? string.Empty
         };
-
-        var portMapping = new PortMapping
-        {
-            Id = Guid.NewGuid(),
-            AppId = appId,
-            ServerId = appDto.ServerId,
-            PortNumber = appDto.PortNumber,
-            Protocol = appDto.Protocol
-        };
-
-        application.PortMappings.Add(portMapping);
 
         var registeredApp = await _repository.RegisterApplicationAsync(application);
 
@@ -81,15 +69,7 @@ public class ApplicationService : IApplicationService
             Risk = registeredApp.Risk,
             Icon = registeredApp.Icon,
             TechStack = registeredApp.TechStack,
-            Servers = new List<ServerOnApplicationDto>
-            {
-                new ServerOnApplicationDto
-                {
-                    Id = appDto.ServerId,
-                    PortNumber = appDto.PortNumber,
-                    Protocol = appDto.Protocol
-                }
-            }
+            Servers = new List<ServerOnApplicationDto>()
         };
     }
 

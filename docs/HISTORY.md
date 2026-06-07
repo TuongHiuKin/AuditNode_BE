@@ -4,6 +4,30 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 7, 2026 - Feature: Application-Server Relationship Normalization (Many-to-Many)
+**Status:** ✅ Complete
+
+### Changes:
+- **Schema Alignment**: Removed the redundant `server_id` column from the `applications` table, fully normalizing the database to use the `port_mappings` junction table for all server-application relationships.
+- **Domain Refactoring**: 
+    - Updated `Application` entity: Removed `ServerId` and the direct `Server` navigation property.
+    - Updated `Server` entity: Removed the direct `Applications` collection.
+- **API & DTO Cleanup**: 
+    - `CreateApplicationDto`: Removed `ServerId`, `PortNumber`, and `Protocol`. Application creation is now independent of server infrastructure.
+    - `ApplicationService`: Refactored `CreateAsync` to register applications without an initial server binding, supporting the new normalized workflow.
+    - `Validators`: Updated `CreateApplicationDtoValidator` to remove mandatory server-related fields.
+- **Service Layer Optimization**: 
+    - `InventoryImportService`: Refactored the bulk import engine to decouple application upserts from server assignments, while still creating the correct `PortMapping` entries in the final step.
+    - `InventorySearchService`: Updated the universal search query to retrieve hosting context via `PortMappings.ThenInclude(Server)` instead of the old direct join.
+- **TDD Verification**: Updated 12+ test cases across `ApplicationRepositoryTests`, `TopologyRepositoryTests`, `InventoryImportServiceTests`, and `InventorySearchServiceTests`. All 46 project tests are passing.
+
+### Impact:
+- **Data Integrity**: Eliminates the risk of "orphaned" server references in the applications table.
+- **Architecture**: Enforces a strictly many-to-many relationship, allowing an application to be cleanly hosted on zero, one, or many servers with distinct ports/protocols.
+- **Flexibility**: Enables a more modular "Register App first, Map to Infrastructure later" workflow in the UI.
+
+---
+
 ## 📅 June 4, 2026 - Feature: Server CRUD Endpoints & Service Refactoring
 **Status:** ✅ Complete
 

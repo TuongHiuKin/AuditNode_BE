@@ -112,3 +112,43 @@ await transaction.CommitAsync();
 - Updated `API.md` with endpoints and sample response.
 - Updated `HISTORY.md` with implementation summary.
 - Updated `README.md` (via standard documentation sync).
+
+---
+
+# Prompt Archive: Application-Server Many-to-Many Refactoring
+
+**Date:** June 7, 2026
+**Status:** Success ✅
+
+## 1. Requirement Summary
+Align C# code with database schema change (dropped `server_id` from `applications`) to enforce proper many-to-many data normalization via the `port_mappings` junction table.
+
+## 2. Core Implementation Strategy
+### Backend Logic:
+- **Entity Cleanup**: Removed `ServerId` and `Server` property from `Application.cs`. Removed `Applications` from `Server.cs`.
+- **DbContext Configuration**: Updated `AuditDbContext.cs` to remove the direct ForeignKey mapping for `Application.Server`.
+- **DTO & Input Refactoring**: Removed `ServerId`, `PortNumber`, and `Protocol` from `CreateApplicationDto.cs` to allow independent application registration.
+- **Query Refactoring (LINQ)**:
+    - Updated `ApplicationService.CreateAsync` to register apps without immediate server binding.
+    - Updated `InventorySearchService.cs` to use `.Include(a => a.PortMappings).ThenInclude(pm => pm.Server)` for retrieving hosting details.
+    - Updated `InventoryImportService.cs` to decouple app upserts from server assignments.
+- **Service Layer Implementation**: Standardized the use of nested double-includes for relational loading.
+
+## 3. Key Code Structures
+```csharp
+// Refactored Search Logic Projection
+Subtitle = $"On Server: {(a.PortMappings.OrderBy(pm => pm.PortNumber).Select(pm => pm.Server.Hostname).FirstOrDefault() ?? "Unknown")} (Port: {(a.PortMappings.OrderBy(p => p.PortNumber).Select(p => p.PortNumber.ToString()).FirstOrDefault() ?? "N/A")})"
+```
+
+## 4. Verification (TDD)
+- **Updated Test Suites**:
+    - `ApplicationRepositoryTests.cs`: Verified app registration and retrieval without `ServerId`.
+    - `InventoryImportServiceTests.cs`: Verified bulk import still correctly creates mappings.
+    - `InventorySearchServiceTests.cs`: Verified search results correctly display hosting context via junction table.
+- **Test Results**: All 46 tests passed successfully.
+
+## 5. Documentation
+- Updated `API.md` for independent application registration.
+- Updated `HISTORY.md` with normalization milestone.
+- Updated `PROMPT_HISTORY.md` (Self-referential log).
+
