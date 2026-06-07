@@ -28,6 +28,23 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 7, 2026 - Feature: Declarative State Synchronization for Dependencies
+**Status:** ✅ Complete
+
+### Changes:
+- **Delta Sync API**: Implemented `PUT /api/dependencies/sync` to synchronize application dependencies based on a full canvas state.
+- **Repository Pattern Implementation**: Created `IDependencyRepository` and `DependencyRepository` to handle complex database interactions, including delta calculation and transaction management.
+- **Service Layer Implementation**: Created `IDependencyService` and `DependencyService` to coordinate the synchronization workflow.
+- **Delta Diffing Logic**: Developed efficient LINQ logic to calculate `toDelete` (existing - incoming) and `toInsert` (incoming - existing) sets, minimizing database operations.
+- **Atomic Operations**: Wrapped the entire synchronization process in a single database transaction to ensure state consistency.
+- **TDD Verification**: Added `DependencyRepositoryTests.cs` verifying insertion, deletion, and idempotency of the sync logic.
+
+### Impact:
+- **UI/UX Consistency**: Allows the frontend to save the entire state of the dependency graph in a single call, ensuring the backend always matches the user's canvas.
+- **Performance**: Optimized sync process by only performing necessary database modifications (inserts/deletes).
+
+---
+
 ## 📅 June 4, 2026 - Feature: Server CRUD Endpoints & Service Refactoring
 **Status:** ✅ Complete
 

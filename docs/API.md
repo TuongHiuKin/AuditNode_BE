@@ -235,7 +235,34 @@ Retrieves application dependency data for graph visualization (React Flow).
 
 ---
 
-## 5. Inventory Import Endpoints
+## 5. Dependencies Endpoints
+
+### PUT `/api/dependencies/sync`
+Synchronizes the entire dependency state between applications. Performs a delta diff (insert/delete) to match the provided payload.
+
+**Request Body:**
+```json
+{
+  "dependencies": [
+    {
+      "sourceAppId": "uuid",
+      "destAppId": "uuid",
+      "connectionType": "string"
+    }
+  ]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Dependencies synchronized successfully."
+}
+```
+
+---
+
+## 6. Inventory Import Endpoints
 
 ### GET `/api/inventory/import-template`
 Downloads an Excel (.xlsx) template pre-configured for bulk inventory import. Includes data validation (dropdowns) for Environment and Protocol fields.

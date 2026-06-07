@@ -32,10 +32,12 @@ builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
+builder.Services.AddScoped<IDependencyRepository, DependencyRepository>();
 
 // Register Services
 builder.Services.AddScoped<IApplicationService, AuditNode.Application.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Application.Services.ServerService>();
+builder.Services.AddScoped<IDependencyService, AuditNode.Application.Services.DependencyService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
 
