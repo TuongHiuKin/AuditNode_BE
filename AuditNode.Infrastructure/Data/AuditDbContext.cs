@@ -102,7 +102,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.SourceAppId).HasColumnName("source_app_id").IsRequired();
             entity.Property(e => e.DestAppId).HasColumnName("dest_app_id").IsRequired();
-            entity.Property(e => e.DestPortId).HasColumnName("dest_port_id");
+            entity.Property(e => e.DestPortId).HasColumnName("dest_port_id").IsRequired();
             entity.Property(e => e.ConnectionType).HasColumnName("connection_type").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
 

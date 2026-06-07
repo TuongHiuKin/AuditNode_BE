@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
 using Xunit;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AuditNode.Tests.Services;
 
@@ -25,15 +26,16 @@ public class DependencyServiceTests
     {
         // Arrange
         var dbContext = GetDbContext();
-        var service = new DependencyService(dbContext);
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
         var sourceId = Guid.NewGuid();
         var destId = Guid.NewGuid();
+        var portId = Guid.NewGuid();
 
         var dto = new SyncDependenciesDto
         {
             Dependencies = new List<DependencyItemDto>
             {
-                new DependencyItemDto { SourceAppId = sourceId, DestAppId = destId }
+                new DependencyItemDto { SourceAppId = sourceId, DestAppId = destId, DestPortId = portId }
             }
         };
 
@@ -45,6 +47,7 @@ public class DependencyServiceTests
         result.Should().HaveCount(1);
         result[0].SourceAppId.Should().Be(sourceId);
         result[0].DestAppId.Should().Be(destId);
+        result[0].DestPortId.Should().Be(portId);
     }
 
     [Fact]
@@ -54,18 +57,20 @@ public class DependencyServiceTests
         var dbContext = GetDbContext();
         var sourceId = Guid.NewGuid();
         var destId = Guid.NewGuid();
+        var portId = Guid.NewGuid();
         
         var existing = new AppDependency
         {
             Id = Guid.NewGuid(),
             SourceAppId = sourceId,
             DestAppId = destId,
+            DestPortId = portId,
             ConnectionType = "Automatic"
         };
         dbContext.AppDependencies.Add(existing);
         await dbContext.SaveChangesAsync();
 
-        var service = new DependencyService(dbContext);
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
         var dto = new SyncDependenciesDto { Dependencies = new List<DependencyItemDto>() }; // Empty list means delete all
 
         // Act
@@ -84,24 +89,27 @@ public class DependencyServiceTests
         var appA = Guid.NewGuid();
         var appB = Guid.NewGuid();
         var appC = Guid.NewGuid();
+        var portB = Guid.NewGuid();
+        var portC = Guid.NewGuid();
 
-        // Existing: A -> B
+        // Existing: A -> B (portB)
         dbContext.AppDependencies.Add(new AppDependency
         {
             Id = Guid.NewGuid(),
             SourceAppId = appA,
             DestAppId = appB,
+            DestPortId = portB,
             ConnectionType = "Automatic"
         });
         await dbContext.SaveChangesAsync();
 
-        var service = new DependencyService(dbContext);
-        // Sync to: B -> C (Delete A -> B, Insert B -> C)
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
+        // Sync to: B -> C (portC) (Delete A -> B, Insert B -> C)
         var dto = new SyncDependenciesDto
         {
             Dependencies = new List<DependencyItemDto>
             {
-                new DependencyItemDto { SourceAppId = appB, DestAppId = appC }
+                new DependencyItemDto { SourceAppId = appB, DestAppId = appC, DestPortId = portC }
             }
         };
 
@@ -111,7 +119,47 @@ public class DependencyServiceTests
         // Assert
         var result = await dbContext.AppDependencies.ToListAsync();
         result.Should().HaveCount(1);
-        result.Should().Contain(d => d.SourceAppId == appB && d.DestAppId == appC);
+        result.Should().Contain(d => d.SourceAppId == appB && d.DestAppId == appC && d.DestPortId == portC);
         result.Should().NotContain(d => d.SourceAppId == appA && d.DestAppId == appB);
+    }
+
+    [Fact]
+    public async Task SyncDependenciesAsync_ShouldUpdatePortIfChanged()
+    {
+        // Arrange
+        var dbContext = GetDbContext();
+        var appA = Guid.NewGuid();
+        var appB = Guid.NewGuid();
+        var port1 = Guid.NewGuid();
+        var port2 = Guid.NewGuid();
+
+        // Existing: A -> B (port1)
+        dbContext.AppDependencies.Add(new AppDependency
+        {
+            Id = Guid.NewGuid(),
+            SourceAppId = appA,
+            DestAppId = appB,
+            DestPortId = port1,
+            ConnectionType = "Automatic"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
+        // Sync to: A -> B (port2)
+        var dto = new SyncDependenciesDto
+        {
+            Dependencies = new List<DependencyItemDto>
+            {
+                new DependencyItemDto { SourceAppId = appA, DestAppId = appB, DestPortId = port2 }
+            }
+        };
+
+        // Act
+        await service.SyncDependenciesAsync(dto);
+
+        // Assert
+        var result = await dbContext.AppDependencies.ToListAsync();
+        result.Should().HaveCount(1);
+        result[0].DestPortId.Should().Be(port2);
     }
 }

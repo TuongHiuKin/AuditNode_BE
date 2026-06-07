@@ -20,6 +20,7 @@ public class ApplicationNodeDto
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;
+    public Guid PortMappingId { get; set; }
     public int Port { get; set; }
     public string Protocol { get; set; } = string.Empty;
 }

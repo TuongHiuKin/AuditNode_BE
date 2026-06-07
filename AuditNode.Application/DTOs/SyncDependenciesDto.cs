@@ -12,4 +12,5 @@ public class DependencyItemDto
 {
     public Guid SourceAppId { get; set; }
     public Guid DestAppId { get; set; }
+    public Guid DestPortId { get; set; }
 }
