@@ -40,8 +40,9 @@ Logical connections between applications.
 - `id` (UUID, PK)
 - `source_app_id` (FK → applications.id)
 - `dest_app_id` (FK → applications.id)
-- `dest_port_id` (FK → port_mappings.id)
+- `dest_port_id` (FK → port_mappings.id, OPTIONAL)
 - `connection_type` (VARCHAR)
+- `created_at` (TIMESTAMP)
 
 ---
 

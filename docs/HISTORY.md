@@ -4,6 +4,27 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 7, 2026 - Feature: Declarative Dependency Synchronization (Delta Diffing)
+**Status:** ✅ Complete
+
+### Changes:
+- **Declarative Sync API**: Implemented `PUT /api/dependencies/sync` to allow the frontend to send a full state of dependencies.
+- **Delta Diffing Engine**: Developed a high-performance sync logic in `DependencyService` that calculates:
+    - **Insertions**: New connections found in payload but missing from DB.
+    - **Deletions**: Existing connections in DB but missing from the new payload.
+- **Transactional Integrity**: All sync operations are wrapped in a single database transaction to ensure atomic updates.
+- **Schema Alignment**: 
+    - Added `created_at` column to `app_dependencies`.
+    - Updated `dest_port_id` to be optional (nullable) to support early-stage topology mapping.
+- **Architectural Compliance**: Placed the service implementation in the `Infrastructure` layer to manage transactions effectively while keeping the interface in `Application`.
+- **TDD Verification**: Added `DependencyServiceTests.cs` covering insertion, deletion, and mixed delta scenarios. All 49 project tests are passing.
+
+### Impact:
+- **Frontend Sync**: Simplifies graph state management in React Flow by allowing "Fire and Forget" synchronization of the entire canvas.
+- **Performance**: Minimizes database roundtrips by using batch operations within a single transaction.
+
+---
+
 ## 📅 June 7, 2026 - Feature: Application-Server Relationship Normalization (Many-to-Many)
 **Status:** ✅ Complete
 

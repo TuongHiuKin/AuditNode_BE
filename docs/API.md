@@ -196,7 +196,33 @@ Registers a new datacenter.
 
 ---
 
-## 4. Analytics Endpoints
+## 4. Dependencies Endpoints
+
+### PUT `/api/dependencies/sync`
+Declarative state synchronization for application dependencies. Calculates the delta (insertions/deletions) based on the provided list of edges.
+
+**Request Body (`SyncDependenciesDto`):**
+```json
+{
+  "dependencies": [
+    {
+      "sourceAppId": "uuid",
+      "destAppId": "uuid"
+    }
+  ]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Dependencies synchronized successfully."
+}
+```
+
+---
+
+## 5. Analytics Endpoints
 ### GET `/api/analytics/topology`
 Retrieves topology data for tree view visualization. Joins servers, port mappings, and applications.
 
