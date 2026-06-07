@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
 using Xunit;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AuditNode.Tests.Services;
 
@@ -25,7 +26,7 @@ public class DependencyServiceTests
     {
         // Arrange
         var dbContext = GetDbContext();
-        var service = new DependencyService(dbContext);
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
         var sourceId = Guid.NewGuid();
         var destId = Guid.NewGuid();
         var portId = Guid.NewGuid();
@@ -69,7 +70,7 @@ public class DependencyServiceTests
         dbContext.AppDependencies.Add(existing);
         await dbContext.SaveChangesAsync();
 
-        var service = new DependencyService(dbContext);
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
         var dto = new SyncDependenciesDto { Dependencies = new List<DependencyItemDto>() }; // Empty list means delete all
 
         // Act
@@ -102,7 +103,7 @@ public class DependencyServiceTests
         });
         await dbContext.SaveChangesAsync();
 
-        var service = new DependencyService(dbContext);
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
         // Sync to: B -> C (portC) (Delete A -> B, Insert B -> C)
         var dto = new SyncDependenciesDto
         {
@@ -143,7 +144,7 @@ public class DependencyServiceTests
         });
         await dbContext.SaveChangesAsync();
 
-        var service = new DependencyService(dbContext);
+        var service = new DependencyService(dbContext, NullLogger<DependencyService>.Instance);
         // Sync to: A -> B (port2)
         var dto = new SyncDependenciesDto
         {
