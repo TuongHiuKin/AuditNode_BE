@@ -115,7 +115,57 @@ await transaction.CommitAsync();
 
 ---
 
-# Prompt Archive: Application-Server Many-to-Many Refactoring
+# Prompt Archive: Infrastructure Endpoints (Migration & Safe Purge)
+
+**Date:** June 8, 2026
+**Status:** Success ✅
+
+## 1. Requirement Summary
+Implement infrastructure management endpoints for application lifecycle.
+- **Feature 1**: `GET /api/infrastructure/apps/{id}/dependencies-count` – Pre-check for inbound/outbound dependencies.
+- **Feature 2**: `PUT /api/infrastructure/apps/migrate` – Update application server/port binding.
+- **Feature 3**: `DELETE /api/infrastructure/apps/{id}/purge` – Transactional cascading hard delete.
+- **Architecture**: Clean Architecture, explicit `IDbContextTransaction`, logic bug fix for inbound connection counting.
+
+## 2. Core Implementation Strategy
+### Backend Logic:
+- **Dependency Counting (Fixed)**: 
+    - Fetches all `PortMappingIds` for the application.
+    - Counts `AppDependencies` where the app is `SourceAppId` OR `DestAppId` OR `DestPortId` is in the mapping list. This ensures full coverage of inbound/outbound connections.
+- **Migration Logic**:
+    - Updates `ServerId` and `PortNumber` in the `PortMapping` entity.
+    - Wrapped in an `IDbContextTransaction` to ensure atomicity.
+- **Safe Purge (Cascading)**:
+    - Executed in a strict sequential order to satisfy PostgreSQL FK constraints:
+        1. Delete `AppDependencies` (both inbound and outbound).
+        2. Delete `PortMappings`.
+        3. Delete root `Application`.
+    - Entire operation is transactional with logging and rollback guards.
+- **Service Layer**: Implemented in `AuditNode.Infrastructure` to access `AuditDbContext` and handle transactions, with the interface in `AuditNode.Application`.
+
+## 3. Key Code Structures
+```csharp
+// Purge Logic - Sequential Deletion
+using var transaction = await _context.Database.BeginTransactionAsync();
+// 1. Dependencies
+_context.AppDependencies.RemoveRange(dependenciesToDelete);
+// 2. Port Mappings
+_context.PortMappings.RemoveRange(portMappingsToDelete);
+// 3. Application
+_context.Applications.Remove(appToDelete);
+await transaction.CommitAsync();
+```
+
+## 4. Verification (TDD)
+- **InfrastructureServiceTests.cs**:
+  - `GetDependenciesCountAsync_ShouldCountBothInboundAndOutbound`: Verified the fixed counting logic.
+  - `MigrateAppAsync_ShouldUpdatePortMapping`: Verified transactional update.
+  - `PurgeAppAsync_ShouldDeleteApplicationAndDependencies`: Verified full cascading deletion and referential integrity.
+
+## 5. Documentation
+- Updated `API.md` with new infrastructure endpoints.
+- Updated `HISTORY.md` with implementation milestone.
+- Updated `DATABASE.md` with cascading purge logic details.
 
 **Date:** June 7, 2026
 **Status:** Success ✅

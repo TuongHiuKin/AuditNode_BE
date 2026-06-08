@@ -325,7 +325,48 @@ Performs a case-insensitive unified search across Servers (Hostname, IP) and App
 
 ---
 
-## 7. Error Handling
+## 8. Infrastructure Endpoints
+
+### GET `/api/infrastructure/apps/{id}/dependencies-count`
+Retrieves the total count of inbound and outbound dependencies for a specific application. Useful for pre-check before deletion or migration.
+
+**Response (200 OK):**
+```json
+5
+```
+
+### PUT `/api/infrastructure/apps/migrate`
+Updates a port mapping, effectively migrating an application to a new target server or updating its port.
+
+**Request Body (`MigrateAppDto`):**
+```json
+{
+  "portMappingId": "uuid",
+  "targetServerId": "uuid",
+  "newPortNumber": 8080
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "message": "Migration successful"
+}
+```
+
+### DELETE `/api/infrastructure/apps/{id}/purge`
+Performs a safe, cascading hard delete of an application and all its associated dependencies and port mappings.
+
+**Response (200 OK):**
+```json
+{
+  "message": "Application and dependencies purged successfully"
+}
+```
+
+---
+
+## 9. Error Handling
 Errors follow a consistent format:
 ```json
 {

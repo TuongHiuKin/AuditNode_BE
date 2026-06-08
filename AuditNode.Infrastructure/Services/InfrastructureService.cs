@@ -1,0 +1,139 @@
+using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
+using AuditNode.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace AuditNode.Infrastructure.Services;
+
+public class InfrastructureService : IInfrastructureService
+{
+    private readonly AuditDbContext _context;
+    private readonly ILogger<InfrastructureService> _logger;
+
+    public InfrastructureService(AuditDbContext context, ILogger<InfrastructureService> logger)
+    {
+        _context = context;
+        _logger = logger;
+    }
+
+    public async Task<int> GetDependenciesCountAsync(Guid appId)
+    {
+        _logger.LogInformation("Checking dependency count for application {AppId}", appId);
+
+        // 1. Get all port mapping IDs for this specific app
+        var portMappingIds = await _context.PortMappings
+            .Where(pm => pm.AppId == appId)
+            .Select(pm => pm.Id)
+            .ToListAsync();
+
+        // 2. Count connections where this app is either the caller (Source) OR the receiver (Inbound)
+        var count = await _context.AppDependencies
+            .CountAsync(ad => ad.SourceAppId == appId || 
+                             ad.DestAppId == appId || 
+                             portMappingIds.Contains(ad.DestPortId));
+
+        return count;
+    }
+
+    public async Task<bool> MigrateAppAsync(MigrateAppDto migrateDto)
+    {
+        _logger.LogInformation("Starting migration for PortMapping {PortMappingId} to Server {TargetServerId} with Port {NewPort}", 
+            migrateDto.PortMappingId, migrateDto.TargetServerId, migrateDto.NewPortNumber);
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var portMapping = await _context.PortMappings
+                .FirstOrDefaultAsync(pm => pm.Id == migrateDto.PortMappingId);
+
+            if (portMapping == null)
+            {
+                _logger.LogWarning("PortMapping {PortMappingId} not found", migrateDto.PortMappingId);
+                return false;
+            }
+
+            portMapping.ServerId = migrateDto.TargetServerId;
+            portMapping.PortNumber = migrateDto.NewPortNumber;
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            _logger.LogInformation("Successfully migrated PortMapping {PortMappingId}", migrateDto.PortMappingId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during migration for PortMapping {PortMappingId}. Rolling back.", migrateDto.PortMappingId);
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
+    public async Task<bool> PurgeAppAsync(Guid appId)
+    {
+        _logger.LogInformation("Starting cascading purge for application {AppId}", appId);
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            // 0. Pre-fetch port mapping IDs for the app
+            var portMappingIds = await _context.PortMappings
+                .Where(pm => pm.AppId == appId)
+                .Select(pm => pm.Id)
+                .ToListAsync();
+
+            // 1. Delete all records from app_dependencies where app is SOURCE or DESTINATION
+            var dependenciesToDelete = await _context.AppDependencies
+                .Where(ad => ad.SourceAppId == appId || 
+                             ad.DestAppId == appId || 
+                             portMappingIds.Contains(ad.DestPortId))
+                .ToListAsync();
+            
+            if (dependenciesToDelete.Any())
+            {
+                _context.AppDependencies.RemoveRange(dependenciesToDelete);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Deleted {Count} dependencies for application {AppId}", dependenciesToDelete.Count, appId);
+            }
+
+            // 2. Delete all rows from port_mappings where app_id == id
+            var portMappingsToDelete = await _context.PortMappings
+                .Where(pm => pm.AppId == appId)
+                .ToListAsync();
+
+            if (portMappingsToDelete.Any())
+            {
+                _context.PortMappings.RemoveRange(portMappingsToDelete);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Deleted {Count} port mappings for application {AppId}", portMappingsToDelete.Count, appId);
+            }
+
+            // 3. Delete the root record from applications where id == id
+            var appToDelete = await _context.Applications.FindAsync(appId);
+            if (appToDelete != null)
+            {
+                _context.Applications.Remove(appToDelete);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Deleted root application {AppId}", appId);
+            }
+            else
+            {
+                _logger.LogWarning("Application {AppId} not found during purge", appId);
+                await transaction.RollbackAsync();
+                return false;
+            }
+
+            // 4. Commit transaction safely
+            await transaction.CommitAsync();
+            _logger.LogInformation("Successfully purged application {AppId} and all its connections", appId);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Critical error during cascading purge of application {AppId}. Rolling back.", appId);
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+}

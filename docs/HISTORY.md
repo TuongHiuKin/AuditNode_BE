@@ -4,6 +4,25 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 8, 2026 - Feature: Infrastructure Endpoints (Migration & Safe Purge)
+**Status:** ✅ Complete
+
+### Changes:
+- **Infrastructure Service**: Implemented `InfrastructureService` in the `Infrastructure` layer to handle low-level database operations and complex transactions.
+- **Dependency Pre-check API**: Created `GET /api/infrastructure/apps/{id}/dependencies-count` to calculate the total connection impact (Inbound + Outbound) before any destructive action.
+- **Safe Migration API**: Implemented `PUT /api/infrastructure/apps/migrate` to allow updating port mappings (Server/Port) within an explicit database transaction.
+- **Cascading Purge API**: Developed `DELETE /api/infrastructure/apps/{id}/purge` for hard deletion.
+    - **Critical Safety**: Enforces a strict sequential deletion order (Dependencies -> PortMappings -> Root App) within an `IDbContextTransaction` to prevent PostgreSQL FK violations.
+- **Logic Bug Fix**: Corrected the dependency counting logic to explicitly include inbound connections by checking both `DestAppId` and `DestPortId` (via the application's port mappings).
+- **TDD Verification**: Added `InfrastructureServiceTests.cs` covering dependency counting (inbound/outbound), successful migration, and transactional cascading purge. All project tests are passing.
+- **Documentation**: Updated `API.md` with new endpoints and documented the purge logic in `DATABASE.md`.
+
+### Impact:
+- **System Stability**: Prevents database orphans and foreign key errors during application decommissioning.
+- **User Safety**: Provides clear visibility into the impact of deletions through the pre-check API.
+
+---
+
 ## 📅 June 7, 2026 - Feature: Declarative Dependency Synchronization (Delta Diffing)
 **Status:** ✅ Complete
 
