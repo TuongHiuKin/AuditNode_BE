@@ -39,6 +39,7 @@ builder.Services.AddScoped<IServerService, AuditNode.Application.Services.Server
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
+builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Services.InfrastructureService>();
 
 // Register FluentValidation
 builder.Services.AddFluentValidationAutoValidation();

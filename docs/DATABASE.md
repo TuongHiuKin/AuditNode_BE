@@ -79,4 +79,12 @@ All entity relationships and view mappings are configured in `AuditDbContext.OnM
 - **Fluent API**: Preferred over Data Annotations for complex mapping.
 - **Keyless Entities**: `TopologyView` and `DependencyView` are mapped using `.HasNoKey().ToView()`.
 - **Snake Case Mapping**: Explicitly mapped via `.HasColumnName("snake_case")` in `OnModelCreating`.
-- **Cascading Deletes**: Configured for `PortMapping` and `AppDependency` relationships to maintain referential integrity.
+---
+
+## 4. Cascading Purge Logic (Transactional Hard Delete)
+To maintain referential integrity in PostgreSQL (Error 23503 prevention), the system implements a strict sequential deletion order when purging an application:
+1. **`app_dependencies`**: Removes all connections where the application is either a `Source` or a `Destination` (matched via `DestAppId` or its entries in `port_mappings.id`).
+2. **`port_mappings`**: Removes all infrastructure bindings for the application.
+3. **`applications`**: Removes the root record.
+
+All steps are wrapped in an `IDbContextTransaction` to ensure that partial deletions do not leave orphan records.
