@@ -148,7 +148,7 @@ Registers or updates an application (Find or Create / Upsert). Applications are 
 ```
 
 ### PUT `/api/applications/{id}`
-Updates an existing application's metadata. The `id` is passed in the URL, and the fields to be updated are provided in the body. `AppCode` is immutable and cannot be updated.
+Updates an existing application's metadata and its network residency (server and port). The `id` is passed in the URL, and the fields to be updated are provided in the body. `AppCode` is immutable and cannot be updated.
 
 **Request Body (`UpdateApplicationDto`):**
 ```json
@@ -157,7 +157,9 @@ Updates an existing application's metadata. The `id` is passed in the URL, and t
   "ownerTeam": "string",
   "risk": "string",
   "icon": "string",
-  "techStack": "string"
+  "techStack": "string",
+  "serverId": "uuid",
+  "portNumber": 8080
 }
 ```
 

@@ -10,10 +10,12 @@ namespace AuditNode.API.Controllers;
 public class ApplicationsController : ControllerBase
 {
     private readonly IApplicationService _applicationService;
+    private readonly ILogger<ApplicationsController> _logger;
 
-    public ApplicationsController(IApplicationService applicationService)
+    public ApplicationsController(IApplicationService applicationService, ILogger<ApplicationsController> logger)
     {
         _applicationService = applicationService;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -63,6 +65,12 @@ public class ApplicationsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> PutApplication(Guid id, [FromBody] UpdateApplicationDto updateDto)
     {
+        _logger.LogInformation("=== HTTP PUT APPLICATION TRACE ===");
+        _logger.LogInformation("Incoming App ID: {Id}", id);
+        _logger.LogInformation("Incoming Server ID: {ServerId}", updateDto.TargetServerId);
+        _logger.LogInformation("Incoming Port Number: {Port}", updateDto.PortNumber);
+        _logger.LogInformation("==================================");
+
         if (!ModelState.IsValid)
         {
             return BadRequest(ModelState);

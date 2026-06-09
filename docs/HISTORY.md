@@ -4,6 +4,30 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 9, 2026 - Bug Fix: Application Update Logic & Server Pre-check API
+**Status:** ✅ Complete
+
+### Changes:
+- **Application Update Hardening**: 
+    - Fixed a critical bug where network residency changes (Server/Port) were being ignored during application updates.
+    - Implemented a transactional update path in `ApplicationRepository.UpdateApplicationWithNetworkAsync` that handles both metadata and port mappings.
+    - **Flexible Logic**: Refactored the update logic to independently check and apply changes to `ServerId` and `PortNumber`, ensuring EF Core tracks modifications correctly even if only one field changes.
+    - **JSON Binding Fix**: Resolved a model binding failure by explicitly mapping frontend `serverId` to backend `TargetServerId` using `[JsonPropertyName("serverId")]`.
+    - **Force Update**: Added explicit `_context.Update()` calls and `EntityState.Modified` tracking to guarantee `UPDATE` SQL generation.
+- **Server Deletion Pre-check API**: 
+    - Implemented `GET /api/infrastructure/servers/{id}/deployed-apps` to retrieve all applications currently hosted on a server.
+    - This allows the UI to warn users about the impact of a "Hard Delete" on infrastructure.
+- **Diagnostic Logging**: Injected high-visibility `ILogger` traces in `ApplicationsController` to audit incoming DTO values and verify binding success.
+- **TDD Verification**: Added 2 new test cases to `ApplicationRepositoryTests` and refactored `ApplicationServiceTests`. All 54 project tests are passing.
+- **Documentation**: Updated `API.md` with the new endpoint and updated request schemas.
+
+### Impact:
+- **Data Integrity**: Ensures that infrastructure changes from the UI drawer are actually persisted to the database.
+- **User Safety**: Prevents accidental service disruption by providing visibility into hosted apps before server deletion.
+- **Maintainability**: Clearer DTO binding and explicit state management make the update pipeline more predictable.
+
+---
+
 ## 📅 June 8, 2026 - Feature: Infrastructure Endpoints (Migration & Safe Purge)
 **Status:** ✅ Complete
 

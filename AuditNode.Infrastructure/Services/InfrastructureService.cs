@@ -38,8 +38,7 @@ public class InfrastructureService : IInfrastructureService
 
     public async Task<bool> MigrateAppAsync(MigrateAppDto migrateDto)
     {
-        _logger.LogInformation("Starting migration for PortMapping {PortMappingId} to Server {TargetServerId} with Port {NewPort}", 
-            migrateDto.PortMappingId, migrateDto.TargetServerId, migrateDto.NewPortNumber);
+        _logger.LogInformation("Starting migration for PortMapping {PortMappingId}...", migrateDto.PortMappingId);
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -53,13 +52,40 @@ public class InfrastructureService : IInfrastructureService
                 return false;
             }
 
-            portMapping.ServerId = migrateDto.TargetServerId;
-            portMapping.PortNumber = migrateDto.NewPortNumber;
+            bool isNetworkModified = false;
 
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
+            // Independent assignment: Target Server
+            if (migrateDto.TargetServerId != Guid.Empty && portMapping.ServerId != migrateDto.TargetServerId)
+            {
+                portMapping.ServerId = migrateDto.TargetServerId;
+                isNetworkModified = true;
+                _logger.LogInformation("Server ID changed to {ServerId}", migrateDto.TargetServerId);
+            }
 
-            _logger.LogInformation("Successfully migrated PortMapping {PortMappingId}", migrateDto.PortMappingId);
+            // Independent assignment: Port Number
+            if (portMapping.PortNumber != migrateDto.NewPortNumber)
+            {
+                portMapping.PortNumber = migrateDto.NewPortNumber;
+                isNetworkModified = true;
+                _logger.LogInformation("Port Number changed to {Port}", migrateDto.NewPortNumber);
+            }
+
+            if (isNetworkModified)
+            {
+                // Explicitly notify the change tracker
+                _context.PortMappings.Update(portMapping);
+                
+                // CRITICAL: Ensure SaveChanges is called within the transaction
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                _logger.LogInformation("Successfully updated port mapping {PortMappingId}", migrateDto.PortMappingId);
+            }
+            else
+            {
+                _logger.LogInformation("No network residency changes detected for port mapping {PortMappingId}", migrateDto.PortMappingId);
+                await transaction.RollbackAsync(); // Nothing to do
+            }
+
             return true;
         }
         catch (Exception ex)
@@ -135,5 +161,22 @@ public class InfrastructureService : IInfrastructureService
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    public async Task<IEnumerable<DeployedAppDto>> GetDeployedAppsByServerAsync(Guid serverId)
+    {
+        _logger.LogInformation("Fetching deployed applications for server {ServerId}", serverId);
+
+        return await _context.PortMappings
+            .Where(pm => pm.ServerId == serverId)
+            .Include(pm => pm.Application)
+            .Select(pm => new DeployedAppDto
+            {
+                AppId = pm.AppId,
+                AppCode = pm.Application!.AppCode,
+                AppName = pm.Application!.AppName,
+                PortNumber = pm.PortNumber
+            })
+            .ToListAsync();
     }
 }

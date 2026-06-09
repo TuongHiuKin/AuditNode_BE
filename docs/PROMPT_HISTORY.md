@@ -202,3 +202,56 @@ Subtitle = $"On Server: {(a.PortMappings.OrderBy(pm => pm.PortNumber).Select(pm 
 - Updated `HISTORY.md` with normalization milestone.
 - Updated `PROMPT_HISTORY.md` (Self-referential log).
 
+---
+
+# Prompt Archive: Application Update Logic Hardening & Server Pre-check API
+
+**Date:** June 9, 2026
+**Status:** Success ✅
+
+## 1. Requirement Summary
+Address critical bugs in the application update pipeline and implement infrastructure safety checks.
+- **Bug 1**: `PUT /api/applications/{id}` metadata updates were succeeding, but network residency changes (Server/Port) were being ignored by EF Core.
+- **Bug 2**: JSON Model Binding failure where frontend `serverId` failed to map to backend `TargetServerId` (resulting in `null`).
+- **Feature**: `GET /api/infrastructure/servers/{id}/deployed-apps` – Retrieve a list of apps on a server to prevent "blind" server deletions.
+- **Architecture**: Clean Architecture, transactional integrity, explicit Change Tracking, and strict TDD.
+
+## 2. Core Implementation Strategy
+### Backend Logic:
+- **Resilient Update Logic**:
+    - Implemented `ApplicationRepository.UpdateApplicationWithNetworkAsync` wrapping metadata and `PortMapping` updates in an `IDbContextTransaction`.
+    - **Flexible Assignment**: Refactored logic to independently check and apply `ServerId` and `PortNumber`. Updating one no longer requires the other.
+    - **Force State Tracking**: Explicitly set `EntityState.Modified` and used `_context.Update()` to ensure the EF Core Change Tracker generates `UPDATE` SQL even for detached or ambiguous entities.
+- **Model Binding Fix**:
+    - Applied `[JsonPropertyName("serverId")]` and `[JsonPropertyName("portNumber")]` to `UpdateApplicationDto` and `MigrateAppDto` to align with frontend JSON naming conventions.
+- **Server Pre-check API**:
+    - Created `GetDeployedAppsByServerAsync` in `InfrastructureService`.
+    - Uses EF Core `.Select()` projection for optimized data fetching.
+- **Audit Logging**: Injected `ILogger` traces in `ApplicationsController` to verify DTO binding at the HTTP entry point.
+
+## 3. Key Code Structures
+```csharp
+// Flexible and Forced Update Pattern
+if (updateDto.TargetServerId.HasValue && mapping.ServerId != updateDto.TargetServerId.Value) {
+    mapping.ServerId = updateDto.TargetServerId.Value;
+    isModified = true;
+}
+if (isModified) {
+    _dbContext.PortMappings.Update(mapping);
+}
+await _dbContext.SaveChangesAsync();
+```
+
+## 4. Verification (TDD)
+- **ApplicationRepositoryTests.cs**:
+  - `UpdateApplicationWithNetworkAsync_ShouldUpdateMetadataAndPortMapping`: Verified combined transactional update.
+  - `UpdateApplicationWithNetworkAsync_ShouldCreatePortMapping_IfNoneExists`: Verified creation path for unmapped apps.
+- **ApplicationServiceTests.cs**:
+  - Refactored to verify calls to the new repository update method.
+- **Test Results**: All 54 project tests passed.
+
+## 5. Documentation
+- Updated `API.md` with new pre-check endpoint and corrected update request schema.
+- Updated `HISTORY.md` with implementation details and bug fix impact.
+- Updated `PROMPT_HISTORY.md` (Self-referential log).
+

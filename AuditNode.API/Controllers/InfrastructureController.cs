@@ -71,4 +71,18 @@ public class InfrastructureController : ControllerBase
             return StatusCode(500, new { error = "Purge failed", message = ex.Message });
         }
     }
+
+    [HttpGet("servers/{id}/deployed-apps")]
+    public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id)
+    {
+        try
+        {
+            var apps = await _infrastructureService.GetDeployedAppsByServerAsync(id);
+            return Ok(apps);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = "Failed to retrieve deployed applications", message = ex.Message });
+        }
+    }
 }
