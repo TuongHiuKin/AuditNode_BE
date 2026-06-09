@@ -75,16 +75,6 @@ public class ApplicationService : IApplicationService
 
     public async Task<bool> UpdateAsync(Guid id, UpdateApplicationDto updateDto)
     {
-        var existingApp = await _repository.GetByIdAsync(id);
-        if (existingApp == null) return false;
-
-        existingApp.AppName = updateDto.AppName;
-        existingApp.OwnerTeam = updateDto.OwnerTeam;
-        existingApp.Risk = updateDto.Risk;
-        existingApp.Icon = updateDto.Icon;
-        existingApp.TechStack = updateDto.TechStack;
-
-        await _repository.UpdateAsync(existingApp);
-        return true;
+        return await _repository.UpdateApplicationWithNetworkAsync(id, updateDto);
     }
 }

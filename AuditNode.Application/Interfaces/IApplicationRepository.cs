@@ -9,4 +9,5 @@ public interface IApplicationRepository
     Task<AppEntity?> GetByIdAsync(Guid id);
     Task<AppEntity> RegisterApplicationAsync(AppEntity application);
     Task UpdateAsync(AppEntity application);
+    Task<bool> UpdateApplicationWithNetworkAsync(Guid id, UpdateApplicationDto updateDto);
 }

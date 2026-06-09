@@ -1,6 +1,7 @@
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
+using AuditNode.Application.DTOs;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -120,48 +121,88 @@ public class ApplicationRepositoryTests
     }
 
     [Fact]
-    public async Task RegisterApplicationAsync_ShouldReturnExisting_AndAddPortMapping_WhenAppCodeExists()
+    public async Task UpdateApplicationWithNetworkAsync_ShouldUpdateMetadataAndPortMapping()
     {
         // Arrange
         using var context = GetDbContext();
-        var server1Id = Guid.NewGuid();
-        var existingApp = new AppEntity
+        var appId = Guid.NewGuid();
+        var serverId = Guid.NewGuid();
+        var initialApp = new AppEntity
+        {
+            Id = appId,
+            AppCode = "META",
+            AppName = "Original Name",
+            OwnerTeam = "Original Team"
+        };
+        var initialPortMapping = new PortMapping
         {
             Id = Guid.NewGuid(),
-            AppCode = "EXISTING",
-            AppName = "Existing App",
-            OwnerTeam = "Team B"
+            AppId = appId,
+            ServerId = serverId,
+            PortNumber = 80,
+            Protocol = "TCP"
         };
-        context.Applications.Add(existingApp);
+        context.Applications.Add(initialApp);
+        context.PortMappings.Add(initialPortMapping);
         await context.SaveChangesAsync();
 
         var repository = new ApplicationRepository(context);
-        var server2Id = Guid.NewGuid();
-        var newAppRequest = new AppEntity
+        var newServerId = Guid.NewGuid();
+        var updateDto = new UpdateApplicationDto
         {
-            Id = Guid.NewGuid(),
-            AppCode = "EXISTING",
-            AppName = "Updated App Name",
-            OwnerTeam = "Team B"
+            AppName = "Updated Name",
+            OwnerTeam = "Updated Team",
+            TargetServerId = newServerId,
+            PortNumber = 443
         };
-        var newPortMapping = new PortMapping
-        {
-            Id = Guid.NewGuid(),
-            ServerId = server2Id,
-            PortNumber = 9090,
-            Protocol = "TCP"
-        };
-        newAppRequest.PortMappings.Add(newPortMapping);
 
         // Act
-        var result = await repository.RegisterApplicationAsync(newAppRequest);
+        var result = await repository.UpdateApplicationWithNetworkAsync(appId, updateDto);
 
         // Assert
-        result.Id.Should().Be(existingApp.Id);
-        result.AppName.Should().Be("Updated App Name");
-        
-        var portMappings = await context.PortMappings.Where(pm => pm.AppId == existingApp.Id).ToListAsync();
-        portMappings.Should().HaveCount(1);
-        portMappings.First().PortNumber.Should().Be(9090);
+        result.Should().BeTrue();
+        var updatedApp = await context.Applications.FindAsync(appId);
+        updatedApp!.AppName.Should().Be("Updated Name");
+        updatedApp.OwnerTeam.Should().Be("Updated Team");
+
+        var updatedPortMapping = await context.PortMappings.FirstOrDefaultAsync(pm => pm.AppId == appId);
+        updatedPortMapping.Should().NotBeNull();
+        updatedPortMapping!.ServerId.Should().Be(newServerId);
+        updatedPortMapping.PortNumber.Should().Be(443);
+    }
+
+    [Fact]
+    public async Task UpdateApplicationWithNetworkAsync_ShouldCreatePortMapping_IfNoneExists()
+    {
+        // Arrange
+        using var context = GetDbContext();
+        var appId = Guid.NewGuid();
+        var initialApp = new AppEntity
+        {
+            Id = appId,
+            AppCode = "NOMAP",
+            AppName = "App Without Port Mapping"
+        };
+        context.Applications.Add(initialApp);
+        await context.SaveChangesAsync();
+
+        var repository = new ApplicationRepository(context);
+        var targetServerId = Guid.NewGuid();
+        var updateDto = new UpdateApplicationDto
+        {
+            AppName = "App With Port Mapping Now",
+            TargetServerId = targetServerId,
+            PortNumber = 8080
+        };
+
+        // Act
+        var result = await repository.UpdateApplicationWithNetworkAsync(appId, updateDto);
+
+        // Assert
+        result.Should().BeTrue();
+        var portMapping = await context.PortMappings.FirstOrDefaultAsync(pm => pm.AppId == appId);
+        portMapping.Should().NotBeNull();
+        portMapping!.ServerId.Should().Be(targetServerId);
+        portMapping.PortNumber.Should().Be(8080);
     }
 }

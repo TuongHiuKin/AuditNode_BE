@@ -21,40 +21,38 @@ public class ApplicationServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_ShouldReturnTrue_WhenAppExists()
+    public async Task UpdateAsync_ShouldCallRepository_WithNetworkUpdate()
     {
         // Arrange
         var appId = Guid.NewGuid();
-        var existingApp = new AppEntity { Id = appId, AppCode = "TEST" };
         var updateDto = new UpdateApplicationDto { AppName = "New Name", OwnerTeam = "New Team" };
 
-        _repositoryMock.Setup(r => r.GetByIdAsync(appId)).ReturnsAsync(existingApp);
-        _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<AppEntity>())).Returns(Task.CompletedTask);
+        _repositoryMock.Setup(r => r.UpdateApplicationWithNetworkAsync(appId, updateDto))
+            .ReturnsAsync(true);
 
         // Act
         var result = await _service.UpdateAsync(appId, updateDto);
 
         // Assert
         result.Should().BeTrue();
-        existingApp.AppName.Should().Be("New Name");
-        existingApp.OwnerTeam.Should().Be("New Team");
-        _repositoryMock.Verify(r => r.UpdateAsync(existingApp), Times.Once);
+        _repositoryMock.Verify(r => r.UpdateApplicationWithNetworkAsync(appId, updateDto), Times.Once);
     }
 
     [Fact]
-    public async Task UpdateAsync_ShouldReturnFalse_WhenAppDoesNotExist()
+    public async Task UpdateAsync_ShouldReturnFalse_WhenRepositoryReturnsFalse()
     {
         // Arrange
         var appId = Guid.NewGuid();
         var updateDto = new UpdateApplicationDto { AppName = "New Name" };
 
-        _repositoryMock.Setup(r => r.GetByIdAsync(appId)).ReturnsAsync((AppEntity?)null);
+        _repositoryMock.Setup(r => r.UpdateApplicationWithNetworkAsync(appId, updateDto))
+            .ReturnsAsync(false);
 
         // Act
         var result = await _service.UpdateAsync(appId, updateDto);
 
         // Assert
         result.Should().BeFalse();
-        _repositoryMock.Verify(r => r.UpdateAsync(It.IsAny<AppEntity>()), Times.Never);
+        _repositoryMock.Verify(r => r.UpdateApplicationWithNetworkAsync(appId, updateDto), Times.Once);
     }
 }
