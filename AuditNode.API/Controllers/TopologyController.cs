@@ -1,9 +1,11 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuditNode.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class TopologyController : ControllerBase

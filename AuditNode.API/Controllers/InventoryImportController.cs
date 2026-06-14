@@ -1,8 +1,10 @@
 using AuditNode.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AuditNode.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/inventory")]
 public class InventoryImportController : ControllerBase

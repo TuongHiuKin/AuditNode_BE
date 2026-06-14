@@ -1,6 +1,14 @@
 # AuditNode System Architecture
 
-## 1. Backend Design Patterns
+## 1. Security Architecture
+The system implements a centralized identity management strategy using **Keycloak** (OpenID Connect).
+
+- **Authentication**: JWT Bearer tokens are used to secure API endpoints.
+- **Authorization**: The `[Authorize]` attribute is enforced globally on all inventory-related controllers.
+- **Token Validation**: The backend validates token signatures, issuer (`http://localhost:8080/realms/AuditNode-Realm`), and expiration.
+- **User Context**: User identity is extracted from the `sub` (Subject) or `preferred_username` claims within the JWT for auditing purposes.
+
+## 2. Backend Design Patterns
 
 ### Transaction-Based Upsert Pattern
 To maintain data integrity and prevent duplicate infrastructure entries, the system employs a "Find or Create" (Upsert) pattern for Application registration.

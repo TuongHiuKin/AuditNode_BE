@@ -1,10 +1,13 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
+using System.Security.Claims;
 
 namespace AuditNode.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class ApplicationsController : ControllerBase
@@ -21,6 +24,10 @@ public class ApplicationsController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> GetApplications()
     {
+        // Example: Extracting user context from HttpContext.User
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        _logger.LogInformation("Applications accessed by user: {UserId}", userId);
+
         try
         {
             var applications = await _applicationService.GetAllAsync();

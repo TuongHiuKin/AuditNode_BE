@@ -4,6 +4,12 @@
 - **HTTPS:** `https://localhost:5001`
 - **HTTP:** `http://localhost:5000`
 
+## Authentication & Security
+The API is secured using **Keycloak Identity Provider** via **JWT Bearer Authentication**.
+- **Issuer/Authority:** `http://localhost:8080/realms/AuditNode-Realm`
+- **Mechanism:** Bearer Token in `Authorization` header.
+- **Requirement:** ALL endpoints (except OpenApi/Scalar) require a valid JWT token issued by the AuditNode-Realm.
+
 ## CORS Policy
 **Policy Name:** `AllowReact`
 - **Allowed Origins:** `http://localhost:5173`, `http://localhost:3000`

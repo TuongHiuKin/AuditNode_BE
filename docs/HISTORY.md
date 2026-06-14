@@ -4,6 +4,26 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 14, 2026 - Feature: Keycloak JWT Bearer Authentication & Controller Protection
+**Status:** ✅ Complete
+
+### Changes:
+- **JWT Bearer Integration**: Integrated `Microsoft.AspNetCore.Authentication.JwtBearer` into the API pipeline.
+- **Identity Provider Configuration**: Configured the API to trust Keycloak as the OIDC provider (Realm: `AuditNode-Realm`).
+- **Middleware Hardening**: Ensured strict execution order (`UseAuthentication` -> `UseAuthorization`) to prevent unauthorized access to the controller pipeline.
+- **Global Controller Protection**: Applied the `[Authorize]` attribute across all inventory and metadata controllers (9 in total).
+- **TDD Verification**: 
+    - Created `SecurityVerificationTests.cs` using Reflection to enforce the presence of `[Authorize]` attributes on all current and future controllers.
+    - Verified all 64 project tests are passing.
+- **Documentation**: Updated `API.md` and `ARCHITECTURE.md` with the new security layer details.
+
+### Impact:
+- **Security**: The API is now protected against unauthenticated access.
+- **Compliance**: Alignment with modern OIDC/OAuth2 standards for enterprise identity management.
+- **Developer Experience**: Scalar API reference remains available in development, but functional endpoints are secured.
+
+---
+
 ## 📅 June 9, 2026 - Bug Fix: Application Update Logic & Server Pre-check API
 **Status:** ✅ Complete
 

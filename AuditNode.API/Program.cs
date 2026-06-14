@@ -6,6 +6,8 @@ using FluentValidation.AspNetCore;
 using AuditNode.Application.Validators;
 using FluentValidation;
 using Scalar.AspNetCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +22,23 @@ builder.Services.AddOpenApi("v1", options =>
         return Task.CompletedTask;
     });
 });
+
+// Configure JWT Bearer Authentication with Keycloak
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "http://localhost:8080/realms/AuditNode-Realm";
+        options.RequireHttpsMetadata = false; // Set to true in production
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = false, // Set to false for public client SPA tokens
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true
+        };
+    });
+
+builder.Services.AddAuthorization();
 
 // Register DbContext with PostgreSQL provider
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -58,7 +77,6 @@ builder.Services.AddCors(options =>
 });
 
 // Add controllers
-builder.Services.AddAuthorization();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -81,6 +99,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Authentication MUST run before Authorization
+app.UseAuthentication();
 app.UseAuthorization();
 
 // Enable CORS
