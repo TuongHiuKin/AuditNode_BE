@@ -1,7 +1,9 @@
+using AuditNode.Domain.Entities;
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 
 namespace AuditNode.Infrastructure.Repositories;
 
@@ -12,6 +14,62 @@ public class TopologyRepository : ITopologyRepository
     public TopologyRepository(AuditDbContext context)
     {
         _context = context;
+    }
+
+    public async Task SaveTopologyStateAsync(SaveTopologyStateDto state)
+    {
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            // 1. Get existing nodes in this workspace
+            var existingNodes = await _context.TopologyNodes.ToDictionaryAsync(n => n.Id);
+
+            // 2. Process incoming nodes (Upsert)
+            foreach (var nodeDto in state.Nodes)
+            {
+                if (existingNodes.TryGetValue(nodeDto.Id, out var existingNode))
+                {
+                    existingNode.NodeType = nodeDto.NodeType;
+                    existingNode.Label = nodeDto.Label;
+                    existingNode.X = nodeDto.X;
+                    existingNode.Y = nodeDto.Y;
+                    existingNode.Width = nodeDto.Width;
+                    existingNode.Height = nodeDto.Height;
+                    existingNode.ParentNodeId = nodeDto.ParentNodeId;
+                    existingNode.ReferenceId = nodeDto.ReferenceId;
+                    _context.TopologyNodes.Update(existingNode);
+                }
+                else
+                {
+                    var newNode = new TopologyNode
+                    {
+                        Id = nodeDto.Id,
+                        NodeType = nodeDto.NodeType,
+                        Label = nodeDto.Label,
+                        X = nodeDto.X,
+                        Y = nodeDto.Y,
+                        Width = nodeDto.Width,
+                        Height = nodeDto.Height,
+                        ParentNodeId = nodeDto.ParentNodeId,
+                        ReferenceId = nodeDto.ReferenceId
+                    };
+                    _context.TopologyNodes.Add(newNode);
+                }
+            }
+
+            // 3. Delete nodes not in the incoming payload (if business rules require full sync)
+            var incomingIds = state.Nodes.Select(n => n.Id).ToHashSet();
+            var nodesToDelete = existingNodes.Values.Where(n => !incomingIds.Contains(n.Id));
+            _context.TopologyNodes.RemoveRange(nodesToDelete);
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        catch (Exception)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
 
     public async Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take)

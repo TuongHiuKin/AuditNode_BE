@@ -1,6 +1,7 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
+using System.Linq;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Application.Services;
@@ -17,6 +18,11 @@ public class ApplicationService : IApplicationService
     public async Task<IEnumerable<ApplicationResponseDto>> GetAllAsync()
     {
         return await _repository.GetApplicationsAsync();
+    }
+
+    public async Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids)
+    {
+        return await _repository.GetByIdsAsync(ids);
     }
 
     public async Task<ApplicationResponseDto?> GetByIdAsync(Guid id)

@@ -1,8 +1,10 @@
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Moq;
 using Xunit;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
@@ -15,7 +17,9 @@ public class TopologyRepositoryTests
         var options = new DbContextOptionsBuilder<AuditDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
-        return new AuditDbContext(options);
+        var mockTenantProvider = new Mock<ITenantProvider>();
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        return new AuditDbContext(options, mockTenantProvider.Object);
     }
 
     [Fact]

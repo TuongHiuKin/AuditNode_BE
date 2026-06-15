@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Infrastructure.Repositories;
@@ -18,28 +19,43 @@ public class ApplicationRepository : IApplicationRepository
 
     public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync()
     {
-        return await _dbContext.Applications
+        var query = _dbContext.Applications
+            .Include(a => a.PortMappings)
+                .ThenInclude(pm => pm.Server);
+        
+        return await MapToResponseDto(query).ToListAsync();
+    }
+
+    public async Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids)
+    {
+        var query = _dbContext.Applications
             .Include(a => a.PortMappings)
                 .ThenInclude(pm => pm.Server)
-            .Select(a => new ApplicationResponseDto
+            .Where(a => ids.Contains(a.Id));
+
+        return await MapToResponseDto(query).ToListAsync();
+    }
+
+    private IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query)
+    {
+        return query.Select(a => new ApplicationResponseDto
+        {
+            Id = a.Id,
+            AppCode = a.AppCode,
+            AppName = a.AppName,
+            OwnerTeam = a.OwnerTeam,
+            Risk = a.Risk,
+            Icon = a.Icon,
+            TechStack = a.TechStack,
+            Servers = a.PortMappings.Select(pm => new ServerOnApplicationDto
             {
-                Id = a.Id,
-                AppCode = a.AppCode,
-                AppName = a.AppName,
-                OwnerTeam = a.OwnerTeam,
-                Risk = a.Risk,
-                Icon = a.Icon,
-                TechStack = a.TechStack,
-                Servers = a.PortMappings.Select(pm => new ServerOnApplicationDto
-                {
-                    Id = pm.Server!.Id,
-                    Hostname = pm.Server!.Hostname,
-                    IpAddress = pm.Server!.IpAddress,
-                    PortNumber = pm.PortNumber,
-                    Protocol = pm.Protocol
-                }).ToList()
-            })
-            .ToListAsync();
+                Id = pm.Server!.Id,
+                Hostname = pm.Server!.Hostname,
+                IpAddress = pm.Server!.IpAddress,
+                PortNumber = pm.PortNumber,
+                Protocol = pm.Protocol
+            }).ToList()
+        });
     }
 
     public async Task<AppEntity?> GetByIdAsync(Guid id)

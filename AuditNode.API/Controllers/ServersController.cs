@@ -2,6 +2,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Collections.Generic;
 
 namespace AuditNode.API.Controllers;
@@ -24,6 +25,25 @@ public class ServersController : ControllerBase
         try
         {
             var servers = await _serverService.GetAllAsync(environment, datacenterId);
+            return Ok(servers);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("export")]
+    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> ExportServers([FromQuery] Guid[] ids)
+    {
+        try
+        {
+            if (ids == null || ids.Length == 0)
+            {
+                return BadRequest(new { error = "No IDs provided for export." });
+            }
+
+            var servers = await _serverService.GetByIdsAsync(ids);
             return Ok(servers);
         }
         catch (Exception ex)

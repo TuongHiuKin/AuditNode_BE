@@ -2,9 +2,11 @@ using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Moq;
 using Xunit;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
@@ -18,7 +20,9 @@ public class ApplicationRepositoryTests
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        return new AuditDbContext(options);
+        var mockTenantProvider = new Mock<ITenantProvider>();
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        return new AuditDbContext(options, mockTenantProvider.Object);
     }
 
     [Fact]
