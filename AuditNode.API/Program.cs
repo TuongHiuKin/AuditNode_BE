@@ -9,9 +9,15 @@ using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
+using AuditNode.API.Middleware;
+using AuditNode.Application.Interfaces;
+using AuditNode.Infrastructure.Services;
+using AuditNode.Application.Services;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
+builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -51,10 +57,12 @@ builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
+builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
 
 // Register Services
 builder.Services.AddScoped<IApplicationService, AuditNode.Application.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Application.Services.ServerService>();
+builder.Services.AddScoped<IWorkspaceService, WorkspaceService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
@@ -102,6 +110,9 @@ app.UseHttpsRedirection();
 // Authentication MUST run before Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Workspace isolation middleware
+app.UseMiddleware<WorkspaceMiddleware>();
 
 // Enable CORS
 app.UseCors("AllowReact");

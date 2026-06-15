@@ -6,6 +6,7 @@ namespace AuditNode.Application.Interfaces;
 public interface IApplicationRepository
 {
     Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync();
+    Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids);
     Task<AppEntity?> GetByIdAsync(Guid id);
     Task<AppEntity> RegisterApplicationAsync(AppEntity application);
     Task UpdateAsync(AppEntity application);

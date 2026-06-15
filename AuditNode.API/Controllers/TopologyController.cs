@@ -45,4 +45,23 @@ public class TopologyController : ControllerBase
         var status = await _topologyRepository.GetApplicationStatusAsync();
         return Ok(status);
     }
+
+    [HttpPost("state")]
+    public async Task<IActionResult> SaveState([FromBody] SaveTopologyStateDto state)
+    {
+        if (state == null || state.Nodes == null)
+        {
+            return BadRequest("Invalid topology state payload.");
+        }
+
+        try
+        {
+            await _topologyRepository.SaveTopologyStateAsync(state);
+            return Ok(new { message = "Topology state saved successfully." });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }

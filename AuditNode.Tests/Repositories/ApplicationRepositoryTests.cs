@@ -2,9 +2,11 @@ using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Moq;
 using Xunit;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
@@ -18,7 +20,9 @@ public class ApplicationRepositoryTests
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        return new AuditDbContext(options);
+        var mockTenantProvider = new Mock<ITenantProvider>();
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        return new AuditDbContext(options, mockTenantProvider.Object);
     }
 
     [Fact]
@@ -204,5 +208,27 @@ public class ApplicationRepositoryTests
         portMapping.Should().NotBeNull();
         portMapping!.ServerId.Should().Be(targetServerId);
         portMapping.PortNumber.Should().Be(8080);
+    }
+
+    [Fact]
+    public async Task GetByIdsAsync_ShouldReturnOnlyRequestedApplications()
+    {
+        // Arrange
+        using var context = GetDbContext();
+        var a1 = new AppEntity { Id = Guid.NewGuid(), AppCode = "A1", AppName = "App 1" };
+        var a2 = new AppEntity { Id = Guid.NewGuid(), AppCode = "A2", AppName = "App 2" };
+        var a3 = new AppEntity { Id = Guid.NewGuid(), AppCode = "A3", AppName = "App 3" };
+        context.Applications.AddRange(a1, a2, a3);
+        await context.SaveChangesAsync();
+
+        var repository = new ApplicationRepository(context);
+
+        // Act
+        var result = await repository.GetByIdsAsync(new[] { a1.Id, a2.Id });
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Select(r => r.Id).Should().Contain(new[] { a1.Id, a2.Id });
+        result.Select(r => r.Id).Should().NotContain(a3.Id);
     }
 }

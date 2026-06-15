@@ -1,8 +1,12 @@
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
+using AuditNode.Application.Interfaces;
+using AuditNode.Application.DTOs;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Moq;
 using Xunit;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
@@ -14,8 +18,11 @@ public class TopologyRepositoryTests
     {
         var options = new DbContextOptionsBuilder<AuditDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        return new AuditDbContext(options);
+        var mockTenantProvider = new Mock<ITenantProvider>();
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        return new AuditDbContext(options, mockTenantProvider.Object);
     }
 
     [Fact]
@@ -51,5 +58,67 @@ public class TopologyRepositoryTests
         result.First(a => a.Id == app1.Id).IsMapped.Should().BeTrue();
         result.First(a => a.Id == app2.Id).IsMapped.Should().BeTrue();
         result.First(a => a.Id == app3.Id).IsMapped.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SaveTopologyStateAsync_ShouldUpsertAndSyncNodes()
+    {
+        // Arrange
+        using var context = GetDbContext();
+        var existingNodeId = Guid.NewGuid();
+        context.TopologyNodes.Add(new TopologyNode 
+        { 
+            Id = existingNodeId, 
+            NodeType = "server", 
+            Label = "Old Label", 
+            X = 0, 
+            Y = 0 
+        });
+        await context.SaveChangesAsync();
+
+        var repository = new TopologyRepository(context);
+        var newNodeId = Guid.NewGuid();
+        var state = new SaveTopologyStateDto
+        {
+            Nodes = new List<TopologyNodeDto>
+            {
+                new TopologyNodeDto 
+                { 
+                    Id = existingNodeId, 
+                    NodeType = "server", 
+                    Label = "New Label", 
+                    X = 10, 
+                    Y = 10,
+                    Width = 100,
+                    Height = 100
+                },
+                new TopologyNodeDto 
+                { 
+                    Id = newNodeId, 
+                    NodeType = "group", 
+                    Label = "Group 1", 
+                    X = 50, 
+                    Y = 50,
+                    Width = 200,
+                    Height = 200
+                }
+            }
+        };
+
+        // Act
+        await repository.SaveTopologyStateAsync(state);
+
+        // Assert
+        var nodes = await context.TopologyNodes.ToListAsync();
+        nodes.Should().HaveCount(2);
+        
+        var updatedNode = nodes.First(n => n.Id == existingNodeId);
+        updatedNode.Label.Should().Be("New Label");
+        updatedNode.X.Should().Be(10);
+        updatedNode.Width.Should().Be(100);
+
+        var newNode = nodes.First(n => n.Id == newNodeId);
+        newNode.NodeType.Should().Be("group");
+        newNode.Label.Should().Be("Group 1");
     }
 }

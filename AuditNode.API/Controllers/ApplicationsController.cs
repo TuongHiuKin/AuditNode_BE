@@ -2,6 +2,8 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using System;
 using System.Collections.Generic;
 using System.Security.Claims;
 
@@ -31,6 +33,25 @@ public class ApplicationsController : ControllerBase
         try
         {
             var applications = await _applicationService.GetAllAsync();
+            return Ok(applications);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpGet("export")]
+    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> ExportApplications([FromQuery] Guid[] ids)
+    {
+        try
+        {
+            if (ids == null || ids.Length == 0)
+            {
+                return BadRequest(new { error = "No IDs provided for export." });
+            }
+
+            var applications = await _applicationService.GetByIdsAsync(ids);
             return Ok(applications);
         }
         catch (Exception ex)

@@ -1,13 +1,18 @@
 using Microsoft.EntityFrameworkCore;
+using System.Linq;
 using AuditNode.Domain.Entities;
 using AppEntity = AuditNode.Domain.Entities.Application;
+using AuditNode.Application.Interfaces;
 
 namespace AuditNode.Infrastructure.Data;
 
 public class AuditDbContext : DbContext
 {
-    public AuditDbContext(DbContextOptions<AuditDbContext> options) : base(options)
+    private readonly ITenantProvider _tenantProvider;
+
+    public AuditDbContext(DbContextOptions<AuditDbContext> options, ITenantProvider tenantProvider) : base(options)
     {
+        _tenantProvider = tenantProvider;
     }
 
     public DbSet<Datacenter> Datacenters { get; set; }
@@ -17,10 +22,46 @@ public class AuditDbContext : DbContext
     public DbSet<AppDependency> AppDependencies { get; set; }
     public DbSet<TopologyView> TopologyViews { get; set; }
     public DbSet<DependencyView> DependencyViews { get; set; }
+    public DbSet<Workspace> Workspaces { get; set; }
+    public DbSet<TopologyNode> TopologyNodes { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // TopologyNode
+        modelBuilder.Entity<TopologyNode>(entity =>
+        {
+            entity.ToTable("topology_nodes");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
+            entity.Property(e => e.NodeType).HasColumnName("node_type").IsRequired();
+            entity.Property(e => e.Label).HasColumnName("label").IsRequired();
+            entity.Property(e => e.X).HasColumnName("x");
+            entity.Property(e => e.Y).HasColumnName("y");
+            entity.Property(e => e.Width).HasColumnName("width");
+            entity.Property(e => e.Height).HasColumnName("height");
+            entity.Property(e => e.ParentNodeId).HasColumnName("parent_node_id");
+            entity.Property(e => e.ReferenceId).HasColumnName("reference_id");
+
+            entity.HasOne(e => e.ParentNode)
+                .WithMany(e => e.ChildNodes)
+                .HasForeignKey(e => e.ParentNodeId)
+                .OnDelete(DeleteBehavior.Cascade); // If a group is deleted, delete child node visual states
+
+            entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
+        });
+
+        // Workspace
+        modelBuilder.Entity<Workspace>(entity =>
+        {
+            entity.ToTable("workspaces");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Name).HasColumnName("name").IsRequired();
+            entity.Property(e => e.Description).HasColumnName("description");
+        });
 
         // Datacenter
         modelBuilder.Entity<Datacenter>(entity =>
@@ -38,6 +79,7 @@ public class AuditDbContext : DbContext
             entity.ToTable("servers");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id").IsRequired();
             entity.Property(e => e.IpAddress).HasColumnName("ip_address").IsRequired();
             entity.Property(e => e.Hostname).HasColumnName("hostname").IsRequired();
@@ -51,6 +93,8 @@ public class AuditDbContext : DbContext
                 .WithMany(d => d.Servers)
                 .HasForeignKey(s => s.DatacenterId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(s => s.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
         // Application
@@ -59,6 +103,7 @@ public class AuditDbContext : DbContext
             entity.ToTable("applications");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.AppCode).HasColumnName("app_code").IsRequired();
             entity.Property(e => e.AppName).HasColumnName("app_name").IsRequired();
             entity.Property(e => e.OwnerTeam)
@@ -70,6 +115,8 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.TechStack).HasColumnName("tech_stack");
 
             entity.HasIndex(e => e.AppCode).IsUnique();
+
+            entity.HasQueryFilter(a => a.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
         // PortMapping
@@ -153,5 +200,48 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Environment).HasColumnName("environment");
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id");
         });
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyWorkspaceId();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    public override int SaveChanges()
+    {
+        ApplyWorkspaceId();
+        return base.SaveChanges();
+    }
+
+    private void ApplyWorkspaceId()
+    {
+        var entries = ChangeTracker.Entries()
+            .Where(e => (e.State == EntityState.Added || e.State == EntityState.Modified));
+
+        foreach (var entry in entries)
+        {
+            if (entry.Entity is Server server)
+            {
+                if (_tenantProvider.WorkspaceId.HasValue)
+                {
+                    server.WorkspaceId = _tenantProvider.WorkspaceId.Value;
+                }
+            }
+            else if (entry.Entity is AppEntity app)
+            {
+                if (_tenantProvider.WorkspaceId.HasValue)
+                {
+                    app.WorkspaceId = _tenantProvider.WorkspaceId.Value;
+                }
+            }
+            else if (entry.Entity is TopologyNode node)
+            {
+                if (_tenantProvider.WorkspaceId.HasValue)
+                {
+                    node.WorkspaceId = _tenantProvider.WorkspaceId.Value;
+                }
+            }
+        }
     }
 }
