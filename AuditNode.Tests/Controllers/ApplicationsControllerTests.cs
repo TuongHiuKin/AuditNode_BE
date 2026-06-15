@@ -1,0 +1,59 @@
+using AuditNode.API.Controllers;
+using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
+using FluentAssertions;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
+using Moq;
+using System;
+using System.Collections.Generic;
+using Xunit;
+
+namespace AuditNode.Tests.Controllers;
+
+public class ApplicationsControllerTests
+{
+    private readonly Mock<IApplicationService> _mockService;
+    private readonly Mock<ILogger<ApplicationsController>> _mockLogger;
+    private readonly ApplicationsController _controller;
+
+    public ApplicationsControllerTests()
+    {
+        _mockService = new Mock<IApplicationService>();
+        _mockLogger = new Mock<ILogger<ApplicationsController>>();
+        _controller = new ApplicationsController(_mockService.Object, _mockLogger.Object);
+    }
+
+    [Fact]
+    public async Task ExportApplications_ShouldReturnOk_WithSelectedApps()
+    {
+        // Arrange
+        var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var mockApps = new List<ApplicationResponseDto>
+        {
+            new ApplicationResponseDto { Id = ids[0], AppName = "App 1" },
+            new ApplicationResponseDto { Id = ids[1], AppName = "App 2" }
+        };
+
+        _mockService.Setup(s => s.GetByIdsAsync(ids))
+            .ReturnsAsync(mockApps);
+
+        // Act
+        var result = await _controller.ExportApplications(ids);
+
+        // Assert
+        var okResult = result.Result.As<OkObjectResult>();
+        okResult.Should().NotBeNull();
+        okResult.Value.Should().BeEquivalentTo(mockApps);
+    }
+
+    [Fact]
+    public async Task ExportApplications_ShouldReturnBadRequest_WhenNoIdsProvided()
+    {
+        // Act
+        var result = await _controller.ExportApplications(null!);
+
+        // Assert
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+}

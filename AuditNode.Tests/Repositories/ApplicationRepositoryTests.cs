@@ -209,4 +209,26 @@ public class ApplicationRepositoryTests
         portMapping!.ServerId.Should().Be(targetServerId);
         portMapping.PortNumber.Should().Be(8080);
     }
+
+    [Fact]
+    public async Task GetByIdsAsync_ShouldReturnOnlyRequestedApplications()
+    {
+        // Arrange
+        using var context = GetDbContext();
+        var a1 = new AppEntity { Id = Guid.NewGuid(), AppCode = "A1", AppName = "App 1" };
+        var a2 = new AppEntity { Id = Guid.NewGuid(), AppCode = "A2", AppName = "App 2" };
+        var a3 = new AppEntity { Id = Guid.NewGuid(), AppCode = "A3", AppName = "App 3" };
+        context.Applications.AddRange(a1, a2, a3);
+        await context.SaveChangesAsync();
+
+        var repository = new ApplicationRepository(context);
+
+        // Act
+        var result = await repository.GetByIdsAsync(new[] { a1.Id, a2.Id });
+
+        // Assert
+        result.Should().HaveCount(2);
+        result.Select(r => r.Id).Should().Contain(new[] { a1.Id, a2.Id });
+        result.Select(r => r.Id).Should().NotContain(a3.Id);
+    }
 }

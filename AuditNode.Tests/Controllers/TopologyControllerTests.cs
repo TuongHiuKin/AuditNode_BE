@@ -120,4 +120,37 @@ public class TopologyControllerTests
         okResult.Should().NotBeNull();
         okResult.Value.Should().BeEquivalentTo(emptyMap);
     }
+
+    [Fact]
+    public async Task SaveState_ShouldReturnOk_WhenStateIsValid()
+    {
+        // Arrange
+        var state = new SaveTopologyStateDto
+        {
+            Nodes = new List<TopologyNodeDto>
+            {
+                new TopologyNodeDto { Id = Guid.NewGuid(), Label = "Node 1" }
+            }
+        };
+
+        _mockRepo.Setup(repo => repo.SaveTopologyStateAsync(state))
+            .Returns(Task.CompletedTask);
+
+        // Act
+        var result = await _controller.SaveState(state);
+
+        // Assert
+        result.Should().BeOfType<OkObjectResult>();
+        _mockRepo.Verify(repo => repo.SaveTopologyStateAsync(state), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveState_ShouldReturnBadRequest_WhenStateIsNull()
+    {
+        // Act
+        var result = await _controller.SaveState(null!);
+
+        // Assert
+        result.Should().BeOfType<BadRequestObjectResult>();
+    }
 }
