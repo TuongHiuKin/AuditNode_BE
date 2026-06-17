@@ -1,15 +1,14 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
+using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System;
-using System.Collections.Generic;
 
 namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/v1/[controller]")]
+[Route(ApiRoutes.BaseRoute)]
 public class ServersController : ControllerBase
 {
     private readonly IServerService _serverService;
@@ -20,89 +19,21 @@ public class ServersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> GetServers([FromQuery] string? environment, [FromQuery] Guid? datacenterId)
+    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> GetServers()
     {
-        try
-        {
-            var servers = await _serverService.GetAllAsync(environment, datacenterId);
-            return Ok(servers);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
+        var result = await _serverService.GetServersAsync();
+        return Ok(result);
     }
 
     [HttpGet("export")]
-    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> ExportServers([FromQuery] Guid[] ids)
+    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> ExportServers([FromQuery] List<Guid> ids)
     {
-        try
+        if (ids == null || ids.Count == 0)
         {
-            if (ids == null || ids.Length == 0)
-            {
-                return BadRequest(new { error = "No IDs provided for export." });
-            }
-
-            var servers = await _serverService.GetByIdsAsync(ids);
-            return Ok(servers);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
-    [HttpGet("{id:guid}")]
-    public async Task<ActionResult<ServerDetailDto>> GetServer(Guid id)
-    {
-        var server = await _serverService.GetByIdAsync(id);
-        if (server == null)
-        {
-            return NotFound();
-        }
-        return Ok(server);
-    }
-
-    [HttpPost]
-    public async Task<ActionResult> PostServer([FromBody] CreateServerDto serverDto)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
+            return BadRequest(new { error = "No IDs provided for export." });
         }
 
-        try
-        {
-            var responseDto = await _serverService.CreateAsync(serverDto);
-            return CreatedAtAction(nameof(GetServer), new { id = responseDto.Id }, responseDto);
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
-    [HttpPut("{id:guid}")]
-    public async Task<IActionResult> PutServer(Guid id, [FromBody] UpdateServerDto updateDto)
-    {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
-        try
-        {
-            var result = await _serverService.UpdateAsync(id, updateDto);
-            if (!result)
-            {
-                return NotFound();
-            }
-
-            return NoContent();
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { error = ex.Message });
-        }
+        var result = await _serverService.ExportServersAsync(ids);
+        return Ok(result);
     }
 }

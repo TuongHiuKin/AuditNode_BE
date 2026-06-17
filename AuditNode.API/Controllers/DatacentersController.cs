@@ -1,6 +1,6 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
-using AuditNode.Domain.Entities;
+using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,39 +8,27 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/v1/[controller]")]
+[Route(ApiRoutes.BaseRoute)]
 public class DatacentersController : ControllerBase
 {
-    private readonly IDatacenterRepository _datacenterRepository;
+    private readonly IDatacenterService _datacenterService;
 
-    public DatacentersController(IDatacenterRepository datacenterRepository)
+    public DatacentersController(IDatacenterService datacenterService)
     {
-        _datacenterRepository = datacenterRepository;
+        _datacenterService = datacenterService;
     }
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<DatacenterDto>>> GetDatacenters()
     {
-        var datacenters = await _datacenterRepository.GetAllDatacentersAsync();
-        var dtos = datacenters.Select(d => new DatacenterDto 
-        { 
-            Id = d.Id, 
-            Name = d.Name 
-        });
-        return Ok(dtos);
+        var result = await _datacenterService.GetDatacentersAsync();
+        return Ok(result);
     }
 
     [HttpPost]
-    public async Task<ActionResult<Datacenter>> CreateDatacenter(CreateDatacenterDto dto)
+    public async Task<ActionResult<DatacenterDto>> CreateDatacenter(CreateDatacenterDto dto)
     {
-        var datacenter = new Datacenter
-        {
-            Id = Guid.NewGuid(),
-            Name = dto.Name,
-            Location = dto.Location
-        };
-
-        var result = await _datacenterRepository.CreateDatacenterAsync(datacenter);
-        return CreatedAtAction(nameof(GetDatacenters), new { id = result.Id }, result);
+        var result = await _datacenterService.CreateDatacenterAsync(dto);
+        return Ok(result);
     }
 }
