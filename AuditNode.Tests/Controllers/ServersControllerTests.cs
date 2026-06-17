@@ -25,14 +25,14 @@ public class ServersControllerTests
     public async Task ExportServers_ShouldReturnOk_WithSelectedServers()
     {
         // Arrange
-        var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var ids = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
         var mockServers = new List<ServerResponseDto>
         {
             new ServerResponseDto { Id = ids[0], Hostname = "S1" },
             new ServerResponseDto { Id = ids[1], Hostname = "S2" }
         };
 
-        _mockService.Setup(s => s.GetByIdsAsync(ids))
+        _mockService.Setup(s => s.ExportServersAsync(ids))
             .ReturnsAsync(mockServers);
 
         // Act

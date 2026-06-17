@@ -11,25 +11,25 @@ namespace AuditNode.Tests.Controllers;
 
 public class DatacentersControllerTests
 {
-    private readonly Mock<IDatacenterRepository> _mockRepo;
+    private readonly Mock<IDatacenterService> _mockService;
     private readonly DatacentersController _controller;
 
     public DatacentersControllerTests()
     {
-        _mockRepo = new Mock<IDatacenterRepository>();
-        _controller = new DatacentersController(_mockRepo.Object);
+        _mockService = new Mock<IDatacenterService>();
+        _controller = new DatacentersController(_mockService.Object);
     }
 
     [Fact]
     public async Task GetDatacenters_ReturnsOkResult_WithListOfDatacenterDtos()
     {
         // Arrange
-        var datacenters = new List<Datacenter>
+        var datacenters = new List<DatacenterDto>
         {
-            new Datacenter { Id = Guid.NewGuid(), Name = "DC1", Location = "Loc1" },
-            new Datacenter { Id = Guid.NewGuid(), Name = "DC2", Location = "Loc2" }
+            new DatacenterDto { Id = Guid.NewGuid(), Name = "DC1" },
+            new DatacenterDto { Id = Guid.NewGuid(), Name = "DC2" }
         };
-        _mockRepo.Setup(repo => repo.GetAllDatacentersAsync()).ReturnsAsync(datacenters);
+        _mockService.Setup(s => s.GetDatacentersAsync()).ReturnsAsync(datacenters);
 
         // Act
         var result = await _controller.GetDatacenters();
@@ -44,22 +44,21 @@ public class DatacentersControllerTests
     }
 
     [Fact]
-    public async Task CreateDatacenter_ReturnsCreatedAtActionResult()
+    public async Task CreateDatacenter_ReturnsOkResult()
     {
         // Arrange
         var dto = new CreateDatacenterDto { Name = "New DC", Location = "New Loc" };
-        var createdDatacenter = new Datacenter { Id = Guid.NewGuid(), Name = dto.Name, Location = dto.Location };
+        var createdDatacenter = new DatacenterDto { Id = Guid.NewGuid(), Name = dto.Name };
         
-        _mockRepo.Setup(repo => repo.CreateDatacenterAsync(It.IsAny<Datacenter>()))
+        _mockService.Setup(s => s.CreateDatacenterAsync(dto))
             .ReturnsAsync(createdDatacenter);
 
         // Act
         var result = await _controller.CreateDatacenter(dto);
 
         // Assert
-        var createdAtActionResult = result.Result.As<CreatedAtActionResult>();
-        createdAtActionResult.ActionName.Should().Be(nameof(DatacentersController.GetDatacenters));
-        var returnedDatacenter = createdAtActionResult.Value.As<Datacenter>();
+        var okResult = result.Result.As<OkObjectResult>();
+        var returnedDatacenter = okResult.Value.As<DatacenterDto>();
         returnedDatacenter.Name.Should().Be(dto.Name);
     }
 }
