@@ -31,12 +31,13 @@ builder.Services.AddOpenApi("v1", options =>
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = "http://localhost:8080/realms/AuditNode-Realm";
-        options.RequireHttpsMetadata = false; // Set to true in production
+        options.Authority = builder.Configuration["Keycloak:Authority"];
+        options.RequireHttpsMetadata = builder.Configuration.GetValue<bool>("Keycloak:RequireHttpsMetadata");
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidateAudience = false, // Set to false for public client SPA tokens
+            ValidateAudience = builder.Configuration.GetValue<bool>("Keycloak:ValidateAudience"),
+            ValidAudience = builder.Configuration["Keycloak:Audience"],
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true
         };
