@@ -1,8 +1,11 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
-using AuditNode.Application.Services;
+using AuditNode.Infrastructure.Services;
+using AuditNode.Infrastructure.Data;
 using AuditNode.Domain.Entities;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
 using Xunit;
 
@@ -10,88 +13,63 @@ namespace AuditNode.Tests.Services;
 
 public class ServerServiceTests
 {
-    private readonly Mock<IServerRepository> _repositoryMock;
-    private readonly ServerService _service;
-
-    public ServerServiceTests()
+    private AuditDbContext GetDbContext()
     {
-        _repositoryMock = new Mock<IServerRepository>();
-        _service = new ServerService(_repositoryMock.Object);
+        var options = new DbContextOptionsBuilder<AuditDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        var mockTenantProvider = new Mock<ITenantProvider>();
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        return new AuditDbContext(options, mockTenantProvider.Object);
     }
 
     [Fact]
-    public async Task GetByIdAsync_ShouldReturnServerDetail_WhenServerExists()
+    public async Task GetServersAsync_ShouldReturnServers()
     {
         // Arrange
+        using var context = GetDbContext();
         var serverId = Guid.NewGuid();
-        var server = new Server
+        context.Servers.Add(new Server
         {
             Id = serverId,
             Hostname = "SRV-TEST",
             IpAddress = "10.0.0.1",
-            Datacenter = new Datacenter { Name = "DC-1" }
-        };
+            DatacenterId = Guid.NewGuid()
+        });
+        await context.SaveChangesAsync();
 
-        _repositoryMock.Setup(r => r.GetByIdAsync(serverId)).ReturnsAsync(server);
+        var service = new ServerService(context);
 
         // Act
-        var result = await _service.GetByIdAsync(serverId);
+        var result = await service.GetServersAsync();
 
         // Assert
         result.Should().NotBeNull();
-        result!.Hostname.Should().Be("SRV-TEST");
-        result.IpAddress.Should().Be("10.0.0.1");
-        result.DatacenterName.Should().Be("DC-1");
+        result.Should().HaveCount(1);
+        result.First().Hostname.Should().Be("SRV-TEST");
     }
 
     [Fact]
-    public async Task GetByIdAsync_ShouldReturnNull_WhenServerDoesNotExist()
+    public async Task ExportServersAsync_ShouldReturnSelectedServers()
     {
         // Arrange
-        var serverId = Guid.NewGuid();
-        _repositoryMock.Setup(r => r.GetByIdAsync(serverId)).ReturnsAsync((Server?)null);
+        using var context = GetDbContext();
+        var ids = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
+        
+        context.Servers.Add(new Server { Id = ids[0], Hostname = "S1", DatacenterId = Guid.NewGuid() });
+        context.Servers.Add(new Server { Id = ids[1], Hostname = "S2", DatacenterId = Guid.NewGuid() });
+        context.Servers.Add(new Server { Id = Guid.NewGuid(), Hostname = "S3", DatacenterId = Guid.NewGuid() });
+        await context.SaveChangesAsync();
+
+        var service = new ServerService(context);
 
         // Act
-        var result = await _service.GetByIdAsync(serverId);
+        var result = await service.ExportServersAsync(ids);
 
         // Assert
-        result.Should().BeNull();
-    }
-
-    [Fact]
-    public async Task UpdateAsync_ShouldReturnTrue_WhenServerExists()
-    {
-        // Arrange
-        var serverId = Guid.NewGuid();
-        var existingServer = new Server { Id = serverId, Hostname = "Old" };
-        var updateDto = new UpdateServerDto { Hostname = "New", DatacenterId = Guid.NewGuid() };
-
-        _repositoryMock.Setup(r => r.GetByIdAsync(serverId)).ReturnsAsync(existingServer);
-        _repositoryMock.Setup(r => r.UpdateAsync(It.IsAny<Server>())).Returns(Task.CompletedTask);
-
-        // Act
-        var result = await _service.UpdateAsync(serverId, updateDto);
-
-        // Assert
-        result.Should().BeTrue();
-        existingServer.Hostname.Should().Be("New");
-        _repositoryMock.Verify(r => r.UpdateAsync(existingServer), Times.Once);
-    }
-
-    [Fact]
-    public async Task UpdateAsync_ShouldReturnFalse_WhenServerDoesNotExist()
-    {
-        // Arrange
-        var serverId = Guid.NewGuid();
-        var updateDto = new UpdateServerDto { Hostname = "New" };
-
-        _repositoryMock.Setup(r => r.GetByIdAsync(serverId)).ReturnsAsync((Server?)null);
-
-        // Act
-        var result = await _service.UpdateAsync(serverId, updateDto);
-
-        // Assert
-        result.Should().BeFalse();
-        _repositoryMock.Verify(r => r.UpdateAsync(It.IsAny<Server>()), Times.Never);
+        result.Should().HaveCount(2);
+        result.Select(s => s.Hostname).Should().Contain(new[] { "S1", "S2" });
+        result.Select(s => s.Hostname).Should().NotContain("S3");
     }
 }

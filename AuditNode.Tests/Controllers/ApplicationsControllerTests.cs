@@ -3,7 +3,6 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using Moq;
 using System;
 using System.Collections.Generic;
@@ -14,21 +13,19 @@ namespace AuditNode.Tests.Controllers;
 public class ApplicationsControllerTests
 {
     private readonly Mock<IApplicationService> _mockService;
-    private readonly Mock<ILogger<ApplicationsController>> _mockLogger;
     private readonly ApplicationsController _controller;
 
     public ApplicationsControllerTests()
     {
         _mockService = new Mock<IApplicationService>();
-        _mockLogger = new Mock<ILogger<ApplicationsController>>();
-        _controller = new ApplicationsController(_mockService.Object, _mockLogger.Object);
+        _controller = new ApplicationsController(_mockService.Object);
     }
 
     [Fact]
     public async Task ExportApplications_ShouldReturnOk_WithSelectedApps()
     {
         // Arrange
-        var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var ids = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
         var mockApps = new List<ApplicationResponseDto>
         {
             new ApplicationResponseDto { Id = ids[0], AppName = "App 1" },
