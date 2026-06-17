@@ -9,7 +9,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class ServersController : ControllerBase
 {
     private readonly IServerService _serverService;
@@ -52,7 +52,7 @@ public class ServersController : ControllerBase
         }
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     public async Task<ActionResult<ServerDetailDto>> GetServer(Guid id)
     {
         var server = await _serverService.GetByIdAsync(id);
@@ -82,7 +82,7 @@ public class ServersController : ControllerBase
         }
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:guid}")]
     public async Task<IActionResult> PutServer(Guid id, [FromBody] UpdateServerDto updateDto)
     {
         if (!ModelState.IsValid)

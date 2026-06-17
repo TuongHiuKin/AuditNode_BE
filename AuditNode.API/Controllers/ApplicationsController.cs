@@ -11,7 +11,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class ApplicationsController : ControllerBase
 {
     private readonly IApplicationService _applicationService;
@@ -60,7 +60,7 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [HttpGet("{id}")]
+    [HttpGet("{id:guid}")]
     public async Task<ActionResult<ApplicationResponseDto>> GetApplication(Guid id)
     {
         var application = await _applicationService.GetByIdAsync(id);
@@ -90,7 +90,7 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [HttpPut("{id}")]
+    [HttpPut("{id:guid}")]
     public async Task<IActionResult> PutApplication(Guid id, [FromBody] UpdateApplicationDto updateDto)
     {
         _logger.LogInformation("=== HTTP PUT APPLICATION TRACE ===");

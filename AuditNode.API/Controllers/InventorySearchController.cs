@@ -7,7 +7,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/search")]
+[Route("api/v1/search")]
 public class InventorySearchController : ControllerBase
 {
     private readonly IInventorySearchService _searchService;

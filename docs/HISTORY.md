@@ -4,6 +4,35 @@ This document tracks significant changes, refactorings, and bug fixes applied to
 
 ---
 
+## 📅 June 17, 2026 - Feature: Comprehensive Unit Test Suite Expansion
+**Status:** ✅ Complete
+
+### Changes:
+- **Test Suite Expansion**: Implemented 44 new unit tests across all project layers, increasing the total test count from 74 to 118.
+- **Controller Coverage**: Added full test suites for previously untested controllers:
+    - `AnalyticsControllerTests`: Verified topology and dependency data retrieval with error handling.
+    - `DependenciesControllerTests`: Verified declarative synchronization and error states.
+    - `InfrastructureControllerTests`: Covered migration, purge, and dependency impact analysis.
+    - `InventoryImportControllerTests`: Validated Excel template downloads and best-effort import logic (valid/invalid files).
+    - `InventorySearchControllerTests`: Verified keyword-based search across apps and servers.
+    - `WorkspacesControllerTests`: Tested tenant-aware workspace retrieval.
+- **Service & Infrastructure Layer**:
+    - `WorkspaceServiceTests`: Verified basic retrieval logic.
+    - `TenantProviderTests`: Tested the core multi-tenancy context provider.
+- **Repository Layer**:
+    - `DatacenterRepositoryTests`: Verified CRUD operations for datacenters.
+    - `WorkspaceRepositoryTests`: Verified workspace listing.
+- **Validation Layer**: Created a new `Validators/` test directory and implemented:
+    - `CreateApplicationDtoValidatorTests`, `CreateDatacenterDtoValidatorTests`, and `CreateServerDtoValidatorTests` using `FluentValidation.TestHelper`.
+- **Infrastructure Hardening**: Updated `AuditNode.Tests.csproj` with necessary packages (`FluentValidation`) and established a pattern for testing keyless views and transactional logic using `InMemoryDatabase`.
+
+### Impact:
+- **Quality Assurance**: Significantly reduced the risk of regressions in core business logic and infrastructure operations.
+- **Developer Confidence**: established a 100% pass rate baseline (118/118 tests) for future feature development.
+- **Code Health**: Improved architectural compliance by ensuring every service and controller has a corresponding test file as per `AGENT.md` mandates.
+
+---
+
 ## 📅 June 14, 2026 - Feature: Keycloak JWT Bearer Authentication & Controller Protection
 **Status:** ✅ Complete
 

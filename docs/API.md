@@ -176,6 +176,24 @@ Updates an existing application's metadata and its network residency (server and
 
 ---
 
+## 2.1 Workspaces Endpoints
+
+### GET `/api/v1/workspaces`
+Retrieves all workspaces accessible to the authenticated user.
+
+**Response (200 OK):**
+```json
+[
+  {
+    "id": "uuid",
+    "name": "string",
+    "description": "string"
+  }
+]
+```
+
+---
+
 ## 3. Datacenters Endpoints
 
 ### GET `/api/datacenters`

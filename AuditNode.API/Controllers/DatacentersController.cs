@@ -8,7 +8,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class DatacentersController : ControllerBase
 {
     private readonly IDatacenterRepository _datacenterRepository;

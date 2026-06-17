@@ -125,6 +125,7 @@ public class AuditDbContext : DbContext
             entity.ToTable("port_mappings");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.ServerId).HasColumnName("server_id").IsRequired();
             entity.Property(e => e.AppId).HasColumnName("app_id").IsRequired();
             entity.Property(e => e.PortNumber).HasColumnName("port_number").IsRequired();
@@ -139,6 +140,8 @@ public class AuditDbContext : DbContext
                 .WithMany(a => a.PortMappings)
                 .HasForeignKey(pm => pm.AppId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(pm => pm.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
         // AppDependency
@@ -147,6 +150,7 @@ public class AuditDbContext : DbContext
             entity.ToTable("app_dependencies");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.SourceAppId).HasColumnName("source_app_id").IsRequired();
             entity.Property(e => e.DestAppId).HasColumnName("dest_app_id").IsRequired();
             entity.Property(e => e.DestPortId).HasColumnName("dest_port_id").IsRequired();
@@ -167,6 +171,8 @@ public class AuditDbContext : DbContext
                 .WithMany(pm => pm.AppDependencies)
                 .HasForeignKey(ad => ad.DestPortId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasQueryFilter(ad => ad.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
         // Configure read-only views
@@ -240,6 +246,20 @@ public class AuditDbContext : DbContext
                 if (_tenantProvider.WorkspaceId.HasValue)
                 {
                     node.WorkspaceId = _tenantProvider.WorkspaceId.Value;
+                }
+            }
+            else if (entry.Entity is PortMapping pm)
+            {
+                if (_tenantProvider.WorkspaceId.HasValue)
+                {
+                    pm.WorkspaceId = _tenantProvider.WorkspaceId.Value;
+                }
+            }
+            else if (entry.Entity is AppDependency ad)
+            {
+                if (_tenantProvider.WorkspaceId.HasValue)
+                {
+                    ad.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
         }
