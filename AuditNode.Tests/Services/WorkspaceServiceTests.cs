@@ -1,5 +1,5 @@
 using AuditNode.Application.Interfaces;
-using AuditNode.Application.Services;
+using AuditNode.Infrastructure.Services;
 using AuditNode.Domain.Entities;
 using FluentAssertions;
 using Moq;
