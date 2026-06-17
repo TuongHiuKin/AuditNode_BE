@@ -7,7 +7,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class DependenciesController : ControllerBase
 {
     private readonly IDependencyService _dependencyService;

@@ -6,7 +6,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/inventory")]
+[Route("api/v1/inventory")]
 public class InventoryImportController : ControllerBase
 {
     private readonly IInventoryImportService _importService;

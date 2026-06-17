@@ -6,7 +6,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class AnalyticsController : ControllerBase
 {
     private readonly IAnalyticsRepository _analyticsRepository;

@@ -7,7 +7,7 @@ namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v1/[controller]")]
 public class InfrastructureController : ControllerBase
 {
     private readonly IInfrastructureService _infrastructureService;
@@ -17,7 +17,7 @@ public class InfrastructureController : ControllerBase
         _infrastructureService = infrastructureService;
     }
 
-    [HttpGet("apps/{id}/dependencies-count")]
+    [HttpGet("apps/{id:guid}/dependencies-count")]
     public async Task<ActionResult<int>> GetDependenciesCount(Guid id)
     {
         try
@@ -55,7 +55,7 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [HttpDelete("apps/{id}/purge")]
+    [HttpDelete("apps/{id:guid}/purge")]
     public async Task<IActionResult> PurgeApp(Guid id)
     {
         try
@@ -74,7 +74,7 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [HttpGet("servers/{id}/deployed-apps")]
+    [HttpGet("servers/{id:guid}/deployed-apps")]
     public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id)
     {
         try

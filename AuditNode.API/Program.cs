@@ -1,18 +1,16 @@
+using AuditNode.API.Middleware;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
+using AuditNode.Infrastructure.Services;
+using AuditNode.Application.Services;
+using AuditNode.Application.Validators;
 using Microsoft.EntityFrameworkCore;
 using FluentValidation.AspNetCore;
-using AuditNode.Application.Validators;
 using FluentValidation;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-
-using AuditNode.API.Middleware;
-using AuditNode.Application.Interfaces;
-using AuditNode.Infrastructure.Services;
-using AuditNode.Application.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -41,6 +39,21 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = false, // Set to false for public client SPA tokens
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context => {
+                Console.WriteLine($"[Auth Failed] {context.Exception.Message}");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context => {
+                Console.WriteLine("[Auth Success] Token is valid.");
+                return Task.CompletedTask;
+            },
+            OnChallenge = context => {
+                Console.WriteLine($"[Auth Challenge] 401/403 about to be sent. Error: {context.Error}, Description: {context.ErrorDescription}");
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -107,15 +120,15 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Enable CORS early in the pipeline
+app.UseCors("AllowReact");
+
 // Authentication MUST run before Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
 // Workspace isolation middleware
 app.UseMiddleware<WorkspaceMiddleware>();
-
-// Enable CORS
-app.UseCors("AllowReact");
 
 // Map controllers
 app.MapControllers();

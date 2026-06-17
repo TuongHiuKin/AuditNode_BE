@@ -3,6 +3,7 @@ namespace AuditNode.Domain.Entities;
 public class AppDependency
 {
     public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
     public Guid SourceAppId { get; set; }
     public Guid DestAppId { get; set; }
     public Guid DestPortId { get; set; }
