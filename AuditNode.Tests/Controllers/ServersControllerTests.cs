@@ -13,12 +13,15 @@ namespace AuditNode.Tests.Controllers;
 public class ServersControllerTests
 {
     private readonly Mock<IServerService> _mockService;
+    private readonly Mock<ITenantProvider> _mockTenantProvider;
     private readonly ServersController _controller;
 
     public ServersControllerTests()
     {
         _mockService = new Mock<IServerService>();
-        _controller = new ServersController(_mockService.Object);
+        _mockTenantProvider = new Mock<ITenantProvider>();
+        _mockTenantProvider.Setup(t => t.WorkspaceId).Returns(Guid.NewGuid());
+        _controller = new ServersController(_mockService.Object, _mockTenantProvider.Object);
     }
 
     [Fact]
@@ -52,5 +55,52 @@ public class ServersControllerTests
 
         // Assert
         result.Result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task UpdateServer_ShouldReturnNoContent_WhenUpdateIsSuccessful()
+    {
+        // Arrange
+        var serverId = Guid.NewGuid();
+        var updateDto = new UpdateServerDto { Hostname = "NewHost" };
+        _mockService.Setup(s => s.UpdateServerAsync(serverId, updateDto)).ReturnsAsync(true);
+
+        // Act
+        var result = await _controller.UpdateServer(serverId, updateDto);
+
+        // Assert
+        result.Should().BeOfType<NoContentResult>();
+    }
+
+    [Fact]
+    public async Task UpdateServer_ShouldReturnNotFound_WhenServerDoesNotExist()
+    {
+        // Arrange
+        var serverId = Guid.NewGuid();
+        var updateDto = new UpdateServerDto { Hostname = "NewHost" };
+        _mockService.Setup(s => s.UpdateServerAsync(serverId, updateDto)).ReturnsAsync(false);
+
+        // Act
+        var result = await _controller.UpdateServer(serverId, updateDto);
+
+        // Assert
+        var notFoundResult = result.As<NotFoundObjectResult>();
+        notFoundResult.Should().NotBeNull();
+        notFoundResult.Value.Should().BeEquivalentTo(new { error = $"Server with ID {serverId} not found." });
+    }
+
+    [Fact]
+    public async Task UpdateServer_ShouldReturnBadRequest_WhenDtoIsNull()
+    {
+        // Arrange
+        var serverId = Guid.NewGuid();
+
+        // Act
+        var result = await _controller.UpdateServer(serverId, null!);
+
+        // Assert
+        var badRequestResult = result.As<BadRequestObjectResult>();
+        badRequestResult.Should().NotBeNull();
+        badRequestResult.Value.Should().BeEquivalentTo(new { error = "Update data is missing." });
     }
 }
