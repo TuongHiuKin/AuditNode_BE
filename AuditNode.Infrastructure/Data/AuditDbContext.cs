@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using System.Linq;
 using AuditNode.Domain.Entities;
 using AppEntity = AuditNode.Domain.Entities.Application;
@@ -8,12 +8,7 @@ namespace AuditNode.Infrastructure.Data;
 
 public class AuditDbContext : DbContext
 {
-    private readonly ITenantProvider _tenantProvider;
-
-    public AuditDbContext(DbContextOptions<AuditDbContext> options, ITenantProvider tenantProvider) : base(options)
-    {
-        _tenantProvider = tenantProvider;
-    }
+    public AuditDbContext(DbContextOptions<AuditDbContext> options) : base(options) { }
 
     public DbSet<Datacenter> Datacenters { get; set; }
     public DbSet<Server> Servers { get; set; }
@@ -22,8 +17,8 @@ public class AuditDbContext : DbContext
     public DbSet<AppDependency> AppDependencies { get; set; }
     public DbSet<TopologyView> TopologyViews { get; set; }
     public DbSet<DependencyView> DependencyViews { get; set; }
-    public DbSet<Workspace> Workspaces { get; set; }
-    public DbSet<TopologyNode> TopologyNodes { get; set; }
+    public DbSet<TopologyNode> TopologyNodes { get; set; } = null!;
+    public DbSet<Label> Labels { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -35,7 +30,6 @@ public class AuditDbContext : DbContext
             entity.ToTable("topology_nodes");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.NodeType).HasColumnName("node_type").IsRequired();
             entity.Property(e => e.Label).HasColumnName("label").IsRequired();
             entity.Property(e => e.X).HasColumnName("x");
@@ -48,19 +42,7 @@ public class AuditDbContext : DbContext
             entity.HasOne(e => e.ParentNode)
                 .WithMany(e => e.ChildNodes)
                 .HasForeignKey(e => e.ParentNodeId)
-                .OnDelete(DeleteBehavior.Cascade); // If a group is deleted, delete child node visual states
-
-            entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
-        });
-
-        // Workspace
-        modelBuilder.Entity<Workspace>(entity =>
-        {
-            entity.ToTable("workspaces");
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.Name).HasColumnName("name").IsRequired();
-            entity.Property(e => e.Description).HasColumnName("description");
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Datacenter
@@ -79,7 +61,6 @@ public class AuditDbContext : DbContext
             entity.ToTable("servers");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id").IsRequired();
             entity.Property(e => e.IpAddress).HasColumnName("ip_address").IsRequired();
             entity.Property(e => e.Hostname).HasColumnName("hostname").IsRequired();
@@ -87,14 +68,21 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Environment).HasColumnName("environment").IsRequired();
             entity.Property(e => e.Status).HasColumnName("status").IsRequired();
 
+            entity.HasMany(s => s.Labels)
+                  .WithMany()
+                  .UsingEntity<Dictionary<string, object>>(
+                      "server_labels",
+                      j => j.HasOne<Label>().WithMany().HasForeignKey("label_id"),
+                      j => j.HasOne<Server>().WithMany().HasForeignKey("server_id"),
+                      j => j.ToTable("server_labels")
+                  );
+
             entity.HasIndex(e => e.IpAddress).IsUnique();
 
             entity.HasOne(s => s.Datacenter)
                 .WithMany(d => d.Servers)
                 .HasForeignKey(s => s.DatacenterId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasQueryFilter(s => s.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
         // Application
@@ -103,7 +91,6 @@ public class AuditDbContext : DbContext
             entity.ToTable("applications");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.AppCode).HasColumnName("app_code").IsRequired();
             entity.Property(e => e.AppName).HasColumnName("app_name").IsRequired();
             entity.Property(e => e.OwnerTeam)
@@ -114,9 +101,16 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Icon).HasColumnName("icon");
             entity.Property(e => e.TechStack).HasColumnName("tech_stack");
 
-            entity.HasIndex(e => e.AppCode).IsUnique();
+            entity.HasMany(a => a.Labels)
+                  .WithMany()
+                  .UsingEntity<Dictionary<string, object>>(
+                      "application_labels",
+                      j => j.HasOne<Label>().WithMany().HasForeignKey("label_id"),
+                      j => j.HasOne<AppEntity>().WithMany().HasForeignKey("application_id"),
+                      j => j.ToTable("application_labels")
+                  );
 
-            entity.HasQueryFilter(a => a.WorkspaceId == _tenantProvider.WorkspaceId);
+            entity.HasIndex(e => e.AppCode).IsUnique();
         });
 
         // PortMapping
@@ -125,7 +119,6 @@ public class AuditDbContext : DbContext
             entity.ToTable("port_mappings");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.ServerId).HasColumnName("server_id").IsRequired();
             entity.Property(e => e.AppId).HasColumnName("app_id").IsRequired();
             entity.Property(e => e.PortNumber).HasColumnName("port_number").IsRequired();
@@ -140,8 +133,6 @@ public class AuditDbContext : DbContext
                 .WithMany(a => a.PortMappings)
                 .HasForeignKey(pm => pm.AppId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasQueryFilter(pm => pm.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
         // AppDependency
@@ -150,7 +141,6 @@ public class AuditDbContext : DbContext
             entity.ToTable("app_dependencies");
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
-            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
             entity.Property(e => e.SourceAppId).HasColumnName("source_app_id").IsRequired();
             entity.Property(e => e.DestAppId).HasColumnName("dest_app_id").IsRequired();
             entity.Property(e => e.DestPortId).HasColumnName("dest_port_id").IsRequired();
@@ -171,8 +161,17 @@ public class AuditDbContext : DbContext
                 .WithMany(pm => pm.AppDependencies)
                 .HasForeignKey(ad => ad.DestPortId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
 
-            entity.HasQueryFilter(ad => ad.WorkspaceId == _tenantProvider.WorkspaceId);
+        // Label
+        modelBuilder.Entity<Label>(entity =>
+        {
+            entity.ToTable("labels");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Key).HasColumnName("key").IsRequired();
+            entity.Property(e => e.Value).HasColumnName("value").IsRequired();
+            entity.Property(e => e.ColorHex).HasColumnName("color_hex");
         });
 
         // Configure read-only views
@@ -207,61 +206,5 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id");
         });
     }
-
-    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        ApplyWorkspaceId();
-        return base.SaveChangesAsync(cancellationToken);
-    }
-
-    public override int SaveChanges()
-    {
-        ApplyWorkspaceId();
-        return base.SaveChanges();
-    }
-
-    private void ApplyWorkspaceId()
-    {
-        var entries = ChangeTracker.Entries()
-            .Where(e => (e.State == EntityState.Added || e.State == EntityState.Modified));
-
-        foreach (var entry in entries)
-        {
-            if (entry.Entity is Server server)
-            {
-                if (_tenantProvider.WorkspaceId.HasValue)
-                {
-                    server.WorkspaceId = _tenantProvider.WorkspaceId.Value;
-                }
-            }
-            else if (entry.Entity is AppEntity app)
-            {
-                if (_tenantProvider.WorkspaceId.HasValue)
-                {
-                    app.WorkspaceId = _tenantProvider.WorkspaceId.Value;
-                }
-            }
-            else if (entry.Entity is TopologyNode node)
-            {
-                if (_tenantProvider.WorkspaceId.HasValue)
-                {
-                    node.WorkspaceId = _tenantProvider.WorkspaceId.Value;
-                }
-            }
-            else if (entry.Entity is PortMapping pm)
-            {
-                if (_tenantProvider.WorkspaceId.HasValue)
-                {
-                    pm.WorkspaceId = _tenantProvider.WorkspaceId.Value;
-                }
-            }
-            else if (entry.Entity is AppDependency ad)
-            {
-                if (_tenantProvider.WorkspaceId.HasValue)
-                {
-                    ad.WorkspaceId = _tenantProvider.WorkspaceId.Value;
-                }
-            }
-        }
-    }
 }
+

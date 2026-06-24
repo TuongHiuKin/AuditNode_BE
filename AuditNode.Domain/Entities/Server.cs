@@ -2,7 +2,6 @@ namespace AuditNode.Domain.Entities;
 
 public class Server
 {
-    public Guid WorkspaceId { get; set; }
     public Guid Id { get; set; }
     public Guid DatacenterId { get; set; }
     public Datacenter? Datacenter { get; set; }
@@ -11,6 +10,7 @@ public class Server
     public string OsType { get; set; } = string.Empty;
     public string Environment { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public virtual ICollection<Label> Labels { get; set; } = new List<Label>();
 
     // Navigation properties
     public ICollection<PortMapping> PortMappings { get; set; } = new List<PortMapping>();

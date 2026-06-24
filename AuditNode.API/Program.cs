@@ -1,4 +1,3 @@
-using AuditNode.API.Middleware;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
@@ -14,7 +13,6 @@ using Microsoft.IdentityModel.Tokens;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
-builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -27,6 +25,7 @@ builder.Services.AddOpenApi("v1", options =>
 });
 
 // Configure JWT Bearer Authentication with Keycloak
+Console.WriteLine($"[DEBUG SECURITY] Keycloak Authority Loaded: {builder.Configuration["Keycloak:Authority"]}");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -35,6 +34,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
+            ValidIssuer = builder.Configuration["Keycloak:Authority"],
             ValidateAudience = builder.Configuration.GetValue<bool>("Keycloak:ValidateAudience"),
             ValidAudience = builder.Configuration["Keycloak:Audience"],
             ValidateLifetime = true,
@@ -70,12 +70,10 @@ builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
-builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
 
 // Register Services
 builder.Services.AddScoped<IApplicationService, AuditNode.Infrastructure.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Infrastructure.Services.ServerService>();
-builder.Services.AddScoped<IWorkspaceService, AuditNode.Infrastructure.Services.WorkspaceService>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
@@ -127,9 +125,6 @@ app.UseCors("AllowReact");
 // Authentication MUST run before Authorization
 app.UseAuthentication();
 app.UseAuthorization();
-
-// Workspace isolation middleware
-app.UseMiddleware<WorkspaceMiddleware>();
 
 // Map controllers
 app.MapControllers();

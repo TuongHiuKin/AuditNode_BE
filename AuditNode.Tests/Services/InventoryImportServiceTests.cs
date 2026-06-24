@@ -1,6 +1,5 @@
 using AuditNode.Infrastructure.Services;
 using AuditNode.Infrastructure.Data;
-using AuditNode.Application.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
 using ClosedXML.Excel;
@@ -20,10 +19,7 @@ public class InventoryImportServiceTests
         var options = new DbContextOptionsBuilder<AuditDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
-            .Options;
-        var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
-        _context = new AuditDbContext(options, mockTenantProvider.Object);
+            .Options;        _context = new AuditDbContext(options);
         _service = new InventoryImportService(_context);
     }
 

@@ -1,7 +1,6 @@
 using AuditNode.Infrastructure.Services;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Domain.Entities;
-using AuditNode.Application.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
 using Moq;
@@ -19,10 +18,7 @@ public class InventorySearchServiceTests
     {
         var options = new DbContextOptionsBuilder<AuditDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .Options;
-        var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
-        _context = new AuditDbContext(options, mockTenantProvider.Object);
+            .Options;        _context = new AuditDbContext(options);
         _service = new InventorySearchService(_context);
     }
 

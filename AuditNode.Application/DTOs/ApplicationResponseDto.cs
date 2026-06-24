@@ -10,6 +10,7 @@ public class ApplicationResponseDto
     public string Icon { get; set; } = string.Empty;
     public string TechStack { get; set; } = string.Empty;
     public List<ServerOnApplicationDto> Servers { get; set; } = new();
+    public IEnumerable<LabelDto> Labels { get; set; } = new List<LabelDto>();
 }
 
 public class ServerOnApplicationDto

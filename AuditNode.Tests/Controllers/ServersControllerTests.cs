@@ -1,6 +1,6 @@
+using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
-using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -13,15 +13,12 @@ namespace AuditNode.Tests.Controllers;
 public class ServersControllerTests
 {
     private readonly Mock<IServerService> _mockService;
-    private readonly Mock<ITenantProvider> _mockTenantProvider;
     private readonly ServersController _controller;
 
     public ServersControllerTests()
     {
         _mockService = new Mock<IServerService>();
-        _mockTenantProvider = new Mock<ITenantProvider>();
-        _mockTenantProvider.Setup(t => t.WorkspaceId).Returns(Guid.NewGuid());
-        _controller = new ServersController(_mockService.Object, _mockTenantProvider.Object);
+        _controller = new ServersController(_mockService.Object);
     }
 
     [Fact]

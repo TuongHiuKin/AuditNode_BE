@@ -1,4 +1,4 @@
-using AuditNode.Application.DTOs;
+﻿using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
@@ -17,52 +17,33 @@ public class ApplicationService : IApplicationService
         _context = context;
     }
 
-    public async Task<IEnumerable<ApplicationResponseDto>> GetAllAsync()
+    private async Task<List<Label>> ProcessLabelsAsync(IEnumerable<LabelDto> incomingLabels)
     {
-        var query = _context.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server);
-        
-        return await MapToResponseDto(query).ToListAsync();
-    }
+        var processedLabels = new List<Label>();
+        if (incomingLabels == null || !incomingLabels.Any()) return processedLabels;
 
-    public async Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids)
-    {
-        var query = _context.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server)
-            .Where(a => ids.Contains(a.Id));
-
-        return await MapToResponseDto(query).ToListAsync();
-    }
-
-    public async Task<ApplicationResponseDto?> GetByIdAsync(Guid id)
-    {
-        var app = await _context.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server)
-            .FirstOrDefaultAsync(a => a.Id == id);
-
-        if (app == null) return null;
-
-        return new ApplicationResponseDto
+        foreach (var labelDto in incomingLabels)
         {
-            Id = app.Id,
-            AppCode = app.AppCode,
-            AppName = app.AppName,
-            OwnerTeam = app.OwnerTeam,
-            Risk = app.Risk,
-            Icon = app.Icon,
-            TechStack = app.TechStack,
-            Servers = app.PortMappings.Select(pm => new ServerOnApplicationDto
+            var existingLabel = await _context.Labels
+                .FirstOrDefaultAsync(l => l.Key == labelDto.Key && l.Value == labelDto.Value);
+
+            if (existingLabel != null)
             {
-                Id = pm.ServerId,
-                Hostname = pm.Server?.Hostname ?? string.Empty,
-                IpAddress = pm.Server?.IpAddress ?? string.Empty,
-                PortNumber = pm.PortNumber,
-                Protocol = pm.Protocol
-            }).ToList()
-        };
+                processedLabels.Add(existingLabel);
+            }
+            else
+            {
+                var newLabel = new Label 
+                { 
+                    Id = Guid.NewGuid(), 
+                    Key = labelDto.Key, 
+                    Value = labelDto.Value, 
+                    ColorHex = labelDto.ColorHex ?? string.Empty 
+                };
+                processedLabels.Add(newLabel);
+            }
+        }
+        return processedLabels;
     }
 
     public async Task<ApplicationResponseDto> CreateAsync(CreateApplicationDto appDto)
@@ -85,7 +66,8 @@ public class ApplicationService : IApplicationService
                     OwnerTeam = appDto.OwnerTeam,
                     Risk = string.IsNullOrWhiteSpace(appDto.Risk) ? "LOW" : appDto.Risk,
                     Icon = appDto.Icon ?? string.Empty,
-                    TechStack = appDto.TechStack ?? string.Empty
+                    TechStack = appDto.TechStack ?? string.Empty,
+                    Labels = await ProcessLabelsAsync(appDto.Labels)
                 };
                 _context.Applications.Add(application);
             }
@@ -96,23 +78,14 @@ public class ApplicationService : IApplicationService
                 existingApp.Risk = string.IsNullOrWhiteSpace(appDto.Risk) ? "LOW" : appDto.Risk;
                 existingApp.Icon = appDto.Icon ?? string.Empty;
                 existingApp.TechStack = appDto.TechStack ?? string.Empty;
+                existingApp.Labels = await ProcessLabelsAsync(appDto.Labels);
                 application = existingApp;
             }
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            return new ApplicationResponseDto
-            {
-                Id = application.Id,
-                AppCode = application.AppCode,
-                AppName = application.AppName,
-                OwnerTeam = application.OwnerTeam,
-                Risk = application.Risk,
-                Icon = application.Icon,
-                TechStack = application.TechStack,
-                Servers = new List<ServerOnApplicationDto>()
-            };
+            return await GetByIdAsync(application.Id) ?? new ApplicationResponseDto();
         }
         catch (Exception)
         {
@@ -126,7 +99,10 @@ public class ApplicationService : IApplicationService
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            var app = await _context.Applications.FirstOrDefaultAsync(a => a.Id == id);
+            var app = await _context.Applications
+                .Include(a => a.Labels)
+                .FirstOrDefaultAsync(a => a.Id == id);
+                
             if (app == null) return false;
 
             app.AppName = updateDto.AppName;
@@ -135,6 +111,31 @@ public class ApplicationService : IApplicationService
             app.Icon = updateDto.Icon;
             app.TechStack = updateDto.TechStack;
 
+            var incomingLabels = updateDto.Labels ?? new List<LabelDto>();
+
+            // 1. Identify labels to REMOVE
+            var labelsToRemove = app.Labels
+                .Where(sl => !incomingLabels.Any(il => il.Key == sl.Key && il.Value == sl.Value))
+                .ToList();
+
+            foreach (var label in labelsToRemove)
+            {
+                app.Labels.Remove(label);
+            }
+
+            // 2. Identify labels to ADD
+            var labelsToAddDtos = incomingLabels
+                .Where(il => !app.Labels.Any(sl => sl.Key == il.Key && sl.Value == il.Value))
+                .ToList();
+
+            var labelsToAdd = await ProcessLabelsAsync(labelsToAddDtos);
+
+            foreach (var label in labelsToAdd)
+            {
+                app.Labels.Add(label);
+            }
+
+            // Also handle PortMapping logic as before
             var portMapping = await _context.PortMappings.FirstOrDefaultAsync(p => p.AppId == id);
             
             if (updateDto.TargetServerId.HasValue || updateDto.PortNumber.HasValue)
@@ -174,6 +175,67 @@ public class ApplicationService : IApplicationService
         }
     }
 
+    public async Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string[]? labels = null)
+    {
+        var query = _context.Applications
+            .Include(a => a.Labels)
+            .Include(a => a.PortMappings)
+                .ThenInclude(pm => pm.Server)
+            .AsSplitQuery()
+            .AsQueryable();
+
+        if (labels != null && labels.Length > 0)
+        {
+            query = query.Where(a => a.Labels.Any(l => labels.Contains(l.Key) || labels.Contains(l.Value)));
+        }
+
+        return await MapToResponseDto(query).ToListAsync();
+    }
+
+    public async Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids)
+    {
+        var query = _context.Applications
+            .Include(a => a.Labels)
+            .Include(a => a.PortMappings)
+                .ThenInclude(pm => pm.Server)
+            .Where(a => ids.Contains(a.Id))
+            .AsSplitQuery();
+
+        return await MapToResponseDto(query).ToListAsync();
+    }
+
+    public async Task<ApplicationResponseDto?> GetByIdAsync(Guid id)
+    {
+        var app = await _context.Applications
+            .Include(a => a.Labels)
+            .Include(a => a.PortMappings)
+                .ThenInclude(pm => pm.Server)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(a => a.Id == id);
+
+        if (app == null) return null;
+
+        return new ApplicationResponseDto
+        {
+            Id = app.Id,
+            AppCode = app.AppCode,
+            AppName = app.AppName,
+            OwnerTeam = app.OwnerTeam,
+            Risk = app.Risk,
+            Icon = app.Icon,
+            TechStack = app.TechStack,
+            Labels = app.Labels?.Select(l => new LabelDto { Key = l.Key, Value = l.Value, ColorHex = l.ColorHex }).ToList() ?? new List<LabelDto>(),
+            Servers = app.PortMappings.Select(pm => new ServerOnApplicationDto
+            {
+                Id = pm.ServerId,
+                Hostname = pm.Server?.Hostname ?? string.Empty,
+                IpAddress = pm.Server?.IpAddress ?? string.Empty,
+                PortNumber = pm.PortNumber,
+                Protocol = pm.Protocol
+            }).ToList()
+        };
+    }
+
     private IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query)
     {
         return query.Select(a => new ApplicationResponseDto
@@ -185,6 +247,7 @@ public class ApplicationService : IApplicationService
             Risk = a.Risk,
             Icon = a.Icon,
             TechStack = a.TechStack,
+            Labels = a.Labels.Select(l => new LabelDto { Key = l.Key, Value = l.Value, ColorHex = l.ColorHex }).ToList(),
             Servers = a.PortMappings.Select(pm => new ServerOnApplicationDto
             {
                 Id = pm.ServerId,

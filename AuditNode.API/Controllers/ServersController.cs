@@ -12,18 +12,16 @@ namespace AuditNode.API.Controllers;
 public class ServersController : ControllerBase
 {
     private readonly IServerService _serverService;
-    private readonly ITenantProvider _tenantProvider;
 
-    public ServersController(IServerService serverService, ITenantProvider tenantProvider)
+    public ServersController(IServerService serverService)
     {
         _serverService = serverService;
-        _tenantProvider = tenantProvider;
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> GetServers()
+    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> GetServers([FromQuery] string[]? labels)
     {
-        var result = await _serverService.GetServersAsync();
+        var result = await _serverService.GetServersAsync(labels);
         return Ok(result);
     }
 
@@ -42,7 +40,7 @@ public class ServersController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ServerResponseDto>> GetServer(Guid id)
     {
-        Console.WriteLine($"[DEBUG TRACE] Controller fetching Server ID: {id}. Active Workspace ID from Context: {_tenantProvider.WorkspaceId}");
+        Console.WriteLine($"[DEBUG TRACE] Controller fetching Server ID: {id}.");
         var result = await _serverService.GetServerByIdAsync(id);
         
         if (result == null)
@@ -51,6 +49,14 @@ public class ServersController : ControllerBase
         }
         
         return Ok(result);
+    }
+
+        [HttpPost]
+    public async Task<ActionResult<ServerResponseDto>> CreateServer([FromBody] CreateServerDto createDto)
+    {
+        if (createDto == null) return BadRequest();
+        var result = await _serverService.CreateServerAsync(createDto);
+        return CreatedAtAction(nameof(GetServer), new { id = result.Id }, result);
     }
 
     [HttpPut("{id:guid}")]

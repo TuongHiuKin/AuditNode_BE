@@ -16,4 +16,5 @@ public class UpdateApplicationDto
 
     [JsonPropertyName("portNumber")]
     public int? PortNumber { get; set; }
+    public IEnumerable<LabelDto> Labels { get; set; } = new List<LabelDto>();
 }
