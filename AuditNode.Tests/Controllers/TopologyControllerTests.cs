@@ -1,6 +1,6 @@
+using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
-using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;

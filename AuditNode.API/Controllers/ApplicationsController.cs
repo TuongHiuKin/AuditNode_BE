@@ -19,9 +19,9 @@ public class ApplicationsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> GetApplications()
+    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> GetApplications([FromQuery] string[]? labels)
     {
-        var result = await _applicationService.GetAllAsync();
+        var result = await _applicationService.GetAllAsync(labels);
         return Ok(result);
     }
 

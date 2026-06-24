@@ -5,7 +5,7 @@ namespace AuditNode.Application.Interfaces;
 
 public interface IApplicationService
 {
-    Task<IEnumerable<ApplicationResponseDto>> GetAllAsync();
+    Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string[]? labels = null);
     Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids);
     Task<ApplicationResponseDto?> GetByIdAsync(Guid id);
     Task<ApplicationResponseDto> CreateAsync(CreateApplicationDto createDto);
