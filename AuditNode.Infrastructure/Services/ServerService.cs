@@ -1,4 +1,4 @@
-﻿using AuditNode.Application.DTOs;
+using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using AuditNode.Infrastructure.Data;
@@ -154,7 +154,6 @@ public class ServerService : IServerService
     {
         var servers = await _context.Servers
             .Include(s => s.Datacenter)
-            .Include(s => s.Labels)
             .Include(s => s.PortMappings)
             .ThenInclude(pm => pm.Application)
             .Where(s => ids.Contains(s.Id))
@@ -171,7 +170,6 @@ public class ServerService : IServerService
             Environment = s.Environment,
             Datacenter = s.Datacenter?.Name ?? string.Empty,
             Status = s.Status,
-            Labels = s.Labels?.Select(l => new LabelDto { Key = l.Key, Value = l.Value, ColorHex = l.ColorHex }).ToList() ?? new List<LabelDto>(),
             Applications = s.PortMappings?.Select(pm => new ApplicationOnServerDto
             {
                 Id = pm.Application!.Id,

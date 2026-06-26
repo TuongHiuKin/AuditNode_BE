@@ -68,7 +68,7 @@ public class InventoryImportServiceTests
         stream.Position = 0;
 
         // Act
-        var result = await _service.ImportInventoryAsync(stream);
+        var result = await _service.ImportInventoryAsync(stream, "test-owner");
 
         // Assert
         result.SavedCount.Should().Be(1);
@@ -87,7 +87,8 @@ public class InventoryImportServiceTests
             Id = Guid.NewGuid(), 
             AppCode = "APP01", 
             AppName = "Original Name", 
-            OwnerTeam = "Original Team"
+            OwnerTeam = "Original Team",
+            OwnerId = "test-owner"
         };
         _context.Applications.Add(existingApp);
         await _context.SaveChangesAsync();
@@ -112,7 +113,7 @@ public class InventoryImportServiceTests
         stream.Position = 0;
 
         // Act
-        var result = await _service.ImportInventoryAsync(stream);
+        var result = await _service.ImportInventoryAsync(stream, "test-owner");
 
         // Assert
         result.Conflicts.Should().NotBeEmpty();
@@ -144,7 +145,7 @@ public class InventoryImportServiceTests
         stream.Position = 0;
 
         // Act
-        var result = await _service.ImportInventoryAsync(stream);
+        var result = await _service.ImportInventoryAsync(stream, "test-owner");
 
         // Assert
         result.SavedCount.Should().Be(2);

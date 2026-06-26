@@ -47,7 +47,7 @@ public class InventoryImportService : IInventoryImportService
         return stream.ToArray();
     }
 
-    public async Task<ImportResponseDto> ImportInventoryAsync(Stream excelStream)
+    public async Task<ImportResponseDto> ImportInventoryAsync(Stream excelStream, string currentUserId)
     {
         var response = new ImportResponseDto();
         using var workbook = new XLWorkbook(excelStream);
@@ -61,12 +61,11 @@ public class InventoryImportService : IInventoryImportService
         // Pre-fetch existing Apps and Servers for fast memory lookup
         var existingAppsDict = await _context.Applications
             .AsNoTracking()
-            .Where(a => allAppCodes.Contains(a.AppCode))
+            .Where(a => a.OwnerId == currentUserId && allAppCodes.Contains(a.AppCode))
             .ToDictionaryAsync(a => a.AppCode);
 
         var existingServersDict = await _context.Servers
-            .AsNoTracking()
-            .Where(s => allIps.Contains(s.IpAddress))
+            .Where(s => s.OwnerId == currentUserId && allIps.Contains(s.IpAddress))
             .ToDictionaryAsync(s => s.IpAddress);
 
         var validRows = new List<(int RowNum, string ServerName, string Ip, string Env, string AppCode, string AppName, string OwnerTeam, int Port, string Protocol)>();
@@ -125,11 +124,11 @@ public class InventoryImportService : IInventoryImportService
             // Ensure at least one datacenter exists - FIXED WARNING 10103
             var datacenter = await _context.Datacenters
                 .OrderBy(d => d.Id)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(d => d.OwnerId == currentUserId);
 
             if (datacenter == null)
             {
-                datacenter = new Datacenter { Id = Guid.NewGuid(), Name = "Default DC", Location = "Auto-generated" };
+                datacenter = new Datacenter { Id = Guid.NewGuid(), Name = "Default DC", Location = "Auto-generated", OwnerId = currentUserId };
                 _context.Datacenters.Add(datacenter);
                 await _context.SaveChangesAsync();
             }
@@ -159,7 +158,8 @@ public class InventoryImportService : IInventoryImportService
                         Environment = ds.Env,
                         DatacenterId = datacenter.Id,
                         OsType = "Unknown",
-                        Status = "Active"
+                        Status = "Active",
+                        OwnerId = currentUserId
                     };
                     _context.Servers.Add(server);
                     currentServers.Add(server.IpAddress, server);
@@ -183,7 +183,8 @@ public class InventoryImportService : IInventoryImportService
                         AppCode = da.AppCode,
                         AppName = da.AppName,
                         OwnerTeam = da.OwnerTeam,
-                        Risk = "Medium"
+                        Risk = "Medium",
+                        OwnerId = currentUserId
                     };
                     _context.Applications.Add(application);
                     currentApps.Add(application.AppCode, application);

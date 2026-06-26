@@ -4,6 +4,9 @@ using AuditNode.Application.DTOs;
 using AuditNode.Domain.Entities;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Moq;
 using Xunit;
 

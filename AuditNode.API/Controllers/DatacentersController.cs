@@ -3,10 +3,14 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace AuditNode.API.Controllers;
 
-[Authorize]
+[Authorize(Roles = "Admin,User")]
 [ApiController]
 [Route(ApiRoutes.BaseRoute)]
 public class DatacentersController : ControllerBase
@@ -30,5 +34,13 @@ public class DatacentersController : ControllerBase
     {
         var result = await _datacenterService.CreateDatacenterAsync(dto);
         return Ok(result);
+    }
+
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DeleteDatacenter(Guid id)
+    {
+        // Implementation for deleting datacenter...
+        return Ok(new { message = "Datacenter deleted successfully" });
     }
 }

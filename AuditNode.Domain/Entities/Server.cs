@@ -10,6 +10,7 @@ public class Server
     public string OsType { get; set; } = string.Empty;
     public string Environment { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
+    public string OwnerId { get; set; } = string.Empty;
     public virtual ICollection<Label> Labels { get; set; } = new List<Label>();
 
     // Navigation properties

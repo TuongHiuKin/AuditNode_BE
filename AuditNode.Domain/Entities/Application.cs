@@ -9,6 +9,7 @@ public class Application
     public string Risk { get; set; } = string.Empty;
     public string Icon { get; set; } = string.Empty;
     public string TechStack { get; set; } = string.Empty;
+    public string OwnerId { get; set; } = string.Empty;
     public virtual ICollection<Label> Labels { get; set; } = new List<Label>();
 
     // Navigation properties

@@ -18,5 +18,5 @@ public interface IInventoryImportService
     /// </summary>
     /// <param name="excelStream">The stream containing the Excel file.</param>
     /// <returns>A response DTO containing counts, errors, and conflicts.</returns>
-    Task<ImportResponseDto> ImportInventoryAsync(Stream excelStream);
+    Task<ImportResponseDto> ImportInventoryAsync(Stream excelStream, string currentUserId);
 }

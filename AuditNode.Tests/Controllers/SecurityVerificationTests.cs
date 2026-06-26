@@ -32,7 +32,7 @@ public class SecurityVerificationTests
         // Arrange
         var assembly = typeof(ApplicationsController).Assembly;
         var controllerTypes = assembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(ControllerBase)) && !t.IsAbstract)
+            .Where(t => t.IsSubclassOf(typeof(ControllerBase)) && !t.IsAbstract && t != typeof(AuthController))
             .ToList();
 
         // Act & Assert

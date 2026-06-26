@@ -38,7 +38,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = builder.Configuration.GetValue<bool>("Keycloak:ValidateAudience"),
             ValidAudience = builder.Configuration["Keycloak:Audience"],
             ValidateLifetime = true,
-            ValidateIssuerSigningKey = true
+            ValidateIssuerSigningKey = true,
+            RoleClaimType = "realm_access.roles"
         };
         options.Events = new JwtBearerEvents
         {
@@ -72,6 +73,10 @@ builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
 
 // Register Services
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, AuditNode.API.Services.CurrentUserService>();
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<IAuthService, AuditNode.Infrastructure.Services.KeycloakAuthService>();
 builder.Services.AddScoped<IApplicationService, AuditNode.Infrastructure.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Infrastructure.Services.ServerService>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
@@ -130,3 +135,4 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+

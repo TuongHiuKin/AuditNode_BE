@@ -48,8 +48,14 @@ public class InventoryImportController : ControllerBase
             return BadRequest("Only .xlsx files are supported.");
         }
 
+        var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(currentUserId))
+        {
+            return Unauthorized("User ID not found in token.");
+        }
+
         using var stream = file.OpenReadStream();
-        var result = await _importService.ImportInventoryAsync(stream);
+        var result = await _importService.ImportInventoryAsync(stream, currentUserId);
 
         return Ok(result);
     }

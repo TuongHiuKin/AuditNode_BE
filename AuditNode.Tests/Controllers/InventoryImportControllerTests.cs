@@ -54,7 +54,19 @@ public class InventoryImportControllerTests
         fileMock.Setup(_ => _.Length).Returns(ms.Length);
 
         var importResult = new ImportResponseDto { SavedCount = 10, Errors = new List<ImportErrorDto>() };
-        _mockService.Setup(s => s.ImportInventoryAsync(It.IsAny<Stream>())).ReturnsAsync(importResult);
+        _mockService.Setup(s => s.ImportInventoryAsync(It.IsAny<Stream>(), It.IsAny<string>())).ReturnsAsync(importResult);
+
+        var claims = new List<System.Security.Claims.Claim>
+        {
+            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "test-user-id")
+        };
+        var identity = new System.Security.Claims.ClaimsIdentity(claims, "TestAuthType");
+        var claimsPrincipal = new System.Security.Claims.ClaimsPrincipal(identity);
+
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = claimsPrincipal }
+        };
 
         // Act
         var result = await _controller.ImportInventory(fileMock.Object);
