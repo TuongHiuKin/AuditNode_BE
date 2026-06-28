@@ -4,6 +4,7 @@ using AuditNode.Application.DTOs;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -12,12 +13,14 @@ namespace AuditNode.Tests.Controllers;
 public class InventoryImportControllerTests
 {
     private readonly Mock<IInventoryImportService> _mockService;
+    private readonly Mock<ILogger<InventoryImportController>> _mockLogger;
     private readonly InventoryImportController _controller;
 
     public InventoryImportControllerTests()
     {
         _mockService = new Mock<IInventoryImportService>();
-        _controller = new InventoryImportController(_mockService.Object);
+        _mockLogger = new Mock<ILogger<InventoryImportController>>();
+        _controller = new InventoryImportController(_mockService.Object, _mockLogger.Object);
     }
 
     [Fact]
@@ -37,7 +40,7 @@ public class InventoryImportControllerTests
     }
 
     [Fact]
-    public async Task ImportInventory_ShouldReturnOk_WhenFileIsValid()
+    public async Task BulkImport_ShouldReturnOk_WhenFileIsValid()
     {
         // Arrange
         var fileMock = new Mock<IFormFile>();
@@ -69,7 +72,7 @@ public class InventoryImportControllerTests
         };
 
         // Act
-        var result = await _controller.ImportInventory(fileMock.Object);
+        var result = await _controller.BulkImport(fileMock.Object);
 
         // Assert
         var okResult = result.As<OkObjectResult>();
@@ -77,17 +80,17 @@ public class InventoryImportControllerTests
     }
 
     [Fact]
-    public async Task ImportInventory_ShouldReturnBadRequest_WhenNoFile()
+    public async Task BulkImport_ShouldReturnBadRequest_WhenNoFile()
     {
         // Act
-        var result = await _controller.ImportInventory(null!);
+        var result = await _controller.BulkImport(null!);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
-    public async Task ImportInventory_ShouldReturnBadRequest_WhenInvalidExtension()
+    public async Task BulkImport_ShouldReturnBadRequest_WhenInvalidExtension()
     {
         // Arrange
         var fileMock = new Mock<IFormFile>();
@@ -95,7 +98,7 @@ public class InventoryImportControllerTests
         fileMock.Setup(_ => _.Length).Returns(10);
 
         // Act
-        var result = await _controller.ImportInventory(fileMock.Object);
+        var result = await _controller.BulkImport(fileMock.Object);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();

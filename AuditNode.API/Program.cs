@@ -127,6 +127,20 @@ app.UseHttpsRedirection();
 // Enable CORS early in the pipeline
 app.UseCors("AllowReact");
 
+// Inject Raw Network Debugging Middleware
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.Value != null && 
+       (context.Request.Path.Value.Contains("bulk-import", StringComparison.OrdinalIgnoreCase) || 
+        context.Request.Path.Value.Contains("import", StringComparison.OrdinalIgnoreCase)))
+    {
+        Console.WriteLine($"[RAW NETWORK DEBUG] Path: {context.Request.Path}");
+        Console.WriteLine($"[RAW NETWORK DEBUG] Content-Type: {context.Request.ContentType}");
+        Console.WriteLine($"[RAW NETWORK DEBUG] Content-Length: {context.Request.ContentLength}");
+    }
+    await next();
+});
+
 // Authentication MUST run before Authorization
 app.UseAuthentication();
 app.UseAuthorization();

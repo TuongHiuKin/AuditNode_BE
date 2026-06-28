@@ -1,6 +1,8 @@
+using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace AuditNode.API.Controllers;
 
@@ -10,10 +12,12 @@ namespace AuditNode.API.Controllers;
 public class InventoryImportController : ControllerBase
 {
     private readonly IInventoryImportService _importService;
+    private readonly ILogger<InventoryImportController> _logger;
 
-    public InventoryImportController(IInventoryImportService importService)
+    public InventoryImportController(IInventoryImportService importService, ILogger<InventoryImportController> logger)
     {
         _importService = importService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -32,12 +36,15 @@ public class InventoryImportController : ControllerBase
     }
 
     /// <summary>
-    /// POST /api/inventory/import
+    /// POST /api/v1/inventory/bulk-import
     /// Processes the bulk import of topology inventory from an Excel file.
     /// </summary>
-    [HttpPost("import")]
-    public async Task<IActionResult> ImportInventory(IFormFile file)
+    [HttpPost("bulk-import")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> BulkImport([FromForm] IFormFile file)
     {
+        _logger.LogInformation("[DEBUG IMPORT] Endpoint hit. File received: {FileName}, Length: {Length}", file?.FileName, file?.Length);
+
         if (file == null || file.Length == 0)
         {
             return BadRequest("No file uploaded.");
