@@ -60,3 +60,5 @@ Thumbs.db
 *.keystore
 *.truststore
 
+/build_infra.txt
+/create_architecture.ps1

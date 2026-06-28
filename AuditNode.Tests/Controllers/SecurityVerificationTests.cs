@@ -19,6 +19,7 @@ public class SecurityVerificationTests
     [InlineData(typeof(InventorySearchController))]
     [InlineData(typeof(ServersController))]
     [InlineData(typeof(TopologyController))]
+    [InlineData(typeof(LabelsController))]
     public void Controller_Should_Have_AuthorizeAttribute(Type controllerType)
     {
         // Assert
@@ -32,11 +33,11 @@ public class SecurityVerificationTests
         // Arrange
         var assembly = typeof(ApplicationsController).Assembly;
         var controllerTypes = assembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(ControllerBase)) && !t.IsAbstract)
+            .Where(t => t.IsSubclassOf(typeof(ControllerBase)) && !t.IsAbstract && t != typeof(AuthController))
             .ToList();
 
         // Act & Assert
         // This ensures we didn't miss any new controllers in our Theory above
-        controllerTypes.Should().HaveCount(9, "We expect exactly 9 controllers to be protected");
+        controllerTypes.Should().HaveCount(10, "We expect exactly 10 controllers to be protected");
     }
 }

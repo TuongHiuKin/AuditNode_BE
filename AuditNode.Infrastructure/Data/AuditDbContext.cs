@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using System.Linq;
 using AuditNode.Domain.Entities;
 using AppEntity = AuditNode.Domain.Entities.Application;
@@ -53,6 +53,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.Name).HasColumnName("name").IsRequired();
             entity.Property(e => e.Location).HasColumnName("location").IsRequired();
+            entity.Property(e => e.OwnerId).HasColumnName("owner_id").HasMaxLength(50).IsRequired();
         });
 
         // Server
@@ -67,6 +68,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.OsType).HasColumnName("os_type").IsRequired();
             entity.Property(e => e.Environment).HasColumnName("environment").IsRequired();
             entity.Property(e => e.Status).HasColumnName("status").IsRequired();
+            entity.Property(e => e.OwnerId).HasColumnName("owner_id").HasMaxLength(50).IsRequired();
 
             entity.HasMany(s => s.Labels)
                   .WithMany()
@@ -100,6 +102,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Risk).HasColumnName("risk").IsRequired();
             entity.Property(e => e.Icon).HasColumnName("icon");
             entity.Property(e => e.TechStack).HasColumnName("tech_stack");
+            entity.Property(e => e.OwnerId).HasColumnName("owner_id").HasMaxLength(50).IsRequired();
 
             entity.HasMany(a => a.Labels)
                   .WithMany()
@@ -172,6 +175,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Key).HasColumnName("key").IsRequired();
             entity.Property(e => e.Value).HasColumnName("value").IsRequired();
             entity.Property(e => e.ColorHex).HasColumnName("color_hex");
+            entity.Property(e => e.OwnerId).HasColumnName("owner_id").HasMaxLength(50).IsRequired();
         });
 
         // Configure read-only views
