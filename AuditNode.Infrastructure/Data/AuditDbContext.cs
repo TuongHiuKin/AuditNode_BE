@@ -19,6 +19,7 @@ public class AuditDbContext : DbContext
     public DbSet<DependencyView> DependencyViews { get; set; }
     public DbSet<TopologyNode> TopologyNodes { get; set; } = null!;
     public DbSet<Label> Labels { get; set; } = null!;
+    public DbSet<BoundaryFrame> BoundaryFrames { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -85,6 +86,11 @@ public class AuditDbContext : DbContext
                 .WithMany(d => d.Servers)
                 .HasForeignKey(s => s.DatacenterId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasOne(s => s.ParentFrame)
+                .WithMany(f => f.Servers)
+                .HasForeignKey(s => s.ParentFrameId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
         });
 
         // Application
@@ -114,6 +120,11 @@ public class AuditDbContext : DbContext
                   );
 
             entity.HasIndex(e => e.AppCode).IsUnique();
+
+            entity.HasOne(a => a.ParentFrame)
+                .WithMany(f => f.Applications)
+                .HasForeignKey(a => a.ParentFrameId)
+                .OnDelete(DeleteBehavior.ClientSetNull);
         });
 
         // PortMapping
@@ -208,6 +219,21 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.DestServerHostname).HasColumnName("dest_server_hostname");
             entity.Property(e => e.Environment).HasColumnName("environment");
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id");
+        });
+
+        // BoundaryFrame
+        modelBuilder.Entity<BoundaryFrame>(entity =>
+        {
+            entity.ToTable("boundary_frames");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.Name).HasColumnName("name").IsRequired();
+            entity.Property(e => e.XPosition).HasColumnName("x_position");
+            entity.Property(e => e.YPosition).HasColumnName("y_position");
+            entity.Property(e => e.Width).HasColumnName("width");
+            entity.Property(e => e.Height).HasColumnName("height");
+            entity.Property(e => e.OwnerId).HasColumnName("owner_id").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         });
     }
 }

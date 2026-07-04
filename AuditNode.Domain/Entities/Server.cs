@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace AuditNode.Domain.Entities;
 
 public class Server
@@ -11,6 +13,9 @@ public class Server
     public string Environment { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public string OwnerId { get; set; } = string.Empty;
+    [Column("parent_frame_id")]
+    public Guid? ParentFrameId { get; set; }
+    public virtual BoundaryFrame? ParentFrame { get; set; }
     public virtual ICollection<Label> Labels { get; set; } = new List<Label>();
 
     // Navigation properties
