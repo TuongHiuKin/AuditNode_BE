@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace AuditNode.API.Controllers;
 
-[Authorize(Roles = "Admin,User")]
+[Authorize]
 [ApiController]
 [Route(ApiRoutes.BaseRoute)]
 public class DatacentersController : ControllerBase
@@ -32,12 +32,19 @@ public class DatacentersController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<DatacenterDto>> CreateDatacenter(CreateDatacenterDto dto)
     {
-        var result = await _datacenterService.CreateDatacenterAsync(dto);
-        return Ok(result);
+        try
+        {
+            var result = await _datacenterService.CreateDatacenterAsync(dto);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "Admin")]
+    [Authorize]
     public async Task<IActionResult> DeleteDatacenter(Guid id)
     {
         // Implementation for deleting datacenter...

@@ -84,6 +84,12 @@ public class ServerServiceTests
 
         var resultNone = await service.GetServersAsync(new[] { "staging" });
         resultNone.Should().BeEmpty();
+
+        var resultDc = await service.GetServersAsync(null, dcId);
+        resultDc.Should().HaveCount(3);
+        
+        var resultOtherDc = await service.GetServersAsync(null, Guid.NewGuid());
+        resultOtherDc.Should().BeEmpty();
     }
 
     [Fact]

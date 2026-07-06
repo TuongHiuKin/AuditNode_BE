@@ -26,13 +26,22 @@ public class DatacenterService : IDatacenterService
         return datacenters.Select(d => new DatacenterDto
         {
             Id = d.Id,
-            Name = d.Name
+            Name = d.Name,
+            Location = d.Location
         });
     }
 
     public async Task<DatacenterDto> CreateDatacenterAsync(CreateDatacenterDto dto)
     {
         var currentUserId = _currentUserService.UserId ?? string.Empty;
+
+        var existingDatacenter = await _context.Datacenters
+            .FirstOrDefaultAsync(d => d.OwnerId == currentUserId && d.Name.ToLower() == dto.Name.ToLower());
+
+        if (existingDatacenter != null)
+        {
+            throw new InvalidOperationException($"A Datacenter with the name '{dto.Name}' already exists.");
+        }
 
         var datacenter = new Datacenter
         {
@@ -48,7 +57,8 @@ public class DatacenterService : IDatacenterService
         return new DatacenterDto
         {
             Id = datacenter.Id,
-            Name = datacenter.Name
+            Name = datacenter.Name,
+            Location = datacenter.Location
         };
     }
 }
