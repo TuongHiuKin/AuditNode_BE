@@ -19,9 +19,9 @@ public class ServersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> GetServers([FromQuery] string[]? labels)
+    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> GetServers([FromQuery] string[]? labels, [FromQuery] Guid? datacenterId)
     {
-        var result = await _serverService.GetServersAsync(labels);
+        var result = await _serverService.GetServersAsync(labels, datacenterId);
         return Ok(result);
     }
 

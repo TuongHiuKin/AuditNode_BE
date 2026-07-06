@@ -64,4 +64,21 @@ public class DatacentersControllerTests
         var returnedDatacenter = okResult.Value.As<DatacenterDto>();
         returnedDatacenter.Name.Should().Be(dto.Name);
     }
+
+    [Fact]
+    public async Task CreateDatacenter_ReturnsBadRequest_OnDuplicate()
+    {
+        // Arrange
+        var dto = new CreateDatacenterDto { Name = "Duplicate", Location = "Loc" };
+        _mockService.Setup(s => s.CreateDatacenterAsync(dto))
+            .ThrowsAsync(new InvalidOperationException("A Datacenter with the name 'Duplicate' already exists."));
+
+        // Act
+        var result = await _controller.CreateDatacenter(dto);
+
+        // Assert
+        var badRequestResult = result.Result.As<BadRequestObjectResult>();
+        badRequestResult.Should().NotBeNull();
+        badRequestResult.StatusCode.Should().Be(400);
+    }
 }

@@ -22,6 +22,10 @@ The API is secured using **Keycloak Identity Provider** via **JWT Bearer Authent
 ### GET `/api/servers`
 Retrieves all servers with bound applications.
 
+**Query Parameters:**
+- `labels` (string array, optional): Filter by labels.
+- `datacenterId` (uuid, optional): Filter servers by datacenter.
+
 **Response (200 OK):**
 ```json
 [
@@ -204,7 +208,8 @@ Retrieves a lightweight list of all datacenters (optimized for dropdowns).
 [
   {
     "id": "uuid",
-    "name": "string"
+    "name": "string",
+    "location": "string"
   }
 ]
 ```
@@ -219,6 +224,10 @@ Registers a new datacenter.
 "location": "string"
 }
 ```
+
+**Response:**
+- `200 OK`: Created successfully. Returns the new Datacenter.
+- `400 Bad Request`: When a Datacenter with the same Name already exists for the user.
 
 ---
 

@@ -110,7 +110,7 @@ public class ServerService : IServerService
         return true;
     }
 
-    public async Task<IEnumerable<ServerResponseDto>> GetServersAsync(string[]? labels = null)
+    public async Task<IEnumerable<ServerResponseDto>> GetServersAsync(string[]? labels = null, Guid? datacenterId = null)
     {
         var query = _context.Servers
             .Include(s => s.Datacenter)
@@ -119,6 +119,11 @@ public class ServerService : IServerService
             .ThenInclude(pm => pm.Application)
             .AsSplitQuery()
             .AsQueryable();
+
+        if (datacenterId.HasValue)
+        {
+            query = query.Where(s => s.DatacenterId == datacenterId.Value);
+        }
 
         if (labels != null && labels.Length > 0)
         {
