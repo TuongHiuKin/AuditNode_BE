@@ -64,4 +64,25 @@ public class TopologyController : ControllerBase
             return StatusCode(500, new { error = ex.Message });
         }
     }
+
+    [HttpPost("sync")]
+    public async Task<IActionResult> SyncTopology([FromBody] TopologySyncRequestDto request)
+    {
+        var ownerId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrEmpty(ownerId)) return Unauthorized("Invalid User ID in token.");
+
+        try
+        {
+            await _topologyRepository.SyncTopologyAsync(request, ownerId);
+            return Ok(new { message = "Topology sync completed successfully." });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }
