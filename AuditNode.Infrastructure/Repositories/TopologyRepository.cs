@@ -179,4 +179,95 @@ public class TopologyRepository : ITopologyRepository
             })
             .ToListAsync();
     }
+
+    public async Task SyncTopologyAsync(TopologySyncRequestDto request, string ownerId)
+    {
+        if (!Guid.TryParse(ownerId, out var parsedOwnerId))
+        {
+            throw new UnauthorizedAccessException("Invalid Owner ID.");
+        }
+
+        using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var idMapping = new Dictionary<string, Guid>();
+
+            // Process Frames
+            foreach (var frameDto in request.Frames)
+            {
+                if (Guid.TryParse(frameDto.Id, out var existingGuid))
+                {
+                    // Existing frame
+                    var frame = await _context.BoundaryFrames.FirstOrDefaultAsync(f => f.Id == existingGuid && f.OwnerId == parsedOwnerId);
+                    if (frame != null)
+                    {
+                        frame.Name = frameDto.Name;
+                        frame.XPosition = frameDto.X;
+                        frame.YPosition = frameDto.Y;
+                        frame.Width = frameDto.Width;
+                        frame.Height = frameDto.Height;
+                    }
+                    idMapping[frameDto.Id] = existingGuid;
+                }
+                else
+                {
+                    // New frame from temp ID
+                    var newGuid = Guid.NewGuid();
+                    var newFrame = new BoundaryFrame
+                    {
+                        Id = newGuid,
+                        Name = frameDto.Name,
+                        XPosition = frameDto.X,
+                        YPosition = frameDto.Y,
+                        Width = frameDto.Width,
+                        Height = frameDto.Height,
+                        OwnerId = parsedOwnerId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    _context.BoundaryFrames.Add(newFrame);
+                    idMapping[frameDto.Id] = newGuid;
+                }
+            }
+
+            // Process Assignments
+            foreach (var assignment in request.Assignments)
+            {
+                Guid? targetFrameId = null;
+                if (!string.IsNullOrEmpty(assignment.ParentFrameId))
+                {
+                    if (idMapping.TryGetValue(assignment.ParentFrameId, out var mappedId))
+                    {
+                        targetFrameId = mappedId;
+                    }
+                    else if (Guid.TryParse(assignment.ParentFrameId, out var parsedGuid))
+                    {
+                        targetFrameId = parsedGuid;
+                    }
+                }
+
+                // Check Server
+                var server = await _context.Servers.FirstOrDefaultAsync(s => s.Id == assignment.NodeId && s.OwnerId == ownerId);
+                if (server != null)
+                {
+                    server.ParentFrameId = targetFrameId;
+                    continue;
+                }
+
+                // Check Application
+                var app = await _context.Applications.FirstOrDefaultAsync(a => a.Id == assignment.NodeId && a.OwnerId == ownerId);
+                if (app != null)
+                {
+                    app.ParentFrameId = targetFrameId;
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+        catch (Exception)
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
 }

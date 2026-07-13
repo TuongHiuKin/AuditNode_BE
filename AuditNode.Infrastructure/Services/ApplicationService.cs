@@ -1,4 +1,4 @@
-﻿using AuditNode.Application.DTOs;
+using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
@@ -165,6 +165,22 @@ public class ApplicationService : IApplicationService
             }
 
             await _context.SaveChangesAsync();
+            
+            // Orphaned labels cleanup
+            if (labelsToRemove.Any())
+            {
+                foreach(var rl in labelsToRemove)
+                {
+                    bool isUsedByServer = await _context.Servers.AnyAsync(s => s.Labels.Any(l => l.Id == rl.Id));
+                    bool isUsedByApp = await _context.Applications.AnyAsync(a => a.Labels.Any(l => l.Id == rl.Id));
+                    if (!isUsedByServer && !isUsedByApp)
+                    {
+                        _context.Labels.Remove(rl);
+                    }
+                }
+                await _context.SaveChangesAsync();
+            }
+
             await transaction.CommitAsync();
             return true;
         }

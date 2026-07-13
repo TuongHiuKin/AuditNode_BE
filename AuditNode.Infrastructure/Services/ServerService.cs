@@ -83,30 +83,65 @@ public class ServerService : IServerService
         }
 
         var incomingLabels = updateDto.Labels ?? new List<LabelDto>();
-
-        // 1. Identify labels to REMOVE
-        var labelsToRemove = server.Labels
-            .Where(sl => !incomingLabels.Any(il => il.Key == sl.Key && il.Value == sl.Value))
-            .ToList();
-
-        foreach (var label in labelsToRemove)
+        var actualLabels = new List<Label>();
+        
+        if (incomingLabels.Any())
         {
-            server.Labels.Remove(label);
+            var keys = incomingLabels.Select(l => l.Key).Distinct().ToList();
+            var values = incomingLabels.Select(l => l.Value).Distinct().ToList();
+
+            var candidateLabels = await _context.Labels
+                .Where(l => keys.Contains(l.Key) && values.Contains(l.Value))
+                .ToListAsync();
+
+            foreach (var labelDto in incomingLabels)
+            {
+                var existing = candidateLabels.FirstOrDefault(l => l.Key == labelDto.Key && l.Value == labelDto.Value);
+                if (existing != null)
+                {
+                    actualLabels.Add(existing);
+                }
+                else
+                {
+                    var newLabel = new Label
+                    {
+                        Id = Guid.NewGuid(),
+                        Key = labelDto.Key,
+                        Value = labelDto.Value,
+                        ColorHex = string.IsNullOrWhiteSpace(labelDto.ColorHex) ? "#808080" : labelDto.ColorHex,
+                        OwnerId = server.OwnerId
+                    };
+                    _context.Labels.Add(newLabel);
+                    actualLabels.Add(newLabel);
+                }
+            }
         }
-
-        // 2. Identify labels to ADD
-        var labelsToAddDtos = incomingLabels
-            .Where(il => !server.Labels.Any(sl => sl.Key == il.Key && sl.Value == il.Value))
-            .ToList();
-
-        var labelsToAdd = await ProcessLabelsAsync(labelsToAddDtos);
-
-        foreach (var label in labelsToAdd)
+        
+        var oldLabels = server.Labels.ToList();
+        server.Labels.Clear();
+        foreach (var label in actualLabels)
         {
             server.Labels.Add(label);
         }
 
         await _context.SaveChangesAsync();
+        
+        // Orphaned labels cleanup
+        var removedLabels = oldLabels.Where(ol => !actualLabels.Any(al => al.Id == ol.Id)).ToList();
+        if (removedLabels.Any())
+        {
+            foreach(var rl in removedLabels)
+            {
+                bool isUsedByServer = await _context.Servers.AnyAsync(s => s.Labels.Any(l => l.Id == rl.Id));
+                bool isUsedByApp = await _context.Applications.AnyAsync(a => a.Labels.Any(l => l.Id == rl.Id));
+                if (!isUsedByServer && !isUsedByApp)
+                {
+                    _context.Labels.Remove(rl);
+                }
+            }
+            await _context.SaveChangesAsync();
+        }
+
         return true;
     }
 
