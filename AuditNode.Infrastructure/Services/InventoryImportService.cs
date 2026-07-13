@@ -23,7 +23,7 @@ public class InventoryImportService : IInventoryImportService
         var worksheet = workbook.Worksheets.Add("Template");
 
         // Define Headers in Row 1
-        var headers = new[] { "Server Name", "IP", "Environment", "App Code", "App Name", "Owner Team", "Port", "Protocol" };
+        var headers = new[] { "Server Name", "IP", "Environment", "App Code", "App Name", "Owner Team", "Port", "Protocol", "Labels" };
         for (int i = 0; i < headers.Length; i++)
         {
             var cell = worksheet.Cell(1, i + 1);
@@ -87,7 +87,10 @@ public class InventoryImportService : IInventoryImportService
 
             var labelsList = string.IsNullOrWhiteSpace(labelsRaw) 
                 ? new List<string>() 
-                : labelsRaw.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(l => l.Trim()).ToList();
+                : labelsRaw.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                           .Select(l => l.Trim())
+                           .Where(l => !string.IsNullOrEmpty(l))
+                           .ToList();
 
             validRows.Add((rowNumber, serverName, ip, env, appCode, appName, ownerTeam, port, protocol, labelsList));
         }
