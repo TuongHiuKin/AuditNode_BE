@@ -14,6 +14,7 @@ public class ServerNodeDto
     public string Hostname { get; set; } = string.Empty;
     public string IpAddress { get; set; } = string.Empty;
     public List<ApplicationNodeDto> Applications { get; set; } = new();
+    public List<string> Labels { get; set; } = new();
 }
 
 public class ApplicationNodeDto

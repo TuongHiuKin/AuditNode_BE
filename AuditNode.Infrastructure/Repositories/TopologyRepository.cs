@@ -107,17 +107,24 @@ public class TopologyRepository : ITopologyRepository
                     PortMappingId = pm.Id,
                     Port = pm.PortNumber,
                     Protocol = pm.Protocol
-                }).ToList()
+                }).ToList(),
+                Labels = s.Labels != null ? s.Labels.Select(l => l.Key).ToList() : new List<string>()
             }).ToList()
         });
     }
 
-    public async Task<DependencyMapDto> GetDependencyMapAsync(string? environment = null, Guid? datacenterId = null)
+    public async Task<DependencyMapDto> GetDependencyMapAsync(string[]? labels = null, string? environment = null, Guid? datacenterId = null)
     {
         var serverQuery = _context.Servers
+            .Include(s => s.Labels)
             .Include(s => s.PortMappings)
                 .ThenInclude(pm => pm.Application)
             .AsNoTracking();
+
+        if (labels != null && labels.Any())
+        {
+            serverQuery = serverQuery.Where(s => s.Labels.Any(l => labels.Contains(l.Key)));
+        }
 
         if (!string.IsNullOrWhiteSpace(environment))
         {
@@ -154,10 +161,64 @@ public class TopologyRepository : ITopologyRepository
                     PortMappingId = pm.Id,
                     Port = pm.PortNumber,
                     Protocol = pm.Protocol
-                }).ToList()
+                }).ToList(),
+                Labels = s.Labels.Select(l => l.Key).ToList()
             }).ToList(),
             Connections = connections
         };
+    }
+
+    public async Task<IEnumerable<ServerNodeDto>> GetExternalDependenciesAsync(Guid id, string[]? labels = null)
+    {
+        // Get applications on the target server
+        var serverAppIds = await _context.PortMappings
+            .Where(pm => pm.ServerId == id)
+            .Select(pm => pm.ApplicationId)
+            .ToListAsync();
+
+        // Find connected application IDs
+        var connectedAppIds = await _context.AppDependencies
+            .Where(ad => serverAppIds.Contains(ad.SourceAppId))
+            .Select(ad => ad.DestAppId)
+            .Union(
+                _context.AppDependencies
+                .Where(ad => serverAppIds.Contains(ad.DestAppId))
+                .Select(ad => ad.SourceAppId)
+            )
+            .Distinct()
+            .ToListAsync();
+
+        // Get servers hosting those connected apps
+        var externalServersQuery = _context.Servers
+            .Include(s => s.Labels)
+            .Include(s => s.PortMappings)
+                .ThenInclude(pm => pm.Application)
+            .Where(s => s.Id != id && s.PortMappings.Any(pm => connectedAppIds.Contains(pm.ApplicationId)))
+            .AsNoTracking();
+
+        // Filter out those that share a label with the current filter
+        if (labels != null && labels.Any())
+        {
+            externalServersQuery = externalServersQuery.Where(s => !s.Labels.Any(l => labels.Contains(l.Key)));
+        }
+
+        var externalServers = await externalServersQuery.ToListAsync();
+
+        return externalServers.Select(s => new ServerNodeDto
+        {
+            Id = s.Id,
+            Hostname = s.Hostname,
+            IpAddress = s.IpAddress,
+            Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
+            {
+                Id = pm.Application!.Id,
+                Name = pm.Application.AppName,
+                PortMappingId = pm.Id,
+                Port = pm.PortNumber,
+                Protocol = pm.Protocol
+            }).ToList(),
+            Labels = s.Labels.Select(l => l.Key).ToList()
+        });
     }
 
     public async Task<IEnumerable<ApplicationStatusDto>> GetApplicationStatusAsync()
