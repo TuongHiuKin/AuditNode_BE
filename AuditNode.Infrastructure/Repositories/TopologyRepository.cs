@@ -10,10 +10,55 @@ namespace AuditNode.Infrastructure.Repositories;
 public class TopologyRepository : ITopologyRepository
 {
     private readonly AuditDbContext _context;
+    private readonly ICurrentUserService _currentUserService;
 
-    public TopologyRepository(AuditDbContext context)
+    public TopologyRepository(AuditDbContext context, ICurrentUserService currentUserService)
     {
         _context = context;
+        _currentUserService = currentUserService;
+    }
+
+    private string GetCurrentUserId()
+    {
+        return _currentUserService.UserId
+            ?? throw new UnauthorizedAccessException("User ID not found in the current request.");
+    }
+
+    private static ServerNodeDto MapServerNode(Server server, string currentUserId)
+    {
+        return new ServerNodeDto
+        {
+            Id = server.Id,
+            Hostname = server.Hostname,
+            IpAddress = server.IpAddress,
+            OsType = server.OsType,
+            Environment = server.Environment,
+            Status = server.Status,
+            Applications = server.PortMappings
+                .Where(mapping => mapping.Application?.OwnerId == currentUserId)
+                .Select(pm => new ApplicationNodeDto
+                {
+                    Id = pm.Application!.Id,
+                    Name = pm.Application.AppName,
+                    PortMappingId = pm.Id,
+                    Port = pm.PortNumber,
+                    Protocol = pm.Protocol,
+                    Labels = pm.Application.Labels.Select(label => new TopologyLabelDto
+                    {
+                        Id = label.Id,
+                        Key = label.Key,
+                        Value = label.Value,
+                        ColorHex = label.ColorHex
+                    }).ToList()
+                }).ToList(),
+            Labels = server.Labels.Select(label => new TopologyLabelDto
+            {
+                Id = label.Id,
+                Key = label.Key,
+                Value = label.Value,
+                ColorHex = label.ColorHex
+            }).ToList()
+        };
     }
 
     public async Task SaveTopologyStateAsync(SaveTopologyStateDto state)
@@ -74,10 +119,15 @@ public class TopologyRepository : ITopologyRepository
 
     public async Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take)
     {
+        var currentUserId = GetCurrentUserId();
         var query = _context.Datacenters
+            .Include(d => d.Servers)
+                .ThenInclude(s => s.Labels)
             .Include(d => d.Servers)
                 .ThenInclude(s => s.PortMappings)
                     .ThenInclude(pm => pm.Application)
+                        .ThenInclude(application => application!.Labels)
+            .Where(d => d.OwnerId == currentUserId)
             .AsNoTracking();
 
         if (datacenterId.HasValue)
@@ -95,35 +145,31 @@ public class TopologyRepository : ITopologyRepository
             Id = d.Id,
             Name = d.Name,
             Location = d.Location,
-            Servers = d.Servers.Select(s => new ServerNodeDto
-            {
-                Id = s.Id,
-                Hostname = s.Hostname,
-                IpAddress = s.IpAddress,
-                Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
-                {
-                    Id = pm.Application!.Id,
-                    Name = pm.Application.AppName,
-                    PortMappingId = pm.Id,
-                    Port = pm.PortNumber,
-                    Protocol = pm.Protocol
-                }).ToList(),
-                Labels = s.Labels != null ? s.Labels.Select(l => l.Key).ToList() : new List<string>()
-            }).ToList()
+            Servers = d.Servers
+                .Select(server => MapServerNode(server, currentUserId))
+                .ToList()
         });
     }
 
-    public async Task<DependencyMapDto> GetDependencyMapAsync(string[]? labels = null, string? environment = null, Guid? datacenterId = null)
+    public async Task<DependencyMapDto> GetDependencyMapAsync(Guid[]? labelIds = null, string? environment = null, Guid? datacenterId = null)
     {
+        var currentUserId = GetCurrentUserId();
         var serverQuery = _context.Servers
             .Include(s => s.Labels)
             .Include(s => s.PortMappings)
                 .ThenInclude(pm => pm.Application)
+                    .ThenInclude(application => application!.Labels)
+            .Where(s => s.OwnerId == currentUserId)
             .AsNoTracking();
 
-        if (labels != null && labels.Any())
+        if (labelIds != null && labelIds.Any())
         {
-            serverQuery = serverQuery.Where(s => s.Labels.Any(l => labels.Contains(l.Key)));
+            serverQuery = serverQuery.Where(server =>
+                server.Labels.Any(label => labelIds.Contains(label.Id)) ||
+                server.PortMappings.Any(mapping =>
+                    mapping.Application != null &&
+                    mapping.Application.OwnerId == currentUserId &&
+                    mapping.Application.Labels.Any(label => labelIds.Contains(label.Id))));
         }
 
         if (!string.IsNullOrWhiteSpace(environment))
@@ -137,8 +183,16 @@ public class TopologyRepository : ITopologyRepository
         }
 
         var servers = await serverQuery.ToListAsync();
+        var visibleAppIds = servers
+            .SelectMany(server => server.PortMappings)
+            .Select(mapping => mapping.AppId)
+            .Distinct()
+            .ToList();
 
         var connections = await _context.AppDependencies
+            .Where(dependency =>
+                visibleAppIds.Contains(dependency.SourceAppId) &&
+                visibleAppIds.Contains(dependency.DestAppId))
             .AsNoTracking()
             .Select(ad => new ConnectionDto
             {
@@ -149,31 +203,20 @@ public class TopologyRepository : ITopologyRepository
 
         return new DependencyMapDto
         {
-            Servers = servers.Select(s => new ServerNodeDto
-            {
-                Id = s.Id,
-                Hostname = s.Hostname,
-                IpAddress = s.IpAddress,
-                Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
-                {
-                    Id = pm.Application!.Id,
-                    Name = pm.Application.AppName,
-                    PortMappingId = pm.Id,
-                    Port = pm.PortNumber,
-                    Protocol = pm.Protocol
-                }).ToList(),
-                Labels = s.Labels.Select(l => l.Key).ToList()
-            }).ToList(),
+            Servers = servers
+                .Select(server => MapServerNode(server, currentUserId))
+                .ToList(),
             Connections = connections
         };
     }
 
-    public async Task<IEnumerable<ServerNodeDto>> GetExternalDependenciesAsync(Guid id, string[]? labels = null)
+    public async Task<IEnumerable<ServerNodeDto>> GetExternalDependenciesAsync(Guid id, Guid[]? labelIds = null)
     {
+        var currentUserId = GetCurrentUserId();
         // Get applications on the target server
         var serverAppIds = await _context.PortMappings
-            .Where(pm => pm.ServerId == id)
-            .Select(pm => pm.ApplicationId)
+            .Where(pm => pm.ServerId == id && pm.Server!.OwnerId == currentUserId)
+            .Select(pm => pm.AppId)
             .ToListAsync();
 
         // Find connected application IDs
@@ -189,36 +232,27 @@ public class TopologyRepository : ITopologyRepository
             .ToListAsync();
 
         // Get servers hosting those connected apps
-        var externalServersQuery = _context.Servers
+        IQueryable<Server> externalServersQuery = _context.Servers
             .Include(s => s.Labels)
             .Include(s => s.PortMappings)
                 .ThenInclude(pm => pm.Application)
-            .Where(s => s.Id != id && s.PortMappings.Any(pm => connectedAppIds.Contains(pm.ApplicationId)))
+                    .ThenInclude(application => application!.Labels)
+            .Where(s =>
+                s.OwnerId == currentUserId &&
+                s.Id != id &&
+                s.PortMappings.Any(pm => connectedAppIds.Contains(pm.AppId)))
             .AsNoTracking();
 
         // Filter out those that share a label with the current filter
-        if (labels != null && labels.Any())
+        if (labelIds != null && labelIds.Any())
         {
-            externalServersQuery = externalServersQuery.Where(s => !s.Labels.Any(l => labels.Contains(l.Key)));
+            externalServersQuery = externalServersQuery.Where(
+                server => !server.Labels.Any(label => labelIds.Contains(label.Id)));
         }
 
         var externalServers = await externalServersQuery.ToListAsync();
 
-        return externalServers.Select(s => new ServerNodeDto
-        {
-            Id = s.Id,
-            Hostname = s.Hostname,
-            IpAddress = s.IpAddress,
-            Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
-            {
-                Id = pm.Application!.Id,
-                Name = pm.Application.AppName,
-                PortMappingId = pm.Id,
-                Port = pm.PortNumber,
-                Protocol = pm.Protocol
-            }).ToList(),
-            Labels = s.Labels.Select(l => l.Key).ToList()
-        });
+        return externalServers.Select(server => MapServerNode(server, currentUserId));
     }
 
     public async Task<IEnumerable<ApplicationStatusDto>> GetApplicationStatusAsync()
