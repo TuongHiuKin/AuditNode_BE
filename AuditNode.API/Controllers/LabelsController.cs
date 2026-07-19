@@ -1,4 +1,5 @@
 using AuditNode.Infrastructure.Data;
+using AuditNode.Application.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -22,7 +23,7 @@ public class LabelsController : ControllerBase
     /// Retrieves all unique labels for the authenticated user to populate frontend dropdowns.
     /// </summary>
     [HttpGet("/api/v1/inventory/labels")]
-    public async Task<IActionResult> GetLabels()
+    public async Task<ActionResult<IEnumerable<TopologyLabelDto>>> GetLabels()
     {
         // 1. Extract OwnerId from Claims
         var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
@@ -37,12 +38,12 @@ public class LabelsController : ControllerBase
             .Where(l => l.OwnerId == currentUserId)
             .OrderBy(l => l.Key)
             .ThenBy(l => l.Value)
-            .Select(l => new 
+            .Select(l => new TopologyLabelDto
             {
-                l.Id,
-                l.Key,
-                l.Value,
-                l.ColorHex
+                Id = l.Id,
+                Key = l.Key,
+                Value = l.Value,
+                ColorHex = l.ColorHex
             })
             .ToListAsync();
 

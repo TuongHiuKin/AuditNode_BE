@@ -28,25 +28,21 @@ public class KeycloakAuthService : IAuthService
 
     public async Task<AuthResponseDto> LoginAsync(LoginRequestDto request)
     {
-        var authority = _configuration["Keycloak:Authority"];
-        var uri = new Uri(authority);
-        var baseUrl = $"{uri.Scheme}://{uri.Authority}";
-        
-        var tokenEndpoint = $"{baseUrl}/realms/AuditNode-Realm/protocol/openid-connect/token";
+        var settings = GetSettings();
+        var tokenEndpoint = settings.TokenEndpoint;
         
         var client = _httpClientFactory.CreateClient();
         
         var requestParams = new[]
         {
             new KeyValuePair<string, string>("grant_type", "password"),
-            new KeyValuePair<string, string>("client_id", "auditnode-backend"),
-            new KeyValuePair<string, string>("client_secret", _configuration["Keycloak:ClientSecret"]!),
+            new KeyValuePair<string, string>("client_id", settings.ClientId),
+            new KeyValuePair<string, string>("client_secret", settings.ClientSecret),
             new KeyValuePair<string, string>("username", request.Username),
             new KeyValuePair<string, string>("password", request.Password)
         };
 
-        var loginPayloadJson = JsonSerializer.Serialize(requestParams);
-        _logger.LogInformation("[DEBUG LOGIN PAYLOAD]: {LoginPayload}", loginPayloadJson);
+        _logger.LogInformation("Login requested for {Username}.", request.Username);
 
         var content = new FormUrlEncodedContent(requestParams);
 
@@ -87,19 +83,17 @@ public class KeycloakAuthService : IAuthService
 
     public async Task<bool> RegisterAsync(RegisterRequestDto request)
     {
-        var authority = _configuration["Keycloak:Authority"];
-        var uri = new Uri(authority);
-        var baseUrl = $"{uri.Scheme}://{uri.Authority}";
-        
+        var settings = GetSettings();
+
         // Step 1: Obtain Service Account token
-        var tokenEndpoint = $"{baseUrl}/realms/AuditNode-Realm/protocol/openid-connect/token";
+        var tokenEndpoint = settings.TokenEndpoint;
         var client = _httpClientFactory.CreateClient();
         
         var tokenContent = new FormUrlEncodedContent(new[]
         {
             new KeyValuePair<string, string>("grant_type", "client_credentials"),
-            new KeyValuePair<string, string>("client_id", "auditnode-backend"),
-            new KeyValuePair<string, string>("client_secret", _configuration["Keycloak:ClientSecret"]!)
+            new KeyValuePair<string, string>("client_id", settings.ClientId),
+            new KeyValuePair<string, string>("client_secret", settings.ClientSecret)
         });
 
         var tokenResponseTask = await client.PostAsync(tokenEndpoint, tokenContent);
@@ -113,7 +107,7 @@ public class KeycloakAuthService : IAuthService
         var serviceAccountToken = JsonSerializer.Deserialize<KeycloakTokenResponse>(tokenJsonStr);
 
         // Step 2: Create User
-        var adminEndpoint = $"{baseUrl}/admin/realms/AuditNode-Realm/users";
+        var adminEndpoint = $"{settings.ServerBaseUrl}/admin/realms/{settings.Realm}/users";
         
         var userPayload = new
         {
@@ -134,8 +128,9 @@ public class KeycloakAuthService : IAuthService
             }
         };
 
+        _logger.LogInformation("Registration requested for {Username}.", request.Username);
+
         var rawJsonPayload = JsonSerializer.Serialize(userPayload);
-        _logger.LogInformation("[DEBUG REGISTER PAYLOAD]: {RawPayload}", rawJsonPayload);
 
         var requestMessage = new HttpRequestMessage(HttpMethod.Post, adminEndpoint)
         {
@@ -164,5 +159,31 @@ public class KeycloakAuthService : IAuthService
 
         [JsonPropertyName("expires_in")]
         public int ExpiresIn { get; set; }
+    }
+
+    private KeycloakSettings GetSettings()
+    {
+        var authority = RequiredConfiguration("Keycloak:Authority").TrimEnd('/');
+        var authorityUri = new Uri(authority, UriKind.Absolute);
+
+        return new KeycloakSettings(
+            authority,
+            authorityUri.GetLeftPart(UriPartial.Authority),
+            RequiredConfiguration("Keycloak:Realm"),
+            RequiredConfiguration("Keycloak:ClientId"),
+            RequiredConfiguration("Keycloak:ClientSecret"));
+    }
+
+    private string RequiredConfiguration(string key) =>
+        _configuration[key] ?? throw new InvalidOperationException($"Missing required configuration value: {key}.");
+
+    private sealed record KeycloakSettings(
+        string Authority,
+        string ServerBaseUrl,
+        string Realm,
+        string ClientId,
+        string ClientSecret)
+    {
+        public string TokenEndpoint => $"{Authority}/protocol/openid-connect/token";
     }
 }

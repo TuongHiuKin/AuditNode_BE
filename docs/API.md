@@ -1,5 +1,16 @@
 # AuditNode Backend API Documentation
 
+> **Source of truth:** the OpenAPI document exposed by the running API at `/openapi/v1.json`. Do not hand-maintain generated client types or duplicate route definitions.
+>
+> All controller routes use lowercase `/api/v1/...`. Earlier unversioned routes in this file are legacy notes and must not be used for new work.
+
+## Contract workflow
+
+1. Change the API controller or DTO in the backend.
+2. Start the API in the Development environment.
+3. In `AuditNode.Frontend`, run `OPENAPI_URL=<backend>/openapi/v1.json npm run sync-api`.
+4. Run the frontend type-check and tests before using the new endpoint.
+
 ## Base URL
 - **HTTPS:** `https://localhost:5001`
 - **HTTP:** `http://localhost:5000`
@@ -19,7 +30,7 @@ The API is secured using **Keycloak Identity Provider** via **JWT Bearer Authent
 
 ## 1. Servers Endpoints
 
-### GET `/api/servers`
+### GET `/api/v1/servers`
 Retrieves all servers with bound applications.
 
 **Query Parameters:**
@@ -51,7 +62,7 @@ Retrieves all servers with bound applications.
 ]
 ```
 
-### POST `/api/servers`
+### POST `/api/v1/servers`
 Registers a new server.
 
 **Request Body:**
@@ -66,7 +77,7 @@ Registers a new server.
 }
 ```
 
-### GET `/api/servers/{id}`
+### GET `/api/v1/servers/{id}`
 Retrieves detailed information about a single server by its ID, including hosted applications.
 
 **Response (200 OK):**
@@ -93,7 +104,7 @@ Retrieves detailed information about a single server by its ID, including hosted
 }
 ```
 
-### PUT `/api/servers/{id}`
+### PUT `/api/v1/servers/{id}`
 Updates an existing server's metadata. `IpAddress` is immutable.
 
 **Request Body (`UpdateServerDto`):**
@@ -115,7 +126,7 @@ Updates an existing server's metadata. `IpAddress` is immutable.
 
 ## 2. Applications Endpoints
 
-### GET `/api/applications`
+### GET `/api/v1/applications`
 Retrieves all registered applications with their associated servers.
 
 **Response (200 OK):**
@@ -142,7 +153,7 @@ Retrieves all registered applications with their associated servers.
 ]
 ```
 
-### POST `/api/applications`
+### POST `/api/v1/applications`
 Registers or updates an application (Find or Create / Upsert). Applications are now created independently of servers.
 
 **Request Body:**
@@ -157,7 +168,7 @@ Registers or updates an application (Find or Create / Upsert). Applications are 
 }
 ```
 
-### PUT `/api/applications/{id}`
+### PUT `/api/v1/applications/{id}`
 Updates an existing application's metadata and its network residency (server and port). The `id` is passed in the URL, and the fields to be updated are provided in the body. `AppCode` is immutable and cannot be updated.
 
 **Request Body (`UpdateApplicationDto`):**
@@ -200,7 +211,7 @@ Retrieves all workspaces accessible to the authenticated user.
 
 ## 3. Datacenters Endpoints
 
-### GET `/api/datacenters`
+### GET `/api/v1/datacenters`
 Retrieves a lightweight list of all datacenters (optimized for dropdowns).
 
 **Response (200 OK):**
@@ -214,7 +225,7 @@ Retrieves a lightweight list of all datacenters (optimized for dropdowns).
 ]
 ```
 
-### POST `/api/datacenters`
+### POST `/api/v1/datacenters`
 Registers a new datacenter.
 
 **Request Body:**

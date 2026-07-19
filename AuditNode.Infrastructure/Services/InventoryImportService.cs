@@ -34,11 +34,11 @@ public class InventoryImportService : IInventoryImportService
 
         // Add Excel Data Validation (Dropdowns) for Column C (Environment)
         var environmentRange = worksheet.Range("C2:C1000");
-        environmentRange.SetDataValidation().List("Production,Development", true);
+        environmentRange.CreateDataValidation().List("Production,Development", true);
 
         // Add Excel Data Validation (Dropdowns) for Column H (Protocol)
         var protocolRange = worksheet.Range("H2:H1000");
-        protocolRange.SetDataValidation().List("TCP,UDP,HTTP,HTTPS,gRPC", true);
+        protocolRange.CreateDataValidation().List("TCP,UDP,HTTP,HTTPS,gRPC", true);
 
         worksheet.Columns().AdjustToContents();
 

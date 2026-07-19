@@ -9,8 +9,17 @@ using FluentValidation;
 using Scalar.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Mvc.ApplicationModels;
+using AuditNode.API.Routing;
 
 var builder = WebApplication.CreateBuilder(args);
+var keycloakAuthority = builder.Configuration["Keycloak:Authority"]
+    ?? throw new InvalidOperationException("Keycloak:Authority must be configured.");
+var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray()
+    ?? [];
 
 // Add services to the container
 builder.Services.AddOpenApi("v1", options =>
@@ -25,16 +34,16 @@ builder.Services.AddOpenApi("v1", options =>
 });
 
 // Configure JWT Bearer Authentication with Keycloak
-Console.WriteLine($"[DEBUG SECURITY] Keycloak Authority Loaded: {builder.Configuration["Keycloak:Authority"]}");
+Console.WriteLine($"[DEBUG SECURITY] Keycloak Authority Loaded: {keycloakAuthority}");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = builder.Configuration["Keycloak:Authority"];
+        options.Authority = keycloakAuthority;
         options.RequireHttpsMetadata = builder.Configuration.GetValue<bool>("Keycloak:RequireHttpsMetadata");
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = builder.Configuration["Keycloak:Authority"],
+            ValidIssuer = keycloakAuthority,
             ValidateAudience = builder.Configuration.GetValue<bool>("Keycloak:ValidateAudience"),
             ValidAudience = builder.Configuration["Keycloak:Audience"],
             ValidateLifetime = true,
@@ -89,20 +98,24 @@ builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Serv
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateServerDtoValidator>();
 
-// Add CORS policy
+// Keep browser origins in environment-specific configuration, not source code.
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policyBuilder =>
     {
-        policyBuilder
-            .WithOrigins("http://localhost:5173", "http://localhost:3000")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
+        if (allowedCorsOrigins.Length > 0)
+        {
+            policyBuilder
+                .WithOrigins(allowedCorsOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod();
+        }
     });
 });
 
 // Add controllers
-builder.Services.AddControllers()
+builder.Services.AddControllers(options =>
+    options.Conventions.Add(new RouteTokenTransformerConvention(new LowercaseRouteTokenTransformer())))
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
@@ -122,7 +135,10 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.UseHttpsRedirection();
+if (builder.Configuration.GetValue("Https:RedirectEnabled", true))
+{
+    app.UseHttpsRedirection();
+}
 
 // Enable CORS early in the pipeline
 app.UseCors("AllowReact");

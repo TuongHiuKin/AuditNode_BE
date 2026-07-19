@@ -26,7 +26,7 @@ public class InventorySearchServiceTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("a")]
-    public async Task SearchAsync_ShouldReturnEmpty_WhenKeywordIsShortOrNull(string keyword)
+    public async Task SearchAsync_ShouldReturnEmpty_WhenKeywordIsShortOrNull(string? keyword)
     {
         // Act
         var result = await _service.SearchAsync(keyword);

@@ -109,11 +109,11 @@ public class TopologyControllerTests
     {
         // Arrange
         var emptyMap = new DependencyMapDto();
-        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(It.IsAny<string>(), It.IsAny<Guid?>()))
+        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(It.IsAny<Guid[]>(), It.IsAny<string>(), It.IsAny<Guid?>()))
             .ReturnsAsync(emptyMap);
 
         // Act
-        var result = await _controller.GetDependencyMap(null, null);
+        var result = await _controller.GetDependencyMap(null, null, null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
@@ -152,5 +152,28 @@ public class TopologyControllerTests
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetExternalDependencies_ShouldReturnOk_WithDependencies()
+    {
+        // Arrange
+        var id = Guid.NewGuid();
+        var labelIds = new[] { Guid.NewGuid() };
+        var deps = new List<ServerNodeDto>
+        {
+            new ServerNodeDto { Id = Guid.NewGuid(), Hostname = "ExtSrv" }
+        };
+
+        _mockRepo.Setup(repo => repo.GetExternalDependenciesAsync(id, labelIds))
+            .ReturnsAsync(deps);
+
+        // Act
+        var result = await _controller.GetExternalDependencies(id, labelIds);
+
+        // Assert
+        var okResult = result.Result.As<OkObjectResult>();
+        okResult.Should().NotBeNull();
+        okResult.Value.Should().BeEquivalentTo(deps);
     }
 }

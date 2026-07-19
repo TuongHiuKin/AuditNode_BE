@@ -4,5 +4,5 @@ namespace AuditNode.Application.Interfaces;
 
 public interface IInventorySearchService
 {
-    Task<IEnumerable<SearchResultDto>> SearchAsync(string keyword);
+    Task<IEnumerable<SearchResultDto>> SearchAsync(string? keyword);
 }

@@ -5,7 +5,7 @@ Accept: application/json
 
 ###
 
-GET {{AuditNode.API_HostAddress}}/api/datacenters
+GET {{AuditNode.API_HostAddress}}/api/v1/datacenters
 Accept: application/json
 
 ###

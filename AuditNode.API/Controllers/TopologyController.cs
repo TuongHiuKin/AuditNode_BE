@@ -32,10 +32,11 @@ public class TopologyController : ControllerBase
 
     [HttpGet("map")]
     public async Task<ActionResult<DependencyMapDto>> GetDependencyMap(
+        [FromQuery] Guid[]? labelIds,
         [FromQuery] string? environment,
         [FromQuery] Guid? datacenterId)
     {
-        var map = await _topologyRepository.GetDependencyMapAsync(environment, datacenterId);
+        var map = await _topologyRepository.GetDependencyMapAsync(labelIds, environment, datacenterId);
         return Ok(map);
     }
 
@@ -44,6 +45,15 @@ public class TopologyController : ControllerBase
     {
         var status = await _topologyRepository.GetApplicationStatusAsync();
         return Ok(status);
+    }
+
+    [HttpGet("nodes/{id}/external-dependencies")]
+    public async Task<ActionResult<IEnumerable<ServerNodeDto>>> GetExternalDependencies(
+        Guid id,
+        [FromQuery] Guid[]? labelIds)
+    {
+        var deps = await _topologyRepository.GetExternalDependenciesAsync(id, labelIds);
+        return Ok(deps);
     }
 
     [HttpPost("state")]
