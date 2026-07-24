@@ -11,6 +11,8 @@ namespace AuditNode.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DROP TABLE IF EXISTS server_labels CASCADE; DROP TABLE IF EXISTS labels CASCADE;");
+
             migrationBuilder.CreateTable(
                 name: "labels",
                 columns: table => new

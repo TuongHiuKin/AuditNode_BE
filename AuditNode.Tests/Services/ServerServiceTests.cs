@@ -35,16 +35,39 @@ public class ServerServiceTests
         
         var dc = new Datacenter { Id = Guid.NewGuid(), Name = "DC", Location = "Loc" };
         context.Datacenters.Add(dc);
+        
+        var serverId1 = Guid.NewGuid();
+        var appId = Guid.NewGuid();
+        
+        var app = new AuditNode.Domain.Entities.Application { Id = appId, AppCode = "APP1", AppName = "App 1", OwnerTeam = "Team A" };
+        context.Applications.Add(app);
+
         context.Servers.AddRange(
-            new Server { Id = Guid.NewGuid(), Hostname = "SRV-1", IpAddress = "10.0.0.1", DatacenterId = dc.Id },
+            new Server { Id = serverId1, Hostname = "SRV-1", IpAddress = "10.0.0.1", DatacenterId = dc.Id },
             new Server { Id = Guid.NewGuid(), Hostname = "SRV-2", IpAddress = "10.0.0.2", DatacenterId = dc.Id }
         );
+        
+        context.PortMappings.Add(new PortMapping 
+        { 
+            Id = Guid.NewGuid(), 
+            ServerId = serverId1, 
+            AppId = appId, 
+            PortNumber = 8080, 
+            Protocol = "TCP" 
+        });
+        
         await context.SaveChangesAsync();
 
         var result = await service.GetServersAsync();
 
         result.Should().NotBeNull();
         result.Should().HaveCount(2);
+        
+        var srv1 = result.FirstOrDefault(s => s.Id == serverId1);
+        srv1.Should().NotBeNull();
+        srv1!.Applications.Should().HaveCount(1);
+        srv1.Applications[0].AppCode.Should().Be("APP1");
+        srv1.Applications[0].PortNumber.Should().Be(8080);
     }
 
     [Fact]
