@@ -11,6 +11,7 @@ public class ServerResponseDto
     public string Datacenter { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public List<ApplicationOnServerDto> Applications { get; set; } = new();
+    public List<LabelDto> Labels { get; set; } = new();
 }
 
 public class ApplicationOnServerDto

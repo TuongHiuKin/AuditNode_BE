@@ -24,6 +24,7 @@ public class AuditDbContext : DbContext
     public DbSet<DependencyView> DependencyViews { get; set; }
     public DbSet<Workspace> Workspaces { get; set; }
     public DbSet<TopologyNode> TopologyNodes { get; set; }
+    public DbSet<Label> Labels { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -94,7 +95,24 @@ public class AuditDbContext : DbContext
                 .HasForeignKey(s => s.DatacenterId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.HasMany(s => s.Labels)
+                .WithMany(l => l.Servers)
+                .UsingEntity("server_labels");
+
             entity.HasQueryFilter(s => s.WorkspaceId == _tenantProvider.WorkspaceId);
+        });
+
+        // Label
+        modelBuilder.Entity<Label>(entity =>
+        {
+            entity.ToTable("labels");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired();
+            entity.Property(e => e.Key).HasColumnName("key").IsRequired();
+            entity.Property(e => e.Value).HasColumnName("value").IsRequired();
+
+            entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
         // Application
@@ -260,6 +278,13 @@ public class AuditDbContext : DbContext
                 if (_tenantProvider.WorkspaceId.HasValue)
                 {
                     ad.WorkspaceId = _tenantProvider.WorkspaceId.Value;
+                }
+            }
+            else if (entry.Entity is Label label)
+            {
+                if (_tenantProvider.WorkspaceId.HasValue)
+                {
+                    label.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
         }

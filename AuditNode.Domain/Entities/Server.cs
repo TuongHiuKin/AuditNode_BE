@@ -14,4 +14,5 @@ public class Server
 
     // Navigation properties
     public ICollection<PortMapping> PortMappings { get; set; } = new List<PortMapping>();
+    public ICollection<Label> Labels { get; set; } = new List<Label>();
 }

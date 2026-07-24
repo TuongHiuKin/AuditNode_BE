@@ -16,8 +16,9 @@ public class WorkspaceMiddleware
 
     public async Task InvokeAsync(HttpContext context, ITenantProvider tenantProvider)
     {
-        // Skip workspace validation for non-API paths or specific endpoints like workspace selection
+        // Skip workspace validation for non-API paths or specific endpoints like auth and workspace selection
         if (!context.Request.Path.StartsWithSegments("/api") || 
+            context.Request.Path.StartsWithSegments("/api/v1/auth") ||
             context.Request.Path.StartsWithSegments("/api/v1/workspaces"))
         {
             await _next(context);

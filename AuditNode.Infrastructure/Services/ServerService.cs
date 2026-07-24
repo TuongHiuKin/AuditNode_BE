@@ -16,33 +16,44 @@ public class ServerService : IServerService
 
     public async Task<IEnumerable<ServerResponseDto>> GetServersAsync()
     {
-        var servers = await _context.Servers.ToListAsync();
+        var servers = await _context.Servers
+            .Include(s => s.Datacenter)
+            .Include(s => s.Labels)
+            .ToListAsync();
 
         return servers.Select(s => new ServerResponseDto
         {
             Id = s.Id,
+            DatacenterId = s.DatacenterId,
             IpAddress = s.IpAddress,
             Hostname = s.Hostname,
             OsType = s.OsType,
             Environment = s.Environment,
-            Status = s.Status
+            Datacenter = s.DatacenterId == Guid.Empty ? "Unassigned" : (s.Datacenter?.Name ?? "Unassigned"),
+            Status = s.Status,
+            Labels = s.Labels != null ? s.Labels.Select(l => new LabelDto { Key = l.Key, Value = l.Value }).ToList() : new List<LabelDto>()
         });
     }
 
     public async Task<IEnumerable<ServerResponseDto>> ExportServersAsync(List<Guid> ids)
     {
         var servers = await _context.Servers
+            .Include(s => s.Datacenter)
+            .Include(s => s.Labels)
             .Where(s => ids.Contains(s.Id))
             .ToListAsync();
 
         return servers.Select(s => new ServerResponseDto
         {
             Id = s.Id,
+            DatacenterId = s.DatacenterId,
             IpAddress = s.IpAddress,
             Hostname = s.Hostname,
             OsType = s.OsType,
             Environment = s.Environment,
-            Status = s.Status
+            Datacenter = s.DatacenterId == Guid.Empty ? "Unassigned" : (s.Datacenter?.Name ?? "Unassigned"),
+            Status = s.Status,
+            Labels = s.Labels != null ? s.Labels.Select(l => new LabelDto { Key = l.Key, Value = l.Value }).ToList() : new List<LabelDto>()
         });
     }
 }

@@ -3,7 +3,7 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
 using AuditNode.Infrastructure.Services;
-using AuditNode.Application.Services;
+
 using AuditNode.Application.Validators;
 using Microsoft.EntityFrameworkCore;
 using FluentValidation.AspNetCore;
