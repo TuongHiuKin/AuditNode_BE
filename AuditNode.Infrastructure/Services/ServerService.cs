@@ -21,6 +21,7 @@ public class ServerService : IServerService
             .Include(s => s.Labels)
             .Include(s => s.PortMappings)
                 .ThenInclude(pm => pm.Application)
+            .AsSplitQuery()
             .ToListAsync();
 
         return servers.Select(s => new ServerResponseDto
