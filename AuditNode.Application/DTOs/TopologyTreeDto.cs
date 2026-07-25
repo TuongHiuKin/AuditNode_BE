@@ -13,6 +13,7 @@ public class ServerNodeDto
     public Guid Id { get; set; }
     public string Hostname { get; set; } = string.Empty;
     public string IpAddress { get; set; } = string.Empty;
+    public List<LabelDto> Labels { get; set; } = new();
     public List<ApplicationNodeDto> Applications { get; set; } = new();
 }
 

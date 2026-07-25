@@ -72,17 +72,26 @@ public class TopologyRepository : ITopologyRepository
         }
     }
 
-    public async Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId, int skip, int take)
+    public async Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId = null, int skip = 0, int take = 100, List<string>? labels = null)
     {
         var query = _context.Datacenters
             .Include(d => d.Servers)
                 .ThenInclude(s => s.PortMappings)
                     .ThenInclude(pm => pm.Application)
+            .Include(d => d.Servers)
+                .ThenInclude(s => s.Labels)
+            .AsSplitQuery()
             .AsNoTracking();
 
-        if (datacenterId.HasValue)
+        if (datacenterId.HasValue && datacenterId.Value != Guid.Empty)
         {
             query = query.Where(d => d.Id == datacenterId.Value);
+        }
+
+        if (labels != null && labels.Any())
+        {
+            query = query.Where(d => d.Servers.Any(s => s.Labels.Any(l =>
+                labels.Contains(l.Key) || labels.Contains(l.Value) || labels.Contains(l.Key + ":" + l.Value))));
         }
 
         var datacenters = await query
@@ -95,28 +104,38 @@ public class TopologyRepository : ITopologyRepository
             Id = d.Id,
             Name = d.Name,
             Location = d.Location,
-            Servers = d.Servers.Select(s => new ServerNodeDto
-            {
-                Id = s.Id,
-                Hostname = s.Hostname,
-                IpAddress = s.IpAddress,
-                Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
+            Servers = d.Servers
+                .Where(s => labels == null || !labels.Any() || s.Labels.Any(l =>
+                    labels.Contains(l.Key) || labels.Contains(l.Value) || labels.Contains(l.Key + ":" + l.Value)))
+                .Select(s => new ServerNodeDto
                 {
-                    Id = pm.Application!.Id,
-                    Name = pm.Application.AppName,
-                    PortMappingId = pm.Id,
-                    Port = pm.PortNumber,
-                    Protocol = pm.Protocol
+                    Id = s.Id,
+                    Hostname = s.Hostname,
+                    IpAddress = s.IpAddress,
+                    Labels = s.Labels.Select(l => new LabelDto
+                    {
+                        Key = l.Key,
+                        Value = l.Value
+                    }).ToList(),
+                    Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
+                    {
+                        Id = pm.Application!.Id,
+                        Name = pm.Application.AppName,
+                        PortMappingId = pm.Id,
+                        Port = pm.PortNumber,
+                        Protocol = pm.Protocol
+                    }).ToList()
                 }).ToList()
-            }).ToList()
         });
     }
 
-    public async Task<DependencyMapDto> GetDependencyMapAsync(string? environment = null, Guid? datacenterId = null)
+    public async Task<DependencyMapDto> GetDependencyMapAsync(string? environment = null, Guid? datacenterId = null, List<string>? labels = null)
     {
         var serverQuery = _context.Servers
             .Include(s => s.PortMappings)
                 .ThenInclude(pm => pm.Application)
+            .Include(s => s.Labels)
+            .AsSplitQuery()
             .AsNoTracking();
 
         if (!string.IsNullOrWhiteSpace(environment))
@@ -127,6 +146,12 @@ public class TopologyRepository : ITopologyRepository
         if (datacenterId.HasValue && datacenterId.Value != Guid.Empty)
         {
             serverQuery = serverQuery.Where(s => s.DatacenterId == datacenterId.Value);
+        }
+
+        if (labels != null && labels.Any())
+        {
+            serverQuery = serverQuery.Where(s => s.Labels.Any(l =>
+                labels.Contains(l.Key) || labels.Contains(l.Value) || labels.Contains(l.Key + ":" + l.Value)));
         }
 
         var servers = await serverQuery.ToListAsync();
@@ -147,6 +172,11 @@ public class TopologyRepository : ITopologyRepository
                 Id = s.Id,
                 Hostname = s.Hostname,
                 IpAddress = s.IpAddress,
+                Labels = s.Labels.Select(l => new LabelDto
+                {
+                    Key = l.Key,
+                    Value = l.Value
+                }).ToList(),
                 Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
                 {
                     Id = pm.Application!.Id,

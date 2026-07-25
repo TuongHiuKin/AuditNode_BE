@@ -46,11 +46,11 @@ public class TopologyControllerTests
             }
         };
 
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
             .ReturnsAsync(mockTree);
 
         // Act
-        var result = await _controller.GetTree(null, 0, null);
+        var result = await _controller.GetTree(null, 0, null, null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
@@ -63,14 +63,14 @@ public class TopologyControllerTests
     {
         // Arrange
         int take = 50;
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, take))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, take, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
-        await _controller.GetTree(null, 0, take);
+        await _controller.GetTree(null, 0, take, null);
 
         // Assert
-        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, take), Times.Once);
+        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, take, null), Times.Once);
     }
 
     [Fact]
@@ -78,25 +78,25 @@ public class TopologyControllerTests
     {
         // Arrange
         int largeTake = 500;
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
-        await _controller.GetTree(null, 0, largeTake);
+        await _controller.GetTree(null, 0, largeTake, null);
 
         // Assert
-        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100), Times.Once);
+        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100, null), Times.Once);
     }
 
     [Fact]
     public async Task GetTree_WhenEmpty_ShouldReturnEmptyList()
     {
         // Arrange
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
-        var result = await _controller.GetTree(null, 0, null);
+        var result = await _controller.GetTree(null, 0, null, null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
@@ -109,11 +109,11 @@ public class TopologyControllerTests
     {
         // Arrange
         var emptyMap = new DependencyMapDto();
-        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(It.IsAny<string>(), It.IsAny<Guid?>()))
+        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(It.IsAny<string>(), It.IsAny<Guid?>(), null))
             .ReturnsAsync(emptyMap);
 
         // Act
-        var result = await _controller.GetDependencyMap(null, null);
+        var result = await _controller.GetDependencyMap(null, null, null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
@@ -152,5 +152,43 @@ public class TopologyControllerTests
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetTree_WithLabelsParameter_ShouldPassLabelsToRepository()
+    {
+        // Arrange
+        var labels = new List<string> { "env:prod", "tier:db" };
+        var mockTree = new List<TopologyTreeDto>();
+
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, labels))
+            .ReturnsAsync(mockTree);
+
+        // Act
+        var result = await _controller.GetTree(null, 0, null, labels);
+
+        // Assert
+        var okResult = result.Result.As<OkObjectResult>();
+        okResult.Should().NotBeNull();
+        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100, labels), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetDependencyMap_WithLabelsParameter_ShouldPassLabelsToRepository()
+    {
+        // Arrange
+        var labels = new List<string> { "env:prod" };
+        var mockMap = new DependencyMapDto();
+
+        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(null, null, labels))
+            .ReturnsAsync(mockMap);
+
+        // Act
+        var result = await _controller.GetDependencyMap(null, null, labels);
+
+        // Assert
+        var okResult = result.Result.As<OkObjectResult>();
+        okResult.Should().NotBeNull();
+        _mockRepo.Verify(repo => repo.GetDependencyMapAsync(null, null, labels), Times.Once);
     }
 }

@@ -21,21 +21,23 @@ public class TopologyController : ControllerBase
     public async Task<ActionResult<IEnumerable<TopologyTreeDto>>> GetTree(
         [FromQuery] Guid? datacenterId,
         [FromQuery] int skip = 0,
-        [FromQuery] int? take = null)
+        [FromQuery] int? take = null,
+        [FromQuery] List<string>? labels = null)
     {
         int pageSize = take ?? 100;
         if (pageSize > 100) pageSize = 100; // Hard limit for protection
 
-        var tree = await _topologyRepository.GetTopologyTreeAsync(datacenterId, skip, pageSize);
+        var tree = await _topologyRepository.GetTopologyTreeAsync(datacenterId, skip, pageSize, labels);
         return Ok(tree);
     }
 
     [HttpGet("map")]
     public async Task<ActionResult<DependencyMapDto>> GetDependencyMap(
         [FromQuery] string? environment,
-        [FromQuery] Guid? datacenterId)
+        [FromQuery] Guid? datacenterId,
+        [FromQuery] List<string>? labels = null)
     {
-        var map = await _topologyRepository.GetDependencyMapAsync(environment, datacenterId);
+        var map = await _topologyRepository.GetDependencyMapAsync(environment, datacenterId, labels);
         return Ok(map);
     }
 
