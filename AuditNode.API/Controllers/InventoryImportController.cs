@@ -35,6 +35,7 @@ public class InventoryImportController : ControllerBase
     /// POST /api/inventory/import
     /// Processes the bulk import of topology inventory from an Excel file.
     /// </summary>
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpPost("import")]
     public async Task<IActionResult> ImportInventory(IFormFile file)
     {

@@ -17,6 +17,7 @@ public class DependenciesController : ControllerBase
         _dependencyService = dependencyService;
     }
 
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpPut("sync")]
     public async Task<IActionResult> SyncDependencies([FromBody] SyncDependenciesDto dto)
     {

@@ -45,6 +45,7 @@ public class ApplicationsController : ControllerBase
         return Ok(result);
     }
 
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpPost]
     public async Task<ActionResult<ApplicationResponseDto>> PostApplication([FromBody] CreateApplicationDto appDto)
     {
@@ -52,6 +53,7 @@ public class ApplicationsController : ControllerBase
         return CreatedAtAction(nameof(GetApplication), new { id = result.Id }, result);
     }
 
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> PutApplication(Guid id, [FromBody] UpdateApplicationDto updateDto)
     {

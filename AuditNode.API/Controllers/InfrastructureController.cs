@@ -31,6 +31,7 @@ public class InfrastructureController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpPut("apps/migrate")]
     public async Task<IActionResult> MigrateApp([FromBody] MigrateAppDto migrateDto)
     {
@@ -55,6 +56,7 @@ public class InfrastructureController : ControllerBase
         }
     }
 
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpDelete("apps/{id:guid}/purge")]
     public async Task<IActionResult> PurgeApp(Guid id)
     {
