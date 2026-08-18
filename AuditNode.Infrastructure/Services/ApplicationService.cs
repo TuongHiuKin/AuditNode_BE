@@ -1,198 +1,193 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
-using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
+using Npgsql;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Infrastructure.Services;
 
 public class ApplicationService : IApplicationService
 {
-    private readonly AuditDbContext _context;
+    private readonly IApplicationRepository _repository;
+    private readonly ITenantProvider _tenantProvider;
 
-    public ApplicationService(AuditDbContext context)
+    public ApplicationService(IApplicationRepository repository, ITenantProvider tenantProvider)
     {
-        _context = context;
+        _repository = repository;
+        _tenantProvider = tenantProvider;
     }
 
-    public async Task<IEnumerable<ApplicationResponseDto>> GetAllAsync()
-    {
-        var query = _context.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server);
-        
-        return await MapToResponseDto(query).ToListAsync();
-    }
+    public Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string? labelKey = null, string? labelValue = null) =>
+        HasWorkspace()
+            ? _repository.GetApplicationsAsync(labelKey, labelValue)
+            : Task.FromResult<IEnumerable<ApplicationResponseDto>>(Array.Empty<ApplicationResponseDto>());
 
-    public async Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids)
-    {
-        var query = _context.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server)
-            .Where(a => ids.Contains(a.Id));
-
-        return await MapToResponseDto(query).ToListAsync();
-    }
+    public Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids) =>
+        HasWorkspace()
+            ? _repository.GetByIdsAsync(ids)
+            : Task.FromResult<IEnumerable<ApplicationResponseDto>>(Array.Empty<ApplicationResponseDto>());
 
     public async Task<ApplicationResponseDto?> GetByIdAsync(Guid id)
     {
-        var app = await _context.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server)
-            .FirstOrDefaultAsync(a => a.Id == id);
+        if (!HasWorkspace() || id == Guid.Empty)
+            return null;
 
-        if (app == null) return null;
-
-        return new ApplicationResponseDto
-        {
-            Id = app.Id,
-            AppCode = app.AppCode,
-            AppName = app.AppName,
-            OwnerTeam = app.OwnerTeam,
-            Risk = app.Risk,
-            Icon = app.Icon,
-            TechStack = app.TechStack,
-            Servers = app.PortMappings.Select(pm => new ServerOnApplicationDto
-            {
-                Id = pm.ServerId,
-                Hostname = pm.Server?.Hostname ?? string.Empty,
-                IpAddress = pm.Server?.IpAddress ?? string.Empty,
-                PortNumber = pm.PortNumber,
-                Protocol = pm.Protocol
-            }).ToList()
-        };
+        var application = await _repository.GetByIdAsync(id);
+        return application is null ? null : Map(application);
     }
 
-    public async Task<ApplicationResponseDto> CreateAsync(CreateApplicationDto appDto)
+    public async Task<ApplicationOperationResult> CreateAsync(CreateApplicationDto createDto)
     {
-        using var transaction = await _context.Database.BeginTransactionAsync();
-        try
+        if (!HasWorkspace())
+            return new(ApplicationOperationStatus.InvalidWorkspace);
+
+        var appCode = createDto.AppCode.Trim().ToUpperInvariant();
+        if (await _repository.AppCodeExistsAsync(appCode))
+            return new(ApplicationOperationStatus.DuplicateAppCode);
+
+        PortMapping? deployment = null;
+        if (createDto.Deployment is not null)
         {
-            var existingApp = await _context.Applications
-                .FirstOrDefaultAsync(a => a.AppCode == appDto.AppCode.ToUpper());
+            var validation = await ValidateDeploymentAsync(
+                createDto.Deployment.ServerId,
+                createDto.Deployment.PortNumber,
+                null);
+            if (validation != ApplicationOperationStatus.Success)
+                return new(validation);
 
-            AppEntity application;
-
-            if (existingApp == null)
+            deployment = new PortMapping
             {
-                application = new AppEntity
-                {
-                    Id = Guid.NewGuid(),
-                    AppCode = appDto.AppCode.ToUpper(),
-                    AppName = appDto.AppName,
-                    OwnerTeam = appDto.OwnerTeam,
-                    Risk = string.IsNullOrWhiteSpace(appDto.Risk) ? "LOW" : appDto.Risk,
-                    Icon = appDto.Icon ?? string.Empty,
-                    TechStack = appDto.TechStack ?? string.Empty
-                };
-                _context.Applications.Add(application);
-            }
-            else
-            {
-                existingApp.AppName = appDto.AppName;
-                existingApp.OwnerTeam = appDto.OwnerTeam;
-                existingApp.Risk = string.IsNullOrWhiteSpace(appDto.Risk) ? "LOW" : appDto.Risk;
-                existingApp.Icon = appDto.Icon ?? string.Empty;
-                existingApp.TechStack = appDto.TechStack ?? string.Empty;
-                application = existingApp;
-            }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-
-            return new ApplicationResponseDto
-            {
-                Id = application.Id,
-                AppCode = application.AppCode,
-                AppName = application.AppName,
-                OwnerTeam = application.OwnerTeam,
-                Risk = application.Risk,
-                Icon = application.Icon,
-                TechStack = application.TechStack,
-                Servers = new List<ServerOnApplicationDto>()
+                Id = Guid.NewGuid(),
+                ServerId = createDto.Deployment.ServerId,
+                PortNumber = createDto.Deployment.PortNumber,
+                Protocol = createDto.Deployment.Protocol.Trim().ToUpperInvariant()
             };
         }
-        catch (Exception)
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
-    }
 
-    public async Task<bool> UpdateAsync(Guid id, UpdateApplicationDto updateDto)
-    {
-        using var transaction = await _context.Database.BeginTransactionAsync();
+        var application = new AppEntity
+        {
+            Id = Guid.NewGuid(),
+            AppCode = appCode,
+            AppName = createDto.AppName,
+            OwnerTeam = createDto.OwnerTeam,
+            Risk = string.IsNullOrWhiteSpace(createDto.Risk) ? "LOW" : createDto.Risk,
+            Icon = createDto.Icon ?? string.Empty,
+            TechStack = createDto.TechStack ?? string.Empty
+        };
+        if (deployment is not null)
+            deployment.AppId = application.Id;
+
         try
         {
-            var app = await _context.Applications.FirstOrDefaultAsync(a => a.Id == id);
-            if (app == null) return false;
-
-            app.AppName = updateDto.AppName;
-            app.OwnerTeam = updateDto.OwnerTeam;
-            app.Risk = updateDto.Risk;
-            app.Icon = updateDto.Icon;
-            app.TechStack = updateDto.TechStack;
-
-            var portMapping = await _context.PortMappings.FirstOrDefaultAsync(p => p.AppId == id);
-            
-            if (updateDto.TargetServerId.HasValue || updateDto.PortNumber.HasValue)
-            {
-                if (portMapping == null)
-                {
-                    portMapping = new PortMapping
-                    {
-                        Id = Guid.NewGuid(),
-                        AppId = id,
-                        ServerId = updateDto.TargetServerId ?? Guid.Empty,
-                        PortNumber = updateDto.PortNumber ?? 0,
-                        Protocol = "TCP"
-                    };
-                    _context.PortMappings.Add(portMapping);
-                }
-                else
-                {
-                    if (updateDto.TargetServerId.HasValue && updateDto.TargetServerId.Value != Guid.Empty)
-                        portMapping.ServerId = updateDto.TargetServerId.Value;
-
-                    if (updateDto.PortNumber.HasValue)
-                        portMapping.PortNumber = updateDto.PortNumber.Value;
-
-                    _context.PortMappings.Update(portMapping);
-                }
-            }
-
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-            return true;
+            await _repository.CreateAsync(application, createDto.Labels, deployment);
+            var stored = await _repository.GetByIdAsync(application.Id);
+            return new(ApplicationOperationStatus.Success, Map(stored ?? application));
         }
-        catch (Exception)
+        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
-            await transaction.RollbackAsync();
-            throw;
+            return new(deployment is null
+                ? ApplicationOperationStatus.DuplicateAppCode
+                : ApplicationOperationStatus.PortCollision);
         }
     }
 
-    private IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query)
+    public async Task<ApplicationOperationResult> UpdateAsync(Guid id, UpdateApplicationDto updateDto)
     {
-        return query.Select(a => new ApplicationResponseDto
+        if (!HasWorkspace())
+            return new(ApplicationOperationStatus.InvalidWorkspace);
+        if (id == Guid.Empty)
+            return new(ApplicationOperationStatus.InvalidRequest);
+
+        var application = await _repository.GetByIdAsync(id);
+        if (application is null)
+            return new(ApplicationOperationStatus.NotFound);
+
+        PortMapping? deployment = null;
+        if (HasDeploymentChange(updateDto))
         {
-            Id = a.Id,
-            AppCode = a.AppCode,
-            AppName = a.AppName,
-            OwnerTeam = a.OwnerTeam,
-            Risk = a.Risk,
-            Icon = a.Icon,
-            TechStack = a.TechStack,
-            Servers = a.PortMappings.Select(pm => new ServerOnApplicationDto
-            {
-                Id = pm.ServerId,
-                Hostname = pm.Server!.Hostname,
-                IpAddress = pm.Server!.IpAddress,
-                PortNumber = pm.PortNumber,
-                Protocol = pm.Protocol
-            }).ToList()
-        });
+            if (!updateDto.PortMappingId.HasValue || updateDto.PortMappingId == Guid.Empty ||
+                !updateDto.TargetServerId.HasValue || updateDto.TargetServerId == Guid.Empty ||
+                !updateDto.PortNumber.HasValue || updateDto.PortNumber is < 1 or > 65535)
+                return new(ApplicationOperationStatus.InvalidRequest);
+
+            deployment = await _repository.GetPortMappingAsync(updateDto.PortMappingId.Value);
+            if (deployment is null || deployment.AppId != id)
+                return new(ApplicationOperationStatus.DeploymentNotFound);
+
+            var validation = await ValidateDeploymentAsync(
+                updateDto.TargetServerId.Value,
+                updateDto.PortNumber.Value,
+                deployment.Id);
+            if (validation != ApplicationOperationStatus.Success)
+                return new(validation);
+
+            deployment.ServerId = updateDto.TargetServerId.Value;
+            deployment.PortNumber = updateDto.PortNumber.Value;
+        }
+
+        application.AppName = updateDto.AppName;
+        application.OwnerTeam = updateDto.OwnerTeam;
+        application.Risk = updateDto.Risk;
+        application.Icon = updateDto.Icon;
+        application.TechStack = updateDto.TechStack;
+
+        try
+        {
+            await _repository.UpdateAsync(application, updateDto.Labels, deployment);
+            var stored = await _repository.GetByIdAsync(id);
+            return new(ApplicationOperationStatus.Success, Map(stored ?? application));
+        }
+        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        {
+            return new(ApplicationOperationStatus.PortCollision);
+        }
     }
+
+    private async Task<ApplicationOperationStatus> ValidateDeploymentAsync(
+        Guid serverId,
+        int portNumber,
+        Guid? excludePortMappingId)
+    {
+        if (serverId == Guid.Empty || portNumber is < 1 or > 65535)
+            return ApplicationOperationStatus.InvalidRequest;
+        if (!await _repository.ServerExistsAsync(serverId))
+            return ApplicationOperationStatus.ServerNotFound;
+        if (await _repository.PortCollisionExistsAsync(serverId, portNumber, excludePortMappingId))
+            return ApplicationOperationStatus.PortCollision;
+        return ApplicationOperationStatus.Success;
+    }
+
+    private bool HasWorkspace() =>
+        _tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty;
+
+    private static bool HasDeploymentChange(UpdateApplicationDto dto) =>
+        dto.PortMappingId.HasValue || dto.TargetServerId.HasValue || dto.PortNumber.HasValue;
+
+    private static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+
+    private static ApplicationResponseDto Map(AppEntity application) => new()
+    {
+        Id = application.Id,
+        AppCode = application.AppCode,
+        AppName = application.AppName,
+        OwnerTeam = application.OwnerTeam,
+        Risk = application.Risk,
+        Icon = application.Icon,
+        TechStack = application.TechStack,
+        Servers = application.PortMappings.Select(mapping => new ServerOnApplicationDto
+        {
+            PortMappingId = mapping.Id,
+            Id = mapping.ServerId,
+            Hostname = mapping.Server?.Hostname ?? string.Empty,
+            IpAddress = mapping.Server?.IpAddress ?? string.Empty,
+            PortNumber = mapping.PortNumber,
+            Protocol = mapping.Protocol
+        }).ToList(),
+        Labels = application.ApplicationLabels
+            .Where(link => link.Label is not null)
+            .Select(link => new LabelDto { Key = link.Label!.Key, Value = link.Label.Value })
+            .ToList()
+    };
 }

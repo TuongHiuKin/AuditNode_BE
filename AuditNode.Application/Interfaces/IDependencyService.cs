@@ -4,5 +4,5 @@ namespace AuditNode.Application.Interfaces;
 
 public interface IDependencyService
 {
-    Task SyncDependenciesAsync(SyncDependenciesDto dto);
+    Task<DependencySyncStatus> SyncDependenciesAsync(SyncDependenciesDto dto);
 }

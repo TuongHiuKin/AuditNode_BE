@@ -28,13 +28,10 @@ public class CreateServerDtoValidatorTests
     [Theory]
     [InlineData("invalid-ip")]
     [InlineData("192.168.1")]
-    [InlineData("256.256.256.256")] // Matches regex but it's simple regex
+    [InlineData("256.256.256.256")]
+    [InlineData("2001:db8::1")]
     public void Should_Have_Error_When_IpAddress_Is_Invalid(string ip)
     {
-        // Note: The regex ^(\d{1,3}\.){3}\d{1,3}$ allows 999.999.999.999
-        // But invalid strings like "abc" should fail.
-        if (ip == "256.256.256.256") return; // Skip if we know regex is simple
-        
         var model = new CreateServerDto { IpAddress = ip };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.IpAddress);
@@ -54,5 +51,12 @@ public class CreateServerDtoValidatorTests
         var model = new CreateServerDto { DatacenterId = Guid.Empty };
         var result = _validator.TestValidate(model);
         result.ShouldHaveValidationErrorFor(x => x.DatacenterId);
+    }
+
+    [Fact]
+    public void Should_Have_Error_When_Label_Key_Or_Value_Is_Empty()
+    {
+        var model = new CreateServerDto { Labels = [new LabelDto { Key = "", Value = "v" }] };
+        _validator.TestValidate(model).ShouldHaveValidationErrorFor("Labels[0].Key");
     }
 }

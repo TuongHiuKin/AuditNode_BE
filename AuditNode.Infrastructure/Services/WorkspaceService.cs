@@ -1,22 +1,20 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
-using AuditNode.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
 
 namespace AuditNode.Infrastructure.Services;
 
 public class WorkspaceService : IWorkspaceService
 {
-    private readonly AuditDbContext _context;
+    private readonly IWorkspaceRepository _repository;
 
-    public WorkspaceService(AuditDbContext context)
+    public WorkspaceService(IWorkspaceRepository repository)
     {
-        _context = context;
+        _repository = repository;
     }
 
     public async Task<IEnumerable<WorkspaceDto>> GetUserWorkspacesAsync(string userId)
     {
-        var workspaces = await _context.Workspaces.ToListAsync();
+        var workspaces = await _repository.GetAccessibleAsync(userId);
         
         return workspaces.Select(w => new WorkspaceDto
         {
@@ -25,4 +23,9 @@ public class WorkspaceService : IWorkspaceService
             Description = w.Description
         });
     }
+
+    public Task<bool> ExistsAsync(Guid workspaceId) => _repository.ExistsAsync(workspaceId);
+
+    public Task<bool> UserHasAccessAsync(Guid workspaceId, string userId) =>
+        _repository.UserHasAccessAsync(workspaceId, userId);
 }

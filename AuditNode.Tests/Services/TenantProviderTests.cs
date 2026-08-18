@@ -45,4 +45,15 @@ public class TenantProviderTests
         // Assert
         provider.WorkspaceId.Should().BeNull();
     }
+
+    [Fact]
+    public void SetWorkspaceId_ShouldRejectEmptyGuidAndClearPreviousValue()
+    {
+        var provider = new TenantProvider();
+        provider.SetWorkspaceId(Guid.NewGuid().ToString());
+
+        provider.SetWorkspaceId(Guid.Empty.ToString());
+
+        provider.WorkspaceId.Should().BeNull();
+    }
 }

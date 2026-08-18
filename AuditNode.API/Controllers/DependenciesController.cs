@@ -21,20 +21,27 @@ public class DependenciesController : ControllerBase
     [HttpPut("sync")]
     public async Task<IActionResult> SyncDependencies([FromBody] SyncDependenciesDto dto)
     {
-        if (dto == null || dto.Dependencies == null)
-        {
-            return BadRequest("Invalid dependency data.");
-        }
+        if (dto?.Dependencies is null)
+            return BadRequest(Problem(400, "A dependency collection is required."));
 
         try
         {
-            await _dependencyService.SyncDependenciesAsync(dto);
-            return Ok(new { Message = "Dependencies synchronized successfully." });
+            var status = await _dependencyService.SyncDependenciesAsync(dto);
+            return status switch
+            {
+                DependencySyncStatus.Success => NoContent(),
+                DependencySyncStatus.NotFound => NotFound(Problem(404, "An application or deployment was not found in the current workspace.")),
+                DependencySyncStatus.Duplicate => Conflict(Problem(409, "Duplicate dependencies are not allowed.")),
+                DependencySyncStatus.SelfLoop => BadRequest(Problem(400, "An application cannot depend on itself.")),
+                DependencySyncStatus.DestinationMismatch => BadRequest(Problem(400, "The destination deployment does not belong to the destination application.")),
+                _ => BadRequest(Problem(400, "Dependency data is invalid."))
+            };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            // In a real scenario, we would log this error
-            return StatusCode(500, $"Internal server error: {ex.Message}");
+            return StatusCode(500, Problem(500, "Dependencies could not be synchronized."));
         }
     }
+
+    private static ProblemDetails Problem(int status, string title) => new() { Status = status, Title = title };
 }

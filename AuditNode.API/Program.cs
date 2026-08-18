@@ -13,6 +13,7 @@ using AuditNode.API.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,7 +34,7 @@ builder.Services.AddOpenApi("v1", options =>
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = "http://localhost:8080/realms/AuditNode-Realm";
+        options.Authority = builder.Configuration["Keycloak:Authority"];
         options.RequireHttpsMetadata = false; // Set to true in production
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -45,7 +46,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context => {
-                Console.WriteLine($"[Auth Failed] {context.Exception.Message}");
+                Console.WriteLine($"[Auth Failed] {context.Exception.GetType().Name}");
                 return Task.CompletedTask;
             },
             OnTokenValidated = context => {
@@ -60,6 +61,35 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+        context.ProblemDetails.Extensions["correlationId"] = context.HttpContext.TraceIdentifier;
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
+
+builder.Services.AddOptions<KeycloakRuntimeOptions>()
+    .Bind(builder.Configuration.GetSection("Keycloak"))
+    .Validate(options => options.IsValid(), "Required Keycloak configuration is missing.")
+    .ValidateOnStart();
+
+builder.Services.AddHttpClient(KeycloakAuthService.HttpClientName);
+builder.Services.AddTransient<IKeycloakHttpClientFactory, KeycloakHttpClientFactoryAdapter>();
+builder.Services.AddScoped<IIdentityAuthService, KeycloakAuthService>();
 
 // Register Keycloak Role Claims Transformation for RBAC
 builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
@@ -99,7 +129,8 @@ builder.Services.AddCors(options =>
         policyBuilder
             .WithOrigins("http://localhost:5173", "http://localhost:3000")
             .AllowAnyHeader()
-            .AllowAnyMethod();
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
@@ -124,10 +155,21 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
+    await next();
+});
+app.UseExceptionHandler();
+
 app.UseHttpsRedirection();
+
+app.UseRouting();
 
 // Enable CORS early in the pipeline
 app.UseCors("AllowReact");
+
+app.UseRateLimiter();
 
 // Authentication MUST run before Authorization
 app.UseAuthentication();
@@ -140,3 +182,16 @@ app.UseMiddleware<WorkspaceMiddleware>();
 app.MapControllers();
 
 app.Run();
+
+public sealed class KeycloakHttpClientFactoryAdapter : IKeycloakHttpClientFactory
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public KeycloakHttpClientFactoryAdapter(IHttpClientFactory httpClientFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+    }
+
+    public HttpClient CreateClient() =>
+        _httpClientFactory.CreateClient(KeycloakAuthService.HttpClientName);
+}

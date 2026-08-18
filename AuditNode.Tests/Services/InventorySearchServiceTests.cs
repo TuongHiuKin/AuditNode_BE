@@ -21,7 +21,7 @@ public class InventorySearchServiceTests
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
         _context = new AuditDbContext(options, mockTenantProvider.Object);
         _service = new InventorySearchService(_context);
     }

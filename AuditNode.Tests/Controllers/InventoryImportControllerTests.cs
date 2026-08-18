@@ -52,6 +52,7 @@ public class InventoryImportControllerTests
         fileMock.Setup(_ => _.OpenReadStream()).Returns(ms);
         fileMock.Setup(_ => _.FileName).Returns(fileName);
         fileMock.Setup(_ => _.Length).Returns(ms.Length);
+        fileMock.Setup(_ => _.ContentType).Returns("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
         var importResult = new ImportResponseDto { SavedCount = 10, Errors = new List<ImportErrorDto>() };
         _mockService.Setup(s => s.ImportInventoryAsync(It.IsAny<Stream>())).ReturnsAsync(importResult);
@@ -62,6 +63,35 @@ public class InventoryImportControllerTests
         // Assert
         var okResult = result.As<OkObjectResult>();
         okResult.Value.Should().BeEquivalentTo(importResult);
+    }
+
+    [Fact]
+    public async Task ImportInventory_rejects_oversized_file_before_opening_stream()
+    {
+        var file = new Mock<IFormFile>();
+        file.SetupGet(x => x.FileName).Returns("large.xlsx");
+        file.SetupGet(x => x.ContentType).Returns("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        file.SetupGet(x => x.Length).Returns(InventoryImportController.MaxImportBytes + 1);
+
+        var result = await _controller.ImportInventory(file.Object);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        file.Verify(x => x.OpenReadStream(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportInventory_maps_conflicts_to_409()
+    {
+        var file = ValidFile();
+        _mockService.Setup(x => x.ImportInventoryAsync(It.IsAny<Stream>()))
+            .ReturnsAsync(new ImportResponseDto
+            {
+                Conflicts = [new ImportConflictDto { Row = 2, Message = "duplicate" }]
+            });
+
+        var result = await _controller.ImportInventory(file.Object);
+
+        result.Should().BeOfType<ConflictObjectResult>();
     }
 
     [Fact]
@@ -87,5 +117,15 @@ public class InventoryImportControllerTests
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    private static Mock<IFormFile> ValidFile()
+    {
+        var file = new Mock<IFormFile>();
+        file.SetupGet(x => x.FileName).Returns("test.xlsx");
+        file.SetupGet(x => x.ContentType).Returns("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        file.SetupGet(x => x.Length).Returns(10);
+        file.Setup(x => x.OpenReadStream()).Returns(new MemoryStream(new byte[10]));
+        return file;
     }
 }

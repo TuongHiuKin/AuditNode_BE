@@ -16,15 +16,48 @@ public class TopologyRepository : ITopologyRepository
         _context = context;
     }
 
-    public async Task SaveTopologyStateAsync(SaveTopologyStateDto state)
+    public async Task<TopologyStateDto> GetTopologyStateAsync()
     {
+        var nodes = await _context.TopologyNodes.AsNoTracking()
+            .OrderBy(node => node.Id)
+            .Select(node => new TopologyNodeDto
+            {
+                Id = node.Id,
+                NodeType = node.NodeType,
+                Label = node.Label,
+                X = node.X,
+                Y = node.Y,
+                Width = node.Width,
+                Height = node.Height,
+                ParentNodeId = node.ParentNodeId,
+                ReferenceId = node.ReferenceId
+            }).ToListAsync();
+        var edges = await _context.TopologyEdges.AsNoTracking()
+            .OrderBy(edge => edge.Id)
+            .Select(edge => new TopologyEdgeDto
+            {
+                Id = edge.Id,
+                SourceNodeId = edge.SourceNodeId,
+                TargetNodeId = edge.TargetNodeId,
+                SourceHandle = edge.SourceHandle,
+                TargetHandle = edge.TargetHandle,
+                EdgeType = edge.EdgeType,
+                Label = edge.Label,
+                ReferenceId = edge.ReferenceId
+            }).ToListAsync();
+        return new TopologyStateDto { Nodes = nodes, Edges = edges };
+    }
+
+    public async Task<TopologyStateStatus> SaveTopologyStateAsync(TopologyStateDto state)
+    {
+        var validation = await ValidateStateAsync(state);
+        if (validation != TopologyStateStatus.Success)
+            return validation;
+
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            // 1. Get existing nodes in this workspace
             var existingNodes = await _context.TopologyNodes.ToDictionaryAsync(n => n.Id);
-
-            // 2. Process incoming nodes (Upsert)
             foreach (var nodeDto in state.Nodes)
             {
                 if (existingNodes.TryGetValue(nodeDto.Id, out var existingNode))
@@ -57,19 +90,158 @@ public class TopologyRepository : ITopologyRepository
                 }
             }
 
-            // 3. Delete nodes not in the incoming payload (if business rules require full sync)
             var incomingIds = state.Nodes.Select(n => n.Id).ToHashSet();
             var nodesToDelete = existingNodes.Values.Where(n => !incomingIds.Contains(n.Id));
+
+            var existingEdges = await _context.TopologyEdges.ToDictionaryAsync(edge => edge.Id);
+            foreach (var edgeDto in state.Edges)
+            {
+                if (!existingEdges.TryGetValue(edgeDto.Id, out var edge))
+                {
+                    edge = new TopologyEdge { Id = edgeDto.Id };
+                    _context.TopologyEdges.Add(edge);
+                }
+
+                edge.SourceNodeId = edgeDto.SourceNodeId;
+                edge.TargetNodeId = edgeDto.TargetNodeId;
+                edge.SourceHandle = edgeDto.SourceHandle;
+                edge.TargetHandle = edgeDto.TargetHandle;
+                edge.EdgeType = edgeDto.EdgeType;
+                edge.Label = edgeDto.Label;
+                edge.ReferenceId = edgeDto.ReferenceId;
+            }
+
+            var incomingEdgeIds = state.Edges.Select(edge => edge.Id).ToHashSet();
+            _context.TopologyEdges.RemoveRange(existingEdges.Values.Where(edge => !incomingEdgeIds.Contains(edge.Id)));
             _context.TopologyNodes.RemoveRange(nodesToDelete);
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
+            return TopologyStateStatus.Success;
         }
         catch (Exception)
         {
             await transaction.RollbackAsync();
             throw;
         }
+    }
+
+    private async Task<TopologyStateStatus> ValidateStateAsync(TopologyStateDto? state)
+    {
+        if (state?.Nodes is null || state.Edges is null ||
+            !_context.CurrentWorkspaceId.HasValue || _context.CurrentWorkspaceId == Guid.Empty)
+            return TopologyStateStatus.InvalidRequest;
+
+        if (state.Nodes.Any(node => node.Id == Guid.Empty) ||
+            state.Edges.Any(edge => edge.Id == Guid.Empty) ||
+            state.Nodes.Select(node => node.Id).Distinct().Count() != state.Nodes.Count ||
+            state.Edges.Select(edge => edge.Id).Distinct().Count() != state.Edges.Count ||
+            state.Nodes.Select(node => node.Id).Intersect(state.Edges.Select(edge => edge.Id)).Any())
+            return TopologyStateStatus.DuplicateId;
+
+        var supportedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "frame", "group", "server", "application"
+        };
+        if (state.Nodes.Any(node =>
+                !supportedTypes.Contains(node.NodeType) ||
+                !double.IsFinite(node.X) || !double.IsFinite(node.Y) ||
+                (node.Width.HasValue && (!double.IsFinite(node.Width.Value) || node.Width <= 0)) ||
+                (node.Height.HasValue && (!double.IsFinite(node.Height.Value) || node.Height <= 0))))
+            return TopologyStateStatus.InvalidRequest;
+
+        var byId = state.Nodes.ToDictionary(node => node.Id);
+        foreach (var node in state.Nodes)
+        {
+            if (!node.ParentNodeId.HasValue)
+                continue;
+            if (node.ParentNodeId == node.Id || !byId.TryGetValue(node.ParentNodeId.Value, out var parent) ||
+                !IsValidParent(node.NodeType, parent.NodeType))
+                return TopologyStateStatus.InvalidParent;
+
+            var seen = new HashSet<Guid> { node.Id };
+            var cursor = parent;
+            while (cursor.ParentNodeId.HasValue)
+            {
+                if (!seen.Add(cursor.Id) || !byId.TryGetValue(cursor.ParentNodeId.Value, out cursor!))
+                    return TopologyStateStatus.InvalidParent;
+            }
+        }
+
+        var serverReferences = state.Nodes
+            .Where(node => node.NodeType.Equals("server", StringComparison.OrdinalIgnoreCase))
+            .Select(node => node.ReferenceId).ToArray();
+        var deploymentReferences = state.Nodes
+            .Where(node => node.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase))
+            .Select(node => node.ReferenceId).ToArray();
+        if (serverReferences.Any(reference => !reference.HasValue || reference == Guid.Empty) ||
+            deploymentReferences.Any(reference => !reference.HasValue || reference == Guid.Empty) ||
+            serverReferences.Where(reference => reference.HasValue).Distinct().Count() != serverReferences.Length ||
+            deploymentReferences.Where(reference => reference.HasValue).Distinct().Count() != deploymentReferences.Length ||
+            state.Nodes.Any(node =>
+                (node.NodeType.Equals("frame", StringComparison.OrdinalIgnoreCase) ||
+                 node.NodeType.Equals("group", StringComparison.OrdinalIgnoreCase)) && node.ReferenceId.HasValue))
+            return TopologyStateStatus.InvalidReference;
+
+        var serverIds = await _context.Servers
+            .Where(server => serverReferences.Contains(server.Id))
+            .Select(server => server.Id).ToListAsync();
+        var mappings = await _context.PortMappings
+            .Where(mapping => deploymentReferences.Contains(mapping.Id))
+            .Select(mapping => new { mapping.Id, mapping.ServerId })
+            .ToDictionaryAsync(mapping => mapping.Id, mapping => mapping.ServerId);
+        if (serverIds.Count != serverReferences.Length || mappings.Count != deploymentReferences.Length)
+            return TopologyStateStatus.InvalidReference;
+
+        foreach (var applicationNode in state.Nodes.Where(node =>
+                     node.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase) &&
+                     node.ParentNodeId.HasValue))
+        {
+            var parent = byId[applicationNode.ParentNodeId!.Value];
+            if (parent.NodeType.Equals("server", StringComparison.OrdinalIgnoreCase) &&
+                (!parent.ReferenceId.HasValue ||
+                 mappings[applicationNode.ReferenceId!.Value] != parent.ReferenceId.Value))
+                return TopologyStateStatus.InvalidParent;
+        }
+
+        var edgeKeys = new HashSet<string>(StringComparer.Ordinal);
+        var dependencyReferences = new List<Guid>();
+        foreach (var edge in state.Edges)
+        {
+            if (edge.SourceNodeId == Guid.Empty || edge.TargetNodeId == Guid.Empty ||
+                edge.SourceNodeId == edge.TargetNodeId ||
+                !byId.ContainsKey(edge.SourceNodeId) || !byId.ContainsKey(edge.TargetNodeId))
+                return TopologyStateStatus.InvalidEdge;
+            var key = $"{edge.SourceNodeId:N}|{edge.TargetNodeId:N}|{edge.SourceHandle}|{edge.TargetHandle}";
+            if (!edgeKeys.Add(key))
+                return TopologyStateStatus.InvalidEdge;
+            if (edge.ReferenceId.HasValue)
+                dependencyReferences.Add(edge.ReferenceId.Value);
+        }
+
+        if (dependencyReferences.Count > 0)
+        {
+            var found = await _context.AppDependencies
+                .Where(dependency => dependencyReferences.Contains(dependency.Id))
+                .Select(dependency => dependency.Id).Distinct().CountAsync();
+            if (found != dependencyReferences.Distinct().Count())
+                return TopologyStateStatus.InvalidReference;
+        }
+
+        return TopologyStateStatus.Success;
+    }
+
+    private static bool IsValidParent(string nodeType, string parentType)
+    {
+        if (nodeType.Equals("frame", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (nodeType.Equals("group", StringComparison.OrdinalIgnoreCase) ||
+            nodeType.Equals("server", StringComparison.OrdinalIgnoreCase))
+            return parentType.Equals("frame", StringComparison.OrdinalIgnoreCase) ||
+                   parentType.Equals("group", StringComparison.OrdinalIgnoreCase);
+        return parentType.Equals("frame", StringComparison.OrdinalIgnoreCase) ||
+               parentType.Equals("group", StringComparison.OrdinalIgnoreCase) ||
+               parentType.Equals("server", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId = null, int skip = 0, int take = 100, List<string>? labels = null)
@@ -110,6 +282,7 @@ public class TopologyRepository : ITopologyRepository
                 .Select(s => new ServerNodeDto
                 {
                     Id = s.Id,
+                    ServerId = s.Id,
                     Hostname = s.Hostname,
                     IpAddress = s.IpAddress,
                     Labels = s.Labels.Select(l => new LabelDto
@@ -119,8 +292,10 @@ public class TopologyRepository : ITopologyRepository
                     }).ToList(),
                     Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
                     {
-                        Id = pm.Application!.Id,
-                        Name = pm.Application.AppName,
+                        Id = pm.Id,
+                        AppId = pm.AppId,
+                        ServerId = pm.ServerId,
+                        Name = pm.Application!.AppName,
                         PortMappingId = pm.Id,
                         Port = pm.PortNumber,
                         Protocol = pm.Protocol
@@ -160,8 +335,12 @@ public class TopologyRepository : ITopologyRepository
             .AsNoTracking()
             .Select(ad => new ConnectionDto
             {
+                Id = ad.Id,
                 SourceAppId = ad.SourceAppId,
-                TargetAppId = ad.DestAppId
+                TargetAppId = ad.DestAppId,
+                DestinationPortMappingId = ad.DestPortId,
+                DestinationServerId = ad.DestinationPort!.ServerId,
+                ConnectionType = ad.ConnectionType
             })
             .ToListAsync();
 
@@ -170,6 +349,7 @@ public class TopologyRepository : ITopologyRepository
             Servers = servers.Select(s => new ServerNodeDto
             {
                 Id = s.Id,
+                ServerId = s.Id,
                 Hostname = s.Hostname,
                 IpAddress = s.IpAddress,
                 Labels = s.Labels.Select(l => new LabelDto
@@ -179,8 +359,10 @@ public class TopologyRepository : ITopologyRepository
                 }).ToList(),
                 Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
                 {
-                    Id = pm.Application!.Id,
-                    Name = pm.Application.AppName,
+                    Id = pm.Id,
+                    AppId = pm.AppId,
+                    ServerId = pm.ServerId,
+                    Name = pm.Application!.AppName,
                     PortMappingId = pm.Id,
                     Port = pm.PortNumber,
                     Protocol = pm.Protocol

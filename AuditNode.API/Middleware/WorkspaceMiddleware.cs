@@ -14,7 +14,10 @@ public class WorkspaceMiddleware
         _next = next;
     }
 
-    public async Task InvokeAsync(HttpContext context, ITenantProvider tenantProvider)
+    public async Task InvokeAsync(
+        HttpContext context,
+        ITenantProvider tenantProvider,
+        IWorkspaceService workspaceService)
     {
         // Skip workspace validation for non-API paths or specific endpoints like auth and workspace selection
         if (!context.Request.Path.StartsWithSegments("/api") || 
@@ -28,26 +31,45 @@ public class WorkspaceMiddleware
         // 1. Extract Header
         if (!context.Request.Headers.TryGetValue(WorkspaceHeader, out var workspaceIdHeader))
         {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { message = "Workspace ID header (X-Workspace-Id) missing." });
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new { error = "Workspace ID header (X-Workspace-Id) is required." });
             return;
         }
 
         var workspaceIdStr = workspaceIdHeader.ToString();
 
         // 2. Validate UUID format
-        if (!Guid.TryParse(workspaceIdStr, out var workspaceId))
+        if (!Guid.TryParse(workspaceIdStr, out var workspaceId) || workspaceId == Guid.Empty)
         {
-            context.Response.StatusCode = StatusCodes.Status403Forbidden;
-            await context.Response.WriteAsJsonAsync(new { message = "Invalid Workspace ID format." });
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await context.Response.WriteAsJsonAsync(new { error = "A non-empty workspace ID is required." });
             return;
         }
 
-        // Note: Guid.Empty (00000000-0000-0000-0000-000000000000) is considered a valid 
-        // workspace ID (the Default Workspace) and is explicitly allowed to pass.
+        var userId = context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? context.User.FindFirstValue("sub");
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { error = "An authenticated user identifier is required." });
+            return;
+        }
 
-        // 3. Set in Tenant Provider
-        tenantProvider.WorkspaceId = workspaceId;
+        if (!await workspaceService.ExistsAsync(workspaceId))
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { error = "Workspace not found." });
+            return;
+        }
+
+        if (!await workspaceService.UserHasAccessAsync(workspaceId, userId))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { error = "Workspace access is forbidden." });
+            return;
+        }
+
+        tenantProvider.SetWorkspaceId(workspaceIdStr);
 
         await _next(context);
     }

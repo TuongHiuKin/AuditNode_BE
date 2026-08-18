@@ -11,6 +11,7 @@ public class TopologyTreeDto
 public class ServerNodeDto
 {
     public Guid Id { get; set; }
+    public Guid ServerId { get; set; }
     public string Hostname { get; set; } = string.Empty;
     public string IpAddress { get; set; } = string.Empty;
     public List<LabelDto> Labels { get; set; } = new();
@@ -20,6 +21,8 @@ public class ServerNodeDto
 public class ApplicationNodeDto
 {
     public Guid Id { get; set; }
+    public Guid AppId { get; set; }
+    public Guid ServerId { get; set; }
     public string Name { get; set; } = string.Empty;
     public Guid PortMappingId { get; set; }
     public int Port { get; set; }

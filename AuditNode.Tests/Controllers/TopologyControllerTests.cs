@@ -88,6 +88,18 @@ public class TopologyControllerTests
         _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100, null), Times.Once);
     }
 
+    [Theory]
+    [InlineData(-1, 10)]
+    [InlineData(0, 0)]
+    [InlineData(0, -1)]
+    public async Task GetTree_rejects_invalid_pagination(int skip, int take)
+    {
+        var result = await _controller.GetTree(null, skip, take, null);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        _mockRepo.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task GetTree_WhenEmpty_ShouldReturnEmptyList()
     {
@@ -134,13 +146,13 @@ public class TopologyControllerTests
         };
 
         _mockRepo.Setup(repo => repo.SaveTopologyStateAsync(state))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(TopologyStateStatus.Success);
 
         // Act
         var result = await _controller.SaveState(state);
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
+        result.Should().BeOfType<NoContentResult>();
         _mockRepo.Verify(repo => repo.SaveTopologyStateAsync(state), Times.Once);
     }
 

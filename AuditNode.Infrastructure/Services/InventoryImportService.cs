@@ -1,45 +1,44 @@
-using System.Data;
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Infrastructure.Services;
 
 public class InventoryImportService : IInventoryImportService
 {
-    private readonly AuditDbContext _context;
+    private static readonly string[] Headers =
+    [
+        "Server Name", "IP", "Environment", "App Code", "App Name", "Owner Team", "Port", "Protocol"
+    ];
 
-    public InventoryImportService(AuditDbContext context)
+    private readonly AuditDbContext _context;
+    private readonly ILogger<InventoryImportService> _logger;
+
+    public InventoryImportService(AuditDbContext context, ILogger<InventoryImportService> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     public byte[] GenerateTemplate()
     {
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add("Template");
-
-        // Define Headers in Row 1
-        var headers = new[] { "Server Name", "IP", "Environment", "App Code", "App Name", "Owner Team", "Port", "Protocol" };
-        for (int i = 0; i < headers.Length; i++)
+        for (var index = 0; index < Headers.Length; index++)
         {
-            var cell = worksheet.Cell(1, i + 1);
-            cell.Value = headers[i];
+            var cell = worksheet.Cell(1, index + 1);
+            cell.Value = Headers[index];
             cell.Style.Font.Bold = true;
-            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#D3D3D3"); // Light Gray
+            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#D3D3D3");
         }
 
-        // Add Excel Data Validation (Dropdowns) for Column C (Environment)
-        var environmentRange = worksheet.Range("C2:C1000");
-        environmentRange.SetDataValidation().List("Production,Development", true);
-
-        // Add Excel Data Validation (Dropdowns) for Column H (Protocol)
-        var protocolRange = worksheet.Range("H2:H1000");
-        protocolRange.SetDataValidation().List("TCP,UDP,HTTP,HTTPS,gRPC", true);
-
+        worksheet.Range("C2:C1000").CreateDataValidation().List("Production,Development", true);
+        worksheet.Range("H2:H1000").CreateDataValidation().List("TCP,UDP,HTTP,HTTPS,gRPC", true);
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -50,215 +49,259 @@ public class InventoryImportService : IInventoryImportService
     public async Task<ImportResponseDto> ImportInventoryAsync(Stream excelStream)
     {
         var response = new ImportResponseDto();
-        using var workbook = new XLWorkbook(excelStream);
-        var worksheet = workbook.Worksheet(1);
-        var rows = worksheet.RowsUsed().Skip(1).ToList(); // Skip header row and materialize to avoid multiple passes
-
-        // OPTIMIZATION: Extract all AppCodes and IPs upfront to eliminate N+1 queries
-        var allAppCodes = rows.Select(r => r.Cell(4).GetValue<string>()).Where(c => !string.IsNullOrWhiteSpace(c)).Distinct().ToList();
-        var allIps = rows.Select(r => r.Cell(2).GetValue<string>()).Where(ip => !string.IsNullOrWhiteSpace(ip)).Distinct().ToList();
-
-        // Pre-fetch existing Apps and Servers for fast memory lookup
-        var existingAppsDict = await _context.Applications
-            .AsNoTracking()
-            .Where(a => allAppCodes.Contains(a.AppCode))
-            .ToDictionaryAsync(a => a.AppCode);
-
-        var existingServersDict = await _context.Servers
-            .AsNoTracking()
-            .Where(s => allIps.Contains(s.IpAddress))
-            .ToDictionaryAsync(s => s.IpAddress);
-
-        var validRows = new List<(int RowNum, string ServerName, string Ip, string Env, string AppCode, string AppName, string OwnerTeam, int Port, string Protocol)>();
-
-        foreach (var row in rows)
+        if (!_context.CurrentWorkspaceId.HasValue || _context.CurrentWorkspaceId == Guid.Empty)
         {
-            response.TotalProcessed++;
-            int rowNumber = row.RowNumber();
+            AddError(response, 0, "Validation", "A valid workspace is required.");
+            return response;
+        }
 
-            var serverName = row.Cell(1).GetValue<string>();
-            var ip = row.Cell(2).GetValue<string>();
-            var env = row.Cell(3).GetValue<string>();
-            var appCode = row.Cell(4).GetValue<string>();
-            var appName = row.Cell(5).GetValue<string>();
-            var ownerTeam = row.Cell(6).GetValue<string>();
-            var portRaw = row.Cell(7).GetValue<string>();
-            var protocol = row.Cell(8).GetValue<string>();
+        XLWorkbook workbook;
+        try
+        {
+            workbook = new XLWorkbook(excelStream);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning("Inventory workbook was rejected as {ExceptionType}.", exception.GetType().Name);
+            AddError(response, 0, "Workbook", "The uploaded file is not a valid .xlsx workbook.");
+            return response;
+        }
 
-            // 1. Pre-validation: Essential fields
-            if (string.IsNullOrWhiteSpace(serverName) || string.IsNullOrWhiteSpace(appCode) || string.IsNullOrWhiteSpace(ip))
+        using (workbook)
+        {
+            if (workbook.Worksheets.Count == 0)
             {
-                response.Errors.Add(new ImportErrorDto { Row = rowNumber, Type = "Validation", Message = "Server Name, IP, and App Code are required." });
-                continue;
+                AddError(response, 0, "Workbook", "The workbook must contain a worksheet.");
+                return response;
             }
 
-            if (!int.TryParse(portRaw, out int port))
+            var worksheet = workbook.Worksheet(1);
+            for (var index = 0; index < Headers.Length; index++)
             {
-                response.Errors.Add(new ImportErrorDto { Row = rowNumber, Type = "Validation", Message = $"Invalid Port number: {portRaw}" });
-                continue;
-            }
-
-            // 2. Conflict Logic - Using In-Memory Dictionary (FIXED N+1)
-            if (existingAppsDict.TryGetValue(appCode, out var existingApp))
-            {
-                if (existingApp.AppName != appName || existingApp.OwnerTeam != ownerTeam)
+                var actual = worksheet.Cell(1, index + 1).GetString().Trim();
+                if (!actual.Equals(Headers[index], StringComparison.OrdinalIgnoreCase))
                 {
-                    response.Conflicts.Add(new ImportConflictDto
-                    {
-                        Row = rowNumber,
-                        AppCode = appCode,
-                        Message = $"AppCode {appCode} already exists with a different name ({existingApp.AppName}) or owner team ({existingApp.OwnerTeam})."
-                    });
-                    continue; // SKIP the row
+                    AddError(response, 1, "Header", $"Column {index + 1} must be '{Headers[index]}'.");
+                    return response;
                 }
             }
 
-            validRows.Add((rowNumber, serverName, ip, env, appCode, appName, ownerTeam, port, protocol));
-        }
-
-        if (validRows.Count == 0) return response;
-
-        // 3. Upsert Transaction
-        using var transaction = await _context.Database.BeginTransactionAsync();
-        try
-        {
-            // Ensure at least one datacenter exists - FIXED WARNING 10103
-            var datacenter = await _context.Datacenters
-                .OrderBy(d => d.Id)
-                .FirstOrDefaultAsync();
-
-            if (datacenter == null)
+            var rows = worksheet.RowsUsed().Where(row => row.RowNumber() > 1).ToArray();
+            if (rows.Length == 0)
             {
-                datacenter = new Datacenter { Id = Guid.NewGuid(), Name = "Default DC", Location = "Auto-generated" };
-                _context.Datacenters.Add(datacenter);
-                await _context.SaveChangesAsync();
+                AddError(response, 0, "Workbook", "The workbook does not contain inventory rows.");
+                return response;
             }
 
-            // Tracking dictionaries for the current transaction (including newly created ones)
-            var currentServers = existingServersDict.ToDictionary(k => k.Key, v => v.Value);
-            var currentApps = existingAppsDict.ToDictionary(k => k.Key, v => v.Value);
-
-            // Re-attach existing tracked entities if necessary or use their IDs
-            // Note: Since we used AsNoTracking() for pre-fetch, we need to handle upsert carefully.
-
-            // STEP 1: Group by Server (Distinct IP) from validRows
-            var distinctServersToProcess = validRows
-                .GroupBy(v => v.Ip)
-                .Select(g => g.First())
-                .ToList();
-
-            foreach (var ds in distinctServersToProcess)
+            var parsedRows = new List<ImportRow>();
+            foreach (var row in rows)
             {
-                if (!currentServers.TryGetValue(ds.Ip, out var server))
+                response.TotalProcessed++;
+                var parsed = ParseRow(row, response);
+                if (parsed is not null)
+                    parsedRows.Add(parsed);
+            }
+
+            DetectPayloadConflicts(parsedRows, response);
+            if (response.Errors.Count > 0 || response.Conflicts.Count > 0)
+                return response;
+
+            var datacenter = await _context.Datacenters.AsNoTracking().OrderBy(item => item.Id).FirstOrDefaultAsync();
+            if (datacenter is null)
+            {
+                AddError(response, 0, "Validation", "The current workspace does not have a datacenter.");
+                return response;
+            }
+
+            var existingAppRows = await _context.Applications.AsNoTracking().ToListAsync();
+            var duplicateExistingCodes = existingAppRows
+                .GroupBy(app => app.AppCode, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault(group => group.Count() > 1);
+            if (duplicateExistingCodes is not null)
+            {
+                response.Conflicts.Add(new ImportConflictDto
+                {
+                    Row = 0,
+                    AppCode = duplicateExistingCodes.Key,
+                    Message = "The workspace contains application codes that differ only by case."
+                });
+                return response;
+            }
+            var existingApps = existingAppRows.ToDictionary(app => app.AppCode, StringComparer.OrdinalIgnoreCase);
+            var existingServers = (await _context.Servers.AsNoTracking().ToListAsync())
+                .ToDictionary(server => server.IpAddress, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var row in parsedRows)
+            {
+                if (existingApps.TryGetValue(row.AppCode, out var app) &&
+                    (!app.AppName.Equals(row.AppName, StringComparison.OrdinalIgnoreCase) ||
+                     !app.OwnerTeam.Equals(row.OwnerTeam, StringComparison.OrdinalIgnoreCase)))
+                    AddConflict(response, row, "Application code already exists with different metadata.");
+
+                if (existingServers.TryGetValue(row.IpAddress, out var server) &&
+                    (!server.Hostname.Equals(row.ServerName, StringComparison.OrdinalIgnoreCase) ||
+                     !server.Environment.Equals(row.Environment, StringComparison.OrdinalIgnoreCase)))
+                    AddConflict(response, row, "Server IP already exists with different metadata.");
+            }
+
+            var existingServerIds = existingServers.Values.Select(server => server.Id).ToArray();
+            var existingMappings = await _context.PortMappings.AsNoTracking()
+                .Where(mapping => existingServerIds.Contains(mapping.ServerId))
+                .ToListAsync();
+            var mappingLookup = existingMappings.ToDictionary(
+                mapping => $"{mapping.ServerId:N}:{mapping.PortNumber}",
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var row in parsedRows.Where(row => existingServers.ContainsKey(row.IpAddress)))
+            {
+                var server = existingServers[row.IpAddress];
+                if (!mappingLookup.TryGetValue($"{server.Id:N}:{row.Port}", out var mapping))
+                    continue;
+                if (!existingApps.TryGetValue(row.AppCode, out var app) || mapping.AppId != app.Id ||
+                    !mapping.Protocol.Equals(row.Protocol, StringComparison.OrdinalIgnoreCase))
+                    AddConflict(response, row, "The server port is already assigned to another deployment.");
+            }
+
+            if (response.Conflicts.Count > 0)
+                return response;
+
+            await PersistAsync(parsedRows, datacenter.Id, existingApps, existingServers, mappingLookup, response);
+            return response;
+        }
+    }
+
+    private async Task PersistAsync(
+        IReadOnlyCollection<ImportRow> rows,
+        Guid datacenterId,
+        IDictionary<string, AppEntity> apps,
+        IDictionary<string, Server> servers,
+        IDictionary<string, PortMapping> mappings,
+        ImportResponseDto response)
+    {
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            foreach (var row in rows)
+            {
+                if (!servers.TryGetValue(row.IpAddress, out var server))
                 {
                     server = new Server
                     {
-                        Id = Guid.NewGuid(),
-                        Hostname = ds.ServerName,
-                        IpAddress = ds.Ip,
-                        Environment = ds.Env,
-                        DatacenterId = datacenter.Id,
-                        OsType = "Unknown",
-                        Status = "Active"
+                        Id = Guid.NewGuid(), DatacenterId = datacenterId, Hostname = row.ServerName,
+                        IpAddress = row.IpAddress, Environment = row.Environment, OsType = "Unknown", Status = "Active"
                     };
+                    servers.Add(row.IpAddress, server);
                     _context.Servers.Add(server);
-                    currentServers.Add(server.IpAddress, server);
                 }
-            }
-            await _context.SaveChangesAsync(); // Persist servers first
 
-            // STEP 2: Handle Applications (Unique AppCode)
-            var distinctAppsToProcess = validRows
-                .GroupBy(v => v.AppCode)
-                .Select(g => g.First())
-                .ToList();
-
-            foreach (var da in distinctAppsToProcess)
-            {
-                if (!currentApps.TryGetValue(da.AppCode, out var application))
+                if (!apps.TryGetValue(row.AppCode, out var application))
                 {
-                    application = new Domain.Entities.Application
+                    application = new AppEntity
                     {
-                        Id = Guid.NewGuid(),
-                        AppCode = da.AppCode,
-                        AppName = da.AppName,
-                        OwnerTeam = da.OwnerTeam,
-                        Risk = "Medium"
+                        Id = Guid.NewGuid(), AppCode = row.AppCode, AppName = row.AppName,
+                        OwnerTeam = row.OwnerTeam, Risk = "MEDIUM"
                     };
+                    apps.Add(row.AppCode, application);
                     _context.Applications.Add(application);
-                    currentApps.Add(application.AppCode, application);
                 }
-                else
+
+                var key = $"{server.Id:N}:{row.Port}";
+                if (!mappings.ContainsKey(key))
                 {
-                    // If App exists, ensure it's attached to the Context before modifying
-                    _context.Attach(application); 
-                }
-            }
-            await _context.SaveChangesAsync(); // Persist applications
-
-            // STEP 3: Pre-fetch Existing Port Mappings for involved servers to avoid collisions
-            var serverIds = currentServers.Values.Select(s => s.Id).ToList();
-            var existingMappings = await _context.PortMappings
-                .AsNoTracking()
-                .Where(pm => serverIds.Contains(pm.ServerId))
-                .ToListAsync();
-
-            // Key format: "ServerId:PortNumber"
-            var mappingLookup = existingMappings
-                .GroupBy(pm => $"{pm.ServerId}:{pm.PortNumber}")
-                .ToDictionary(g => g.Key, g => g.First());
-
-            // STEP 4: Create Port Mappings for all rows
-            foreach (var v in validRows)
-            {
-                var server = currentServers[v.Ip];
-                var application = currentApps[v.AppCode];
-                var mappingKey = $"{server.Id}:{v.Port}";
-
-                if (mappingLookup.TryGetValue(mappingKey, out var existingPm))
-                {
-                    // IF EXACT MATCH: Same App and Protocol -> SKIP (Idempotency)
-                    if (existingPm.AppId == application.Id && existingPm.Protocol == v.Protocol)
+                    var mapping = new PortMapping
                     {
-                        response.SavedCount++; // Still count as successful since it's correctly in DB
-                        continue;
-                    }
-
-                    // IF COLLISION: Port in use by another app or different protocol
-                    response.Conflicts.Add(new ImportConflictDto
-                    {
-                        Row = v.RowNum,
-                        AppCode = v.AppCode,
-                        Message = $"Port {v.Port} on server {server.Hostname} ({server.IpAddress}) is already in use by another application mapping."
-                    });
-                    continue;
+                        Id = Guid.NewGuid(), ServerId = server.Id, AppId = application.Id,
+                        PortNumber = row.Port, Protocol = row.Protocol
+                    };
+                    mappings.Add(key, mapping);
+                    _context.PortMappings.Add(mapping);
                 }
-
-                var portMapping = new PortMapping
-                {
-                    Id = Guid.NewGuid(),
-                    ServerId = server.Id,
-                    AppId = application.Id,
-                    PortNumber = v.Port,
-                    Protocol = v.Protocol
-                };
-                _context.PortMappings.Add(portMapping);
-                
-                // Add to lookup to prevent collisions within the same file import
-                mappingLookup.Add(mappingKey, portMapping);
                 response.SavedCount++;
             }
 
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
             await transaction.RollbackAsync();
-            response.Errors.Add(new ImportErrorDto { Row = 0, Type = "Transaction", Message = $"Internal error during save: {ex.Message}" });
+            _context.ChangeTracker.Clear();
             response.SavedCount = 0;
+            AddError(response, 0, "Transaction", "The inventory import could not be saved.");
+            _logger.LogError("Inventory persistence failed with {ExceptionType}.", exception.GetType().Name);
+        }
+    }
+
+    private static ImportRow? ParseRow(IXLRow row, ImportResponseDto response)
+    {
+        var rowNumber = row.RowNumber();
+        var serverName = row.Cell(1).GetString().Trim();
+        var ipAddress = row.Cell(2).GetString().Trim();
+        var environment = row.Cell(3).GetString().Trim();
+        var appCode = row.Cell(4).GetString().Trim().ToUpperInvariant();
+        var appName = row.Cell(5).GetString().Trim();
+        var ownerTeam = row.Cell(6).GetString().Trim();
+        var portText = row.Cell(7).GetString().Trim();
+        var protocol = row.Cell(8).GetString().Trim().ToUpperInvariant();
+
+        if (new[] { serverName, ipAddress, environment, appCode, appName, ownerTeam, protocol }.Any(string.IsNullOrWhiteSpace))
+        {
+            AddError(response, rowNumber, "Validation", "All inventory fields are required.");
+            return null;
+        }
+        if (!IsIpv4(ipAddress))
+        {
+            AddError(response, rowNumber, "Validation", "IP must be a valid IPv4 address.");
+            return null;
+        }
+        if (!int.TryParse(portText, out var port) || port is < 1 or > 65535)
+        {
+            AddError(response, rowNumber, "Validation", "Port must be between 1 and 65535.");
+            return null;
         }
 
-        return response;
+        return new ImportRow(rowNumber, serverName, ipAddress, environment, appCode, appName, ownerTeam, port, protocol);
     }
+
+    private static void DetectPayloadConflicts(IReadOnlyCollection<ImportRow> rows, ImportResponseDto response)
+    {
+        foreach (var duplicate in rows.GroupBy(
+                     row => $"{row.IpAddress}|{row.AppCode}|{row.Port}|{row.Protocol}",
+                     StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
+            AddConflict(response, duplicate.Skip(1).First(), "Duplicate inventory row.");
+
+        foreach (var collision in rows.GroupBy(
+                     row => $"{row.IpAddress}|{row.Port}",
+                     StringComparer.OrdinalIgnoreCase).Where(group =>
+                         group.Select(row => $"{row.AppCode}|{row.Protocol}").Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
+            AddConflict(response, collision.Skip(1).First(), "Multiple deployments use the same server port.");
+
+        foreach (var appGroup in rows.GroupBy(row => row.AppCode, StringComparer.OrdinalIgnoreCase).Where(group =>
+                     group.Select(row => $"{row.AppName}|{row.OwnerTeam}").Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1))
+            AddConflict(response, appGroup.Skip(1).First(), "Application code has conflicting metadata in the workbook.");
+    }
+
+    private static bool IsIpv4(string value)
+    {
+        var octets = value.Split('.');
+        return octets.Length == 4 && octets.All(octet =>
+            octet.Length > 0 && (octet.Length == 1 || octet[0] != '0') &&
+            octet.All(char.IsAsciiDigit) && byte.TryParse(octet, out _));
+    }
+
+    private static void AddError(ImportResponseDto response, int row, string type, string message) =>
+        response.Errors.Add(new ImportErrorDto { Row = row, Type = type, Message = message });
+
+    private static void AddConflict(ImportResponseDto response, ImportRow row, string message) =>
+        response.Conflicts.Add(new ImportConflictDto { Row = row.RowNumber, AppCode = row.AppCode, Message = message });
+
+    private sealed record ImportRow(
+        int RowNumber,
+        string ServerName,
+        string IpAddress,
+        string Environment,
+        string AppCode,
+        string AppName,
+        string OwnerTeam,
+        int Port,
+        string Protocol);
 }

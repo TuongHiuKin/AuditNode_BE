@@ -12,6 +12,9 @@ public class ServerTopologyDto
 
 public class PortTopologyDto
 {
+    public Guid PortMappingId { get; set; }
+    public Guid AppId { get; set; }
+    public Guid ServerId { get; set; }
     public int PortNumber { get; set; }
     public string Protocol { get; set; } = string.Empty;
     public string AppName { get; set; } = string.Empty;

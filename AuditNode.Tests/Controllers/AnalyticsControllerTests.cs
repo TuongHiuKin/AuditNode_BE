@@ -37,7 +37,7 @@ public class AnalyticsControllerTests
     }
 
     [Fact]
-    public async Task GetTopology_ShouldReturnBadRequest_OnException()
+    public async Task GetTopology_ShouldReturnSafe500_OnException()
     {
         // Arrange
         _mockRepo.Setup(r => r.GetTopologyAsync(It.IsAny<string>(), It.IsAny<Guid?>()))
@@ -47,7 +47,10 @@ public class AnalyticsControllerTests
         var result = await _controller.GetTopology(null, null);
 
         // Assert
-        result.Should().BeOfType<BadRequestObjectResult>();
+        var failure = result.Should().BeOfType<ObjectResult>().Subject;
+        failure.StatusCode.Should().Be(500);
+        failure.Value.Should().BeOfType<ProblemDetails>();
+        failure.Value!.ToString().Should().NotContain("Test error");
     }
 
     [Fact]
@@ -68,7 +71,7 @@ public class AnalyticsControllerTests
     }
 
     [Fact]
-    public async Task GetDependencies_ShouldReturnBadRequest_OnException()
+    public async Task GetDependencies_ShouldReturnSafe500_OnException()
     {
         // Arrange
         _mockRepo.Setup(r => r.GetDependenciesAsync(It.IsAny<string>(), It.IsAny<Guid?>()))
@@ -78,6 +81,9 @@ public class AnalyticsControllerTests
         var result = await _controller.GetDependencies(null, null);
 
         // Assert
-        result.Should().BeOfType<BadRequestObjectResult>();
+        var failure = result.Should().BeOfType<ObjectResult>().Subject;
+        failure.StatusCode.Should().Be(500);
+        failure.Value.Should().BeOfType<ProblemDetails>();
+        failure.Value!.ToString().Should().NotContain("Test error");
     }
 }

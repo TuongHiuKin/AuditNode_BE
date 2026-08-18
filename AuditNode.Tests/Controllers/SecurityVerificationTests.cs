@@ -35,6 +35,10 @@ public class SecurityVerificationTests
     [InlineData(typeof(InventoryImportController), nameof(InventoryImportController.ImportInventory), "Admin,Auditor")]
     [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.MigrateApp), "Admin,Auditor")]
     [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.PurgeApp), "Admin,Auditor")]
+    [InlineData(typeof(ServersController), nameof(ServersController.CreateServer), "Admin,Auditor")]
+    [InlineData(typeof(ServersController), nameof(ServersController.UpdateServer), "Admin,Auditor")]
+    [InlineData(typeof(ServersController), nameof(ServersController.DeleteServer), "Admin,Auditor")]
+    [InlineData(typeof(TopologyController), nameof(TopologyController.SaveState), "Admin,Auditor")]
     public void Mutating_Actions_Should_Require_Specific_Roles(Type controllerType, string methodName, string expectedRoles)
     {
         // Arrange

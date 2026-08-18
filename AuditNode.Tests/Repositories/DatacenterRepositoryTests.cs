@@ -19,7 +19,7 @@ public class DatacenterRepositoryTests
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
         return new AuditDbContext(options, mockTenantProvider.Object);
     }
 

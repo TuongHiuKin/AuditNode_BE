@@ -50,4 +50,36 @@ public class CreateApplicationDtoValidatorTests
         var result = _validator.TestValidate(model);
         result.ShouldNotHaveAnyValidationErrors();
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(65536)]
+    public void Optional_deployment_port_must_be_in_range(int port)
+    {
+        var model = new CreateApplicationDto
+        {
+            AppCode = "APP01", AppName = "Test", OwnerTeam = "Team",
+            Deployment = new CreateApplicationDeploymentDto
+            {
+                ServerId = Guid.NewGuid(), PortNumber = port, Protocol = "TCP"
+            }
+        };
+
+        _validator.TestValidate(model)
+            .ShouldHaveValidationErrorFor("Deployment.PortNumber");
+    }
+
+    [Fact]
+    public void Label_key_and_value_cannot_be_empty()
+    {
+        var model = new CreateApplicationDto
+        {
+            AppCode = "APP01", AppName = "Test", OwnerTeam = "Team",
+            Labels = [new LabelDto()]
+        };
+
+        var result = _validator.TestValidate(model);
+        result.ShouldHaveValidationErrorFor("Labels[0].Key");
+        result.ShouldHaveValidationErrorFor("Labels[0].Value");
+    }
 }

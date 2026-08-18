@@ -21,7 +21,8 @@ public class DatacenterService : IDatacenterService
         return datacenters.Select(d => new DatacenterDto
         {
             Id = d.Id,
-            Name = d.Name
+            Name = d.Name,
+            Location = d.Location
         });
     }
 
@@ -40,7 +41,8 @@ public class DatacenterService : IDatacenterService
         return new DatacenterDto
         {
             Id = datacenter.Id,
-            Name = datacenter.Name
+            Name = datacenter.Name,
+            Location = datacenter.Location
         };
     }
 }

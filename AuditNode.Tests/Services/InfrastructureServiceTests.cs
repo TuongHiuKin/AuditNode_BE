@@ -22,7 +22,7 @@ public class InfrastructureServiceTests
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
         return new AuditDbContext(options, mockTenantProvider.Object);
     }
 
@@ -72,6 +72,11 @@ public class InfrastructureServiceTests
             ServerId = originalServerId, 
             PortNumber = 80 
         });
+        dbContext.Servers.Add(new Server
+        {
+            Id = targetServerId, DatacenterId = Guid.NewGuid(), Hostname = "target",
+            IpAddress = "10.0.0.2", OsType = "Linux", Environment = "Prod", Status = "Active"
+        });
         await dbContext.SaveChangesAsync();
 
         var service = new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance);
@@ -86,10 +91,54 @@ public class InfrastructureServiceTests
         var result = await service.MigrateAppAsync(migrateDto);
 
         // Assert
-        result.Should().BeTrue();
+        result.Should().Be(DeploymentOperationStatus.Success);
         var updated = await dbContext.PortMappings.FindAsync(portMappingId);
         updated!.ServerId.Should().Be(targetServerId);
         updated.PortNumber.Should().Be(8080);
+    }
+
+    [Fact]
+    public async Task MigrateAppAsync_rejects_server_port_collision()
+    {
+        var dbContext = GetDbContext();
+        var serverId = Guid.NewGuid();
+        var mappingId = Guid.NewGuid();
+        dbContext.Servers.Add(new Server
+        {
+            Id = serverId, DatacenterId = Guid.NewGuid(), Hostname = "target", IpAddress = "10.0.0.3"
+        });
+        dbContext.PortMappings.AddRange(
+            new PortMapping { Id = mappingId, AppId = Guid.NewGuid(), ServerId = Guid.NewGuid(), PortNumber = 80 },
+            new PortMapping { Id = Guid.NewGuid(), AppId = Guid.NewGuid(), ServerId = serverId, PortNumber = 443 });
+        await dbContext.SaveChangesAsync();
+
+        var service = new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance);
+        var result = await service.MigrateAppAsync(new MigrateAppDto
+        {
+            PortMappingId = mappingId, TargetServerId = serverId, NewPortNumber = 443
+        });
+
+        result.Should().Be(DeploymentOperationStatus.PortCollision);
+    }
+
+    [Fact]
+    public async Task GetDeployedAppsByServerAsync_exposes_real_port_mapping_id()
+    {
+        var dbContext = GetDbContext();
+        var serverId = Guid.NewGuid();
+        var appId = Guid.NewGuid();
+        var mappingId = Guid.NewGuid();
+        dbContext.Applications.Add(new AppEntity { Id = appId, AppCode = "APP", AppName = "App" });
+        dbContext.PortMappings.Add(new PortMapping
+        {
+            Id = mappingId, AppId = appId, ServerId = serverId, PortNumber = 443
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance)
+            .GetDeployedAppsByServerAsync(serverId);
+
+        result.Should().ContainSingle().Which.PortMappingId.Should().Be(mappingId);
     }
 
     [Fact]

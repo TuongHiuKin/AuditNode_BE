@@ -19,8 +19,57 @@ public class ServerRepositoryTests
             .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
         return new AuditDbContext(options, mockTenantProvider.Object);
+    }
+
+    [Fact]
+    public async Task Datacenter_and_ip_checks_do_not_see_another_workspace()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var workspaceA = Guid.NewGuid();
+        var workspaceB = Guid.NewGuid();
+        var options = new DbContextOptionsBuilder<AuditDbContext>()
+            .UseInMemoryDatabase(databaseName)
+            .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+
+        var tenantA = new Mock<ITenantProvider>();
+        tenantA.SetupGet(x => x.WorkspaceId).Returns(workspaceA);
+        var tenantB = new Mock<ITenantProvider>();
+        tenantB.SetupGet(x => x.WorkspaceId).Returns(workspaceB);
+
+        var datacenterA = new Datacenter { Id = Guid.NewGuid(), Name = "A", Location = "A" };
+        await using (var contextA = new AuditDbContext(options, tenantA.Object))
+        {
+            contextA.Datacenters.Add(datacenterA);
+            contextA.Servers.Add(new Server
+            {
+                Id = Guid.NewGuid(), DatacenterId = datacenterA.Id, IpAddress = "10.0.0.1",
+                Hostname = "A", OsType = "Linux", Environment = "Prod", Status = "Active"
+            });
+            await contextA.SaveChangesAsync();
+        }
+
+        var datacenterB = new Datacenter { Id = Guid.NewGuid(), Name = "B", Location = "B" };
+        await using (var contextB = new AuditDbContext(options, tenantB.Object))
+        {
+            contextB.Datacenters.Add(datacenterB);
+            contextB.Servers.Add(new Server
+            {
+                Id = Guid.NewGuid(), DatacenterId = datacenterB.Id, IpAddress = "10.0.0.2",
+                Hostname = "B", OsType = "Linux", Environment = "Prod", Status = "Active"
+            });
+            await contextB.SaveChangesAsync();
+        }
+
+        await using var readContext = new AuditDbContext(options, tenantA.Object);
+        var repository = new ServerRepository(readContext);
+
+        (await repository.DatacenterExistsAsync(datacenterA.Id)).Should().BeTrue();
+        (await repository.DatacenterExistsAsync(datacenterB.Id)).Should().BeFalse();
+        (await repository.IpAddressExistsAsync("10.0.0.1")).Should().BeTrue();
+        (await repository.IpAddressExistsAsync("10.0.0.2")).Should().BeFalse();
     }
 
     [Fact]
@@ -62,7 +111,7 @@ public class ServerRepositoryTests
         server.Hostname = "NewName";
 
         // Act
-        await repository.UpdateAsync(server);
+        await repository.UpdateAsync(server, null);
 
         // Assert
         var updatedServer = await context.Servers.FindAsync(server.Id);
@@ -99,5 +148,7 @@ public class ServerRepositoryTests
         result.Should().HaveCount(2);
         result.Select(r => r.Id).Should().Contain(new[] { s1.Id, s3.Id });
         result.Select(r => r.Id).Should().NotContain(s2.Id);
+        result.Single(r => r.Id == s1.Id).Applications.Single().PortMappingId.Should()
+            .Be(context.PortMappings.Single(mapping => mapping.ServerId == s1.Id).Id);
     }
 }

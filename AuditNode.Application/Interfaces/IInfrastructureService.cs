@@ -5,7 +5,7 @@ namespace AuditNode.Application.Interfaces;
 public interface IInfrastructureService
 {
     Task<int> GetDependenciesCountAsync(Guid appId);
-    Task<bool> MigrateAppAsync(MigrateAppDto migrateDto);
+    Task<DeploymentOperationStatus> MigrateAppAsync(MigrateAppDto migrateDto);
     Task<bool> PurgeAppAsync(Guid appId);
     Task<IEnumerable<DeployedAppDto>> GetDeployedAppsByServerAsync(Guid serverId);
 }

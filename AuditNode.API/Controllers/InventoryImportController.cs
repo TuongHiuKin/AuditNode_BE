@@ -1,3 +1,4 @@
+using AuditNode.API.Errors;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -9,6 +10,8 @@ namespace AuditNode.API.Controllers;
 [Route("api/v1/inventory")]
 public class InventoryImportController : ControllerBase
 {
+    public const long MaxImportBytes = 10 * 1024 * 1024;
+    private const string ExcelContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private readonly IInventoryImportService _importService;
 
     public InventoryImportController(IInventoryImportService importService)
@@ -16,42 +19,49 @@ public class InventoryImportController : ControllerBase
         _importService = importService;
     }
 
-    /// <summary>
-    /// GET /api/inventory/import-template
-    /// Downloads the Excel template for inventory import.
-    /// </summary>
     [HttpGet("import-template")]
-    public IActionResult DownloadTemplate()
-    {
-        var content = _importService.GenerateTemplate();
-        return File(
-            content, 
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
-            "Inventory_Import_Template.xlsx"
-        );
-    }
+    public IActionResult DownloadTemplate() =>
+        File(_importService.GenerateTemplate(), ExcelContentType, "Inventory_Import_Template.xlsx");
 
-    /// <summary>
-    /// POST /api/inventory/import
-    /// Processes the bulk import of topology inventory from an Excel file.
-    /// </summary>
     [Authorize(Roles = "Admin,Auditor")]
     [HttpPost("import")]
+    [RequestSizeLimit(MaxImportBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = MaxImportBytes)]
     public async Task<IActionResult> ImportInventory(IFormFile file)
     {
-        if (file == null || file.Length == 0)
+        if (file is null || file.Length == 0)
+            return BadRequest(Problem(400, "An .xlsx inventory file is required."));
+        if (file.Length > MaxImportBytes)
+            return BadRequest(Problem(400, $"Inventory files cannot exceed {MaxImportBytes / 1024 / 1024} MB."));
+        if (!Path.GetExtension(file.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(file.ContentType, ExcelContentType, StringComparison.OrdinalIgnoreCase))
+            return BadRequest(Problem(400, "Only .xlsx workbook content is supported."));
+
+        try
         {
-            return BadRequest("No file uploaded.");
+            await using var stream = file.OpenReadStream();
+            var result = await _importService.ImportInventoryAsync(stream);
+            if (result.Errors.Any(error => error.Type == "Transaction"))
+                return StatusCode(500, Problem(500, "The inventory import could not be saved."));
+            if (result.Conflicts.Count > 0)
+                return Conflict(ProblemWithImport(409, "The inventory workbook contains conflicts.", result));
+            if (result.Errors.Count > 0)
+                return BadRequest(ProblemWithImport(400, "The inventory workbook is invalid.", result));
+            return Ok(result);
         }
-
-        if (!Path.GetExtension(file.FileName).Equals(".xlsx", StringComparison.OrdinalIgnoreCase))
+        catch (Exception)
         {
-            return BadRequest("Only .xlsx files are supported.");
+            return StatusCode(500, Problem(500, "The inventory import could not be completed."));
         }
+    }
 
-        using var stream = file.OpenReadStream();
-        var result = await _importService.ImportInventoryAsync(stream);
+    private ProblemDetails Problem(int status, string title) =>
+        ApiProblem.Create(ControllerContext.HttpContext, status, title);
 
-        return Ok(result);
+    private ProblemDetails ProblemWithImport(int status, string title, object import)
+    {
+        var problem = Problem(status, title);
+        problem.Extensions["import"] = import;
+        return problem;
     }
 }

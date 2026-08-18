@@ -22,7 +22,12 @@ public class WorkspacesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IEnumerable<WorkspaceDto>>> GetWorkspaces()
     {
-        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Unauthorized(new { error = "An authenticated user identifier is required." });
+        }
+
         var result = await _workspaceService.GetUserWorkspacesAsync(userId);
         return Ok(result);
     }

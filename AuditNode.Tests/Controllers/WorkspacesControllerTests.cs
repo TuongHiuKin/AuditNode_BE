@@ -55,18 +55,16 @@ public class WorkspacesControllerTests
     }
 
     [Fact]
-    public async Task GetWorkspaces_ShouldUseAnonymous_WhenNoUserIdentifier()
+    public async Task GetWorkspaces_ShouldReturnUnauthorized_WhenNoUserIdentifier()
     {
         // Arrange
         _controller.ControllerContext.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity());
         
-        _mockService.Setup(s => s.GetUserWorkspacesAsync("anonymous"))
-            .ReturnsAsync(new List<WorkspaceDto>());
-
         // Act
-        await _controller.GetWorkspaces();
+        var result = await _controller.GetWorkspaces();
 
         // Assert
-        _mockService.Verify(s => s.GetUserWorkspacesAsync("anonymous"), Times.Once);
+        result.Result.Should().BeOfType<UnauthorizedObjectResult>();
+        _mockService.Verify(s => s.GetUserWorkspacesAsync(It.IsAny<string>()), Times.Never);
     }
 }

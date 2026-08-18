@@ -1,97 +1,174 @@
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
-using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Moq;
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using Npgsql;
 using Xunit;
-using AuditNode.Application.Interfaces;
 
 namespace AuditNode.Tests.Services;
 
 public class ServerServiceTests
 {
-    private AuditDbContext CreateDbContext()
+    private readonly Mock<IServerRepository> _repository = new();
+    private readonly Mock<ITenantProvider> _tenant = new();
+
+    public ServerServiceTests()
     {
-        var options = new DbContextOptionsBuilder<AuditDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
-            .Options;
-            
-        var tenantProviderMock = new Mock<ITenantProvider>();
-        tenantProviderMock.Setup(t => t.WorkspaceId).Returns(Guid.Empty);
-        return new AuditDbContext(options, tenantProviderMock.Object);
+        _tenant.SetupGet(x => x.WorkspaceId).Returns(Guid.NewGuid());
     }
 
     [Fact]
-    public async Task GetServersAsync_ShouldReturnAllServers()
+    public async Task Create_rejects_missing_tenant_without_calling_repository()
     {
-        using var context = CreateDbContext();
-        var service = new ServerService(context);
-        
-        var dc = new Datacenter { Id = Guid.NewGuid(), Name = "DC", Location = "Loc" };
-        context.Datacenters.Add(dc);
-        
-        var serverId1 = Guid.NewGuid();
-        var appId = Guid.NewGuid();
-        
-        var app = new AuditNode.Domain.Entities.Application { Id = appId, AppCode = "APP1", AppName = "App 1", OwnerTeam = "Team A" };
-        context.Applications.Add(app);
+        _tenant.SetupGet(x => x.WorkspaceId).Returns((Guid?)null);
 
-        context.Servers.AddRange(
-            new Server { Id = serverId1, Hostname = "SRV-1", IpAddress = "10.0.0.1", DatacenterId = dc.Id },
-            new Server { Id = Guid.NewGuid(), Hostname = "SRV-2", IpAddress = "10.0.0.2", DatacenterId = dc.Id }
-        );
-        
-        context.PortMappings.Add(new PortMapping 
-        { 
-            Id = Guid.NewGuid(), 
-            ServerId = serverId1, 
-            AppId = appId, 
-            PortNumber = 8080, 
-            Protocol = "TCP" 
-        });
-        
-        await context.SaveChangesAsync();
+        var result = await Service().CreateServerAsync(ValidCreate());
 
-        var result = await service.GetServersAsync();
-
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
-        
-        var srv1 = result.FirstOrDefault(s => s.Id == serverId1);
-        srv1.Should().NotBeNull();
-        srv1!.Applications.Should().HaveCount(1);
-        srv1.Applications[0].AppCode.Should().Be("APP1");
-        srv1.Applications[0].PortNumber.Should().Be(8080);
+        result.Status.Should().Be(ServerOperationStatus.InvalidWorkspace);
+        _repository.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task ExportServersAsync_ShouldReturnSelectedServers()
+    public async Task Create_rejects_datacenter_not_visible_in_current_workspace()
     {
-        using var context = CreateDbContext();
-        var service = new ServerService(context);
-        
-        var dc = new Datacenter { Id = Guid.NewGuid(), Name = "DC", Location = "Loc" };
-        context.Datacenters.Add(dc);
-        var id1 = Guid.NewGuid();
-        var id2 = Guid.NewGuid();
-        var id3 = Guid.NewGuid();
+        var dto = ValidCreate();
+        _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId)).ReturnsAsync(false);
 
-        context.Servers.AddRange(
-            new Server { Id = id1, Hostname = "SRV-1", IpAddress = "10.0.0.1", DatacenterId = dc.Id },
-            new Server { Id = id2, Hostname = "SRV-2", IpAddress = "10.0.0.2", DatacenterId = dc.Id },
-            new Server { Id = id3, Hostname = "SRV-3", IpAddress = "10.0.0.3", DatacenterId = dc.Id }
-        );
-        await context.SaveChangesAsync();
+        var result = await Service().CreateServerAsync(dto);
 
-        var result = await service.ExportServersAsync(new List<Guid> { id1, id3 });
-
-        result.Should().NotBeNull();
-        result.Should().HaveCount(2);
+        result.Status.Should().Be(ServerOperationStatus.DatacenterNotFound);
+        _repository.Verify(x => x.CreateServerAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>>()), Times.Never);
     }
+
+    [Fact]
+    public async Task Create_rejects_duplicate_ip_in_current_workspace()
+    {
+        var dto = ValidCreate();
+        _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId)).ReturnsAsync(true);
+        _repository.Setup(x => x.IpAddressExistsAsync(dto.IpAddress, null)).ReturnsAsync(true);
+
+        var result = await Service().CreateServerAsync(dto);
+
+        result.Status.Should().Be(ServerOperationStatus.DuplicateIp);
+    }
+
+    [Fact]
+    public async Task Create_maps_entity_and_returns_created_server()
+    {
+        var dto = ValidCreate();
+        _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId)).ReturnsAsync(true);
+        _repository.Setup(x => x.IpAddressExistsAsync(dto.IpAddress, null)).ReturnsAsync(false);
+        _repository.Setup(x => x.CreateServerAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>>()))
+            .ReturnsAsync((Server value, IReadOnlyCollection<LabelDto> labels) => value);
+
+        var result = await Service().CreateServerAsync(dto);
+
+        result.Status.Should().Be(ServerOperationStatus.Success);
+        result.Server.Should().NotBeNull();
+        result.Server!.Id.Should().NotBe(Guid.Empty);
+        result.Server.IpAddress.Should().Be(dto.IpAddress);
+        _repository.Verify(x => x.CreateServerAsync(It.Is<Server>(s =>
+            s.Id != Guid.Empty && s.DatacenterId == dto.DatacenterId && s.IpAddress == dto.IpAddress), dto.Labels));
+    }
+
+    [Fact]
+    public async Task Update_excludes_current_server_when_checking_duplicate_ip()
+    {
+        var id = Guid.NewGuid();
+        var dto = ValidUpdate();
+        var existing = new Server { Id = id, DatacenterId = Guid.NewGuid(), IpAddress = "10.0.0.1" };
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(existing);
+        _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId)).ReturnsAsync(true);
+        _repository.Setup(x => x.IpAddressExistsAsync(dto.IpAddress, id)).ReturnsAsync(false);
+
+        var result = await Service().UpdateServerAsync(id, dto);
+
+        result.Status.Should().Be(ServerOperationStatus.Success);
+        existing.IpAddress.Should().Be(dto.IpAddress);
+        _repository.Verify(x => x.UpdateAsync(existing, dto.Labels), Times.Once);
+    }
+
+    [Fact]
+    public async Task Unique_constraint_race_is_reported_as_conflict()
+    {
+        var dto = ValidCreate();
+        _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId)).ReturnsAsync(true);
+        _repository.Setup(x => x.IpAddressExistsAsync(dto.IpAddress, null)).ReturnsAsync(false);
+        _repository.Setup(x => x.CreateServerAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>>()))
+            .ThrowsAsync(new DbUpdateException(
+                "save failed",
+                new PostgresException("duplicate", "ERROR", "ERROR", PostgresErrorCodes.UniqueViolation)));
+
+        var result = await Service().CreateServerAsync(dto);
+
+        result.Status.Should().Be(ServerOperationStatus.DuplicateIp);
+    }
+
+    [Fact]
+    public async Task Non_unique_database_failure_is_not_misreported_as_duplicate_ip()
+    {
+        var dto = ValidCreate();
+        _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId)).ReturnsAsync(true);
+        _repository.Setup(x => x.IpAddressExistsAsync(dto.IpAddress, null)).ReturnsAsync(false);
+        _repository.Setup(x => x.CreateServerAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>>()))
+            .ThrowsAsync(new DbUpdateException("database unavailable"));
+
+        var action = () => Service().CreateServerAsync(dto);
+
+        await action.Should().ThrowAsync<DbUpdateException>();
+    }
+
+    [Fact]
+    public async Task Purge_removes_only_server_visible_to_current_tenant()
+    {
+        var id = Guid.NewGuid();
+        var existing = new Server { Id = id };
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(existing);
+
+        var result = await Service().PurgeServerAsync(id);
+
+        result.Should().Be(ServerOperationStatus.Success);
+        _repository.Verify(x => x.DeleteAsync(existing), Times.Once);
+    }
+
+    [Fact]
+    public async Task Export_deduplicates_ids_and_removes_empty_values()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        _repository.Setup(x => x.GetByIdsAsync(It.IsAny<IEnumerable<Guid>>()))
+            .ReturnsAsync(Array.Empty<ServerResponseDto>());
+
+        await Service().ExportServersAsync([first, second, first, Guid.Empty]);
+
+        _repository.Verify(x => x.GetByIdsAsync(It.Is<IEnumerable<Guid>>(ids =>
+            ids.Order().SequenceEqual(new[] { first, second }.Order()))), Times.Once);
+    }
+
+    private ServerService Service() => new(_repository.Object, _tenant.Object);
+
+    private static CreateServerDto ValidCreate() => new()
+    {
+        DatacenterId = Guid.NewGuid(),
+        IpAddress = "10.20.30.40",
+        Hostname = "srv-01",
+        OsType = "Linux",
+        Environment = "Production",
+        Status = "Active",
+        Labels = []
+    };
+
+    private static UpdateServerDto ValidUpdate() => new()
+    {
+        DatacenterId = Guid.NewGuid(),
+        IpAddress = "10.20.30.41",
+        Hostname = "srv-01-updated",
+        OsType = "Linux",
+        Environment = "Production",
+        Status = "Active",
+        Labels = []
+    };
 }

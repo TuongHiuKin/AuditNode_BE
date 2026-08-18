@@ -21,7 +21,7 @@ public class ApplicationRepositoryTests
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.Empty);
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
         return new AuditDbContext(options, mockTenantProvider.Object);
     }
 
@@ -68,7 +68,35 @@ public class ApplicationRepositoryTests
         appDto.Servers.Should().NotBeNull();
         appDto.Servers.Should().HaveCount(1);
         appDto.Servers.First().Hostname.Should().Be("SRV-01");
+        appDto.Servers.First().PortMappingId.Should().Be(portMapping.Id);
         appDto.Servers.First().PortNumber.Should().Be(8080);
+    }
+
+    [Fact]
+    public async Task GetApplicationsAsync_maps_and_filters_application_labels()
+    {
+        using var context = GetDbContext();
+        var app = new AppEntity { Id = Guid.NewGuid(), AppCode = "LAB", AppName = "Labelled" };
+        var label = new Label { Id = Guid.NewGuid(), Key = "tier", Value = "critical" };
+        context.Applications.Add(app);
+        context.Labels.Add(label);
+        context.ApplicationLabels.Add(new ApplicationLabel
+        {
+            ApplicationId = app.Id,
+            LabelId = label.Id
+        });
+        await context.SaveChangesAsync();
+
+        var repository = new ApplicationRepository(context);
+
+        var match = await repository.GetApplicationsAsync("tier", "critical");
+        var noMatch = await repository.GetApplicationsAsync("tier", "other");
+
+        match.Should().ContainSingle().Which.Labels.Should().ContainEquivalentOf(new LabelDto
+        {
+            Key = "tier", Value = "critical"
+        });
+        noMatch.Should().BeEmpty();
     }
 
     [Fact]
@@ -87,7 +115,7 @@ public class ApplicationRepositoryTests
         };
 
         // Act
-        var result = await repository.RegisterApplicationAsync(application);
+        var result = await repository.CreateAsync(application, Array.Empty<LabelDto>(), null);
 
         // Assert
         result.Should().NotBeNull();
@@ -115,7 +143,7 @@ public class ApplicationRepositoryTests
         app.OwnerTeam = "Updated Team";
 
         // Act
-        await repository.UpdateAsync(app);
+        await repository.UpdateAsync(app, Array.Empty<LabelDto>(), null);
 
         // Assert
         var updatedApp = await context.Applications.FindAsync(app.Id);
@@ -125,7 +153,7 @@ public class ApplicationRepositoryTests
     }
 
     [Fact]
-    public async Task UpdateApplicationWithNetworkAsync_ShouldUpdateMetadataAndPortMapping()
+    public async Task UpdateAsync_updates_the_explicit_port_mapping()
     {
         // Arrange
         using var context = GetDbContext();
@@ -152,19 +180,15 @@ public class ApplicationRepositoryTests
 
         var repository = new ApplicationRepository(context);
         var newServerId = Guid.NewGuid();
-        var updateDto = new UpdateApplicationDto
-        {
-            AppName = "Updated Name",
-            OwnerTeam = "Updated Team",
-            TargetServerId = newServerId,
-            PortNumber = 443
-        };
+        initialApp.AppName = "Updated Name";
+        initialApp.OwnerTeam = "Updated Team";
+        initialPortMapping.ServerId = newServerId;
+        initialPortMapping.PortNumber = 443;
 
         // Act
-        var result = await repository.UpdateApplicationWithNetworkAsync(appId, updateDto);
+        await repository.UpdateAsync(initialApp, Array.Empty<LabelDto>(), initialPortMapping);
 
         // Assert
-        result.Should().BeTrue();
         var updatedApp = await context.Applications.FindAsync(appId);
         updatedApp!.AppName.Should().Be("Updated Name");
         updatedApp.OwnerTeam.Should().Be("Updated Team");
@@ -176,7 +200,7 @@ public class ApplicationRepositoryTests
     }
 
     [Fact]
-    public async Task UpdateApplicationWithNetworkAsync_ShouldCreatePortMapping_IfNoneExists()
+    public async Task CreateAsync_persists_application_and_optional_deployment_atomically()
     {
         // Arrange
         using var context = GetDbContext();
@@ -187,23 +211,18 @@ public class ApplicationRepositoryTests
             AppCode = "NOMAP",
             AppName = "App Without Port Mapping"
         };
-        context.Applications.Add(initialApp);
-        await context.SaveChangesAsync();
-
         var repository = new ApplicationRepository(context);
         var targetServerId = Guid.NewGuid();
-        var updateDto = new UpdateApplicationDto
+        var deployment = new PortMapping
         {
-            AppName = "App With Port Mapping Now",
-            TargetServerId = targetServerId,
-            PortNumber = 8080
+            Id = Guid.NewGuid(), AppId = appId, ServerId = targetServerId,
+            PortNumber = 8080, Protocol = "TCP"
         };
 
         // Act
-        var result = await repository.UpdateApplicationWithNetworkAsync(appId, updateDto);
+        await repository.CreateAsync(initialApp, Array.Empty<LabelDto>(), deployment);
 
         // Assert
-        result.Should().BeTrue();
         var portMapping = await context.PortMappings.FirstOrDefaultAsync(pm => pm.AppId == appId);
         portMapping.Should().NotBeNull();
         portMapping!.ServerId.Should().Be(targetServerId);
@@ -224,7 +243,7 @@ public class ApplicationRepositoryTests
         var repository = new ApplicationRepository(context);
 
         // Act
-        var result = await repository.GetByIdsAsync(new[] { a1.Id, a2.Id });
+        var result = await repository.GetByIdsAsync(new[] { a1.Id, a2.Id, a1.Id });
 
         // Assert
         result.Should().HaveCount(2);

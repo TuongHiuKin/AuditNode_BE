@@ -1,86 +1,170 @@
+using System.Net;
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
+using AuditNode.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
-using AuditNode.Infrastructure.Data;
+using Npgsql;
 
 namespace AuditNode.Infrastructure.Services;
 
 public class ServerService : IServerService
 {
-    private readonly AuditDbContext _context;
+    private readonly IServerRepository _repository;
+    private readonly ITenantProvider _tenantProvider;
 
-    public ServerService(AuditDbContext context)
+    public ServerService(IServerRepository repository, ITenantProvider tenantProvider)
     {
-        _context = context;
+        _repository = repository;
+        _tenantProvider = tenantProvider;
     }
 
     public async Task<IEnumerable<ServerResponseDto>> GetServersAsync()
     {
-        var servers = await _context.Servers
-            .Include(s => s.Datacenter)
-            .Include(s => s.Labels)
-            .Include(s => s.PortMappings)
-                .ThenInclude(pm => pm.Application)
-            .AsSplitQuery()
-            .ToListAsync();
+        if (!HasWorkspace())
+            return Array.Empty<ServerResponseDto>();
 
-        return servers.Select(s => new ServerResponseDto
+        return await _repository.GetAllWithAppsAsync();
+    }
+
+    public async Task<ServerResponseDto?> GetServerAsync(Guid id)
+    {
+        if (!HasWorkspace() || id == Guid.Empty)
+            return null;
+
+        var server = await _repository.GetByIdAsync(id);
+        return server is null ? null : Map(server);
+    }
+
+    public async Task<ServerOperationResult> CreateServerAsync(CreateServerDto dto)
+    {
+        if (!HasWorkspace())
+            return new(ServerOperationStatus.InvalidWorkspace);
+
+        if (!await _repository.DatacenterExistsAsync(dto.DatacenterId))
+            return new(ServerOperationStatus.DatacenterNotFound);
+
+        var normalizedIp = NormalizeIp(dto.IpAddress);
+        if (await _repository.IpAddressExistsAsync(normalizedIp, null))
+            return new(ServerOperationStatus.DuplicateIp);
+
+        var server = new Server
         {
-            Id = s.Id,
-            DatacenterId = s.DatacenterId,
-            IpAddress = s.IpAddress,
-            Hostname = s.Hostname,
-            OsType = s.OsType,
-            Environment = s.Environment,
-            Datacenter = s.DatacenterId == Guid.Empty ? "Unassigned" : (s.Datacenter?.Name ?? "Unassigned"),
-            Status = s.Status,
-            Applications = s.PortMappings != null 
-                ? s.PortMappings.Select(pm => new ApplicationOnServerDto 
-                { 
-                    Id = pm.AppId, 
-                    AppCode = pm.Application?.AppCode ?? string.Empty, 
-                    AppName = pm.Application?.AppName ?? string.Empty, 
-                    OwnerTeam = pm.Application?.OwnerTeam ?? string.Empty, 
-                    PortNumber = pm.PortNumber, 
-                    Protocol = pm.Protocol 
-                }).ToList() 
-                : new List<ApplicationOnServerDto>(),
-            Labels = s.Labels != null ? s.Labels.Select(l => new LabelDto { Key = l.Key, Value = l.Value }).ToList() : new List<LabelDto>()
-        });
+            Id = Guid.NewGuid(),
+            DatacenterId = dto.DatacenterId,
+            IpAddress = normalizedIp,
+            Hostname = dto.Hostname,
+            OsType = dto.OsType,
+            Environment = dto.Environment,
+            Status = dto.Status
+        };
+
+        try
+        {
+            await _repository.CreateServerAsync(server, dto.Labels);
+            return new(ServerOperationStatus.Success, Map(server));
+        }
+        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        {
+            return new(ServerOperationStatus.DuplicateIp);
+        }
+    }
+
+    public async Task<ServerOperationResult> UpdateServerAsync(Guid id, UpdateServerDto dto)
+    {
+        if (!HasWorkspace())
+            return new(ServerOperationStatus.InvalidWorkspace);
+
+        if (id == Guid.Empty)
+            return new(ServerOperationStatus.NotFound);
+
+        var server = await _repository.GetByIdAsync(id);
+        if (server is null)
+            return new(ServerOperationStatus.NotFound);
+
+        if (!await _repository.DatacenterExistsAsync(dto.DatacenterId))
+            return new(ServerOperationStatus.DatacenterNotFound);
+
+        var normalizedIp = NormalizeIp(dto.IpAddress);
+        if (await _repository.IpAddressExistsAsync(normalizedIp, id))
+            return new(ServerOperationStatus.DuplicateIp);
+
+        server.DatacenterId = dto.DatacenterId;
+        server.IpAddress = normalizedIp;
+        server.Hostname = dto.Hostname;
+        server.OsType = dto.OsType;
+        server.Environment = dto.Environment;
+        server.Status = dto.Status;
+
+        try
+        {
+            await _repository.UpdateAsync(server, dto.Labels);
+            return new(ServerOperationStatus.Success, Map(server));
+        }
+        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        {
+            return new(ServerOperationStatus.DuplicateIp);
+        }
+    }
+
+    public async Task<ServerOperationStatus> PurgeServerAsync(Guid id)
+    {
+        if (!HasWorkspace())
+            return ServerOperationStatus.InvalidWorkspace;
+
+        if (id == Guid.Empty)
+            return ServerOperationStatus.NotFound;
+
+        var server = await _repository.GetByIdAsync(id);
+        if (server is null)
+            return ServerOperationStatus.NotFound;
+
+        await _repository.DeleteAsync(server);
+        return ServerOperationStatus.Success;
     }
 
     public async Task<IEnumerable<ServerResponseDto>> ExportServersAsync(List<Guid> ids)
     {
-        var servers = await _context.Servers
-            .Include(s => s.Datacenter)
-            .Include(s => s.Labels)
-            .Include(s => s.PortMappings)
-                .ThenInclude(pm => pm.Application)
-            .Where(s => ids.Contains(s.Id))
-            .ToListAsync();
+        if (!HasWorkspace())
+            return Array.Empty<ServerResponseDto>();
 
-        return servers.Select(s => new ServerResponseDto
-        {
-            Id = s.Id,
-            DatacenterId = s.DatacenterId,
-            IpAddress = s.IpAddress,
-            Hostname = s.Hostname,
-            OsType = s.OsType,
-            Environment = s.Environment,
-            Datacenter = s.DatacenterId == Guid.Empty ? "Unassigned" : (s.Datacenter?.Name ?? "Unassigned"),
-            Status = s.Status,
-            Applications = s.PortMappings != null 
-                ? s.PortMappings.Select(pm => new ApplicationOnServerDto 
-                { 
-                    Id = pm.AppId, 
-                    AppCode = pm.Application?.AppCode ?? string.Empty, 
-                    AppName = pm.Application?.AppName ?? string.Empty, 
-                    OwnerTeam = pm.Application?.OwnerTeam ?? string.Empty, 
-                    PortNumber = pm.PortNumber, 
-                    Protocol = pm.Protocol 
-                }).ToList() 
-                : new List<ApplicationOnServerDto>(),
-            Labels = s.Labels != null ? s.Labels.Select(l => new LabelDto { Key = l.Key, Value = l.Value }).ToList() : new List<LabelDto>()
-        });
+        return await _repository.GetByIdsAsync(ids.Where(id => id != Guid.Empty).Distinct());
     }
+
+    private bool HasWorkspace() =>
+        _tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty;
+
+    private static string NormalizeIp(string ipAddress) => IPAddress.Parse(ipAddress).ToString();
+
+    private static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException
+        {
+            SqlState: PostgresErrorCodes.UniqueViolation
+        };
+
+    private static ServerResponseDto Map(Server server) => new()
+    {
+        Id = server.Id,
+        DatacenterId = server.DatacenterId,
+        IpAddress = server.IpAddress,
+        Hostname = server.Hostname,
+        OsType = server.OsType,
+        Environment = server.Environment,
+        Datacenter = server.Datacenter?.Name ?? string.Empty,
+        Status = server.Status,
+        Applications = server.PortMappings.Select(mapping => new ApplicationOnServerDto
+        {
+            PortMappingId = mapping.Id,
+            Id = mapping.AppId,
+            AppCode = mapping.Application?.AppCode ?? string.Empty,
+            AppName = mapping.Application?.AppName ?? string.Empty,
+            OwnerTeam = mapping.Application?.OwnerTeam ?? string.Empty,
+            PortNumber = mapping.PortNumber,
+            Protocol = mapping.Protocol
+        }).ToList(),
+        Labels = server.Labels.Select(label => new LabelDto
+        {
+            Key = label.Key,
+            Value = label.Value
+        }).ToList()
+    };
 }

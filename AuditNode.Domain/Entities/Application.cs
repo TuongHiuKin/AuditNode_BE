@@ -3,6 +3,7 @@ namespace AuditNode.Domain.Entities;
 public class Application
 {
     public Guid WorkspaceId { get; set; }
+    public Workspace? Workspace { get; set; }
     public Guid Id { get; set; }
     public string AppCode { get; set; } = string.Empty;
     public string AppName { get; set; } = string.Empty;
@@ -13,6 +14,7 @@ public class Application
 
     // Navigation properties
     public ICollection<PortMapping> PortMappings { get; set; } = new List<PortMapping>();
+    public ICollection<ApplicationLabel> ApplicationLabels { get; set; } = new List<ApplicationLabel>();
     public ICollection<AppDependency> SourceDependencies { get; set; } = new List<AppDependency>();
     public ICollection<AppDependency> DestinationDependencies { get; set; } = new List<AppDependency>();
 }
