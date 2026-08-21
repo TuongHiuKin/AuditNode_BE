@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
@@ -18,7 +18,7 @@ namespace AuditNode.Infrastructure.Migrations
                         SELECT 1 FROM workspaces
                         WHERE owner_user_id IS NULL OR btrim(owner_user_id) = ''
                     ) THEN
-                        RAISE EXCEPTION 'Workspace ownership backfill is incomplete; owner_user_id must contain a real user identifier.';
+                        RAISE EXCEPTION 'Cannot finalize workspace ownership: unassigned workspaces exist.';
                     END IF;
 
                     IF EXISTS (
@@ -26,7 +26,7 @@ namespace AuditNode.Infrastructure.Migrations
                         WHERE workspace_id IS NULL
                            OR workspace_id = '00000000-0000-0000-0000-000000000000'::uuid
                     ) THEN
-                        RAISE EXCEPTION 'Datacenter workspace backfill is incomplete; workspace_id must be assigned explicitly.';
+                        RAISE EXCEPTION 'Cannot finalize workspace ownership: unassigned datacenters exist.';
                     END IF;
                 END $$;
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -11,69 +11,37 @@ namespace AuditNode.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_app_dependencies_applications_dest_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"app_dependencies\" DROP CONSTRAINT IF EXISTS \"FK_app_dependencies_applications_dest_app_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_app_dependencies_applications_source_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"app_dependencies\" DROP CONSTRAINT IF EXISTS \"FK_app_dependencies_applications_source_app_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_app_dependencies_port_mappings_dest_port_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"app_dependencies\" DROP CONSTRAINT IF EXISTS \"FK_app_dependencies_port_mappings_dest_port_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_port_mappings_applications_app_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"port_mappings\" DROP CONSTRAINT IF EXISTS \"FK_port_mappings_applications_app_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_port_mappings_servers_server_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"port_mappings\" DROP CONSTRAINT IF EXISTS \"FK_port_mappings_servers_server_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_servers_datacenters_datacenter_id",
-                table: "servers");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"servers\" DROP CONSTRAINT IF EXISTS \"FK_servers_datacenters_datacenter_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_topology_nodes_topology_nodes_parent_node_id",
-                table: "topology_nodes");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"topology_nodes\" DROP CONSTRAINT IF EXISTS \"FK_topology_nodes_topology_nodes_parent_node_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_topology_nodes_parent_node_id",
-                table: "topology_nodes");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_topology_nodes_parent_node_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_servers_datacenter_id",
-                table: "servers");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_servers_datacenter_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_servers_ip_address",
-                table: "servers");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_servers_ip_address\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_port_mappings_app_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_port_mappings_app_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_port_mappings_server_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_port_mappings_server_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_applications_app_code",
-                table: "applications");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_applications_app_code\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_app_dependencies_dest_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_app_dependencies_dest_app_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_app_dependencies_dest_port_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_app_dependencies_dest_port_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_app_dependencies_source_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_app_dependencies_source_app_id\";");
 
             migrationBuilder.AlterColumn<string>(
                 name: "name",
@@ -130,12 +98,15 @@ namespace AuditNode.Infrastructure.Migrations
                            min(server.workspace_id::text)::uuid AS workspace_id
                     FROM servers AS server
                     WHERE server.workspace_id IS NOT NULL
-                      AND server.workspace_id <> '00000000-0000-0000-0000-000000000000'::uuid
                     GROUP BY server.datacenter_id
                     HAVING count(DISTINCT server.workspace_id) = 1
                 ) AS candidate
                 WHERE datacenter.workspace_id IS NULL
                   AND candidate.datacenter_id = datacenter.id;
+                  
+                UPDATE datacenters
+                SET workspace_id = '00000000-0000-0000-0000-000000000000'::uuid
+                WHERE workspace_id IS NULL;
                 """);
 
             migrationBuilder.AddUniqueConstraint(
@@ -381,140 +352,84 @@ namespace AuditNode.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_app_dependencies_applications_workspace_id_dest_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"app_dependencies\" DROP CONSTRAINT IF EXISTS \"FK_app_dependencies_applications_workspace_id_dest_app_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_app_dependencies_applications_workspace_id_source_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"app_dependencies\" DROP CONSTRAINT IF EXISTS \"FK_app_dependencies_applications_workspace_id_source_app_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_app_dependencies_port_mappings_workspace_id_dest_port_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"app_dependencies\" DROP CONSTRAINT IF EXISTS \"FK_app_dependencies_port_mappings_workspace_id_dest_port_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_app_dependencies_workspaces_workspace_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"app_dependencies\" DROP CONSTRAINT IF EXISTS \"FK_app_dependencies_workspaces_workspace_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_applications_workspaces_workspace_id",
-                table: "applications");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"applications\" DROP CONSTRAINT IF EXISTS \"FK_applications_workspaces_workspace_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_datacenters_workspaces_workspace_id",
-                table: "datacenters");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"datacenters\" DROP CONSTRAINT IF EXISTS \"FK_datacenters_workspaces_workspace_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_labels_workspaces_workspace_id",
-                table: "labels");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"labels\" DROP CONSTRAINT IF EXISTS \"FK_labels_workspaces_workspace_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_port_mappings_applications_workspace_id_app_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"port_mappings\" DROP CONSTRAINT IF EXISTS \"FK_port_mappings_applications_workspace_id_app_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_port_mappings_servers_workspace_id_server_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"port_mappings\" DROP CONSTRAINT IF EXISTS \"FK_port_mappings_servers_workspace_id_server_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_port_mappings_workspaces_workspace_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"port_mappings\" DROP CONSTRAINT IF EXISTS \"FK_port_mappings_workspaces_workspace_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_servers_datacenters_workspace_id_datacenter_id",
-                table: "servers");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"servers\" DROP CONSTRAINT IF EXISTS \"FK_servers_datacenters_workspace_id_datacenter_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_servers_workspaces_workspace_id",
-                table: "servers");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"servers\" DROP CONSTRAINT IF EXISTS \"FK_servers_workspaces_workspace_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_topology_nodes_topology_nodes_workspace_id_parent_node_id",
-                table: "topology_nodes");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"topology_nodes\" DROP CONSTRAINT IF EXISTS \"FK_topology_nodes_topology_nodes_workspace_id_parent_node_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_topology_nodes_workspaces_workspace_id",
-                table: "topology_nodes");
+            migrationBuilder.Sql("ALTER TABLE IF EXISTS \"topology_nodes\" DROP CONSTRAINT IF EXISTS \"FK_topology_nodes_workspaces_workspace_id\";");
 
             migrationBuilder.DropTable(
                 name: "workspace_members");
 
-            migrationBuilder.DropIndex(
-                name: "IX_workspaces_owner_user_id",
-                table: "workspaces");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_workspaces_owner_user_id\";");
 
             migrationBuilder.DropUniqueConstraint(
                 name: "AK_topology_nodes_workspace_id_id",
                 table: "topology_nodes");
 
-            migrationBuilder.DropIndex(
-                name: "IX_topology_nodes_workspace_id",
-                table: "topology_nodes");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_topology_nodes_workspace_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_topology_nodes_workspace_id_parent_node_id",
-                table: "topology_nodes");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_topology_nodes_workspace_id_parent_node_id\";");
 
             migrationBuilder.DropUniqueConstraint(
                 name: "AK_servers_workspace_id_id",
                 table: "servers");
 
-            migrationBuilder.DropIndex(
-                name: "IX_servers_workspace_id_datacenter_id",
-                table: "servers");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_servers_workspace_id_datacenter_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_servers_workspace_id_ip_address",
-                table: "servers");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_servers_workspace_id_ip_address\";");
 
             migrationBuilder.DropUniqueConstraint(
                 name: "AK_port_mappings_workspace_id_id",
                 table: "port_mappings");
 
-            migrationBuilder.DropIndex(
-                name: "IX_port_mappings_workspace_id_app_id",
-                table: "port_mappings");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_port_mappings_workspace_id_app_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_port_mappings_workspace_id_server_id_port_number",
-                table: "port_mappings");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_port_mappings_workspace_id_server_id_port_number\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_labels_workspace_id_key_value",
-                table: "labels");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_labels_workspace_id_key_value\";");
 
             migrationBuilder.DropUniqueConstraint(
                 name: "AK_datacenters_workspace_id_id",
                 table: "datacenters");
 
-            migrationBuilder.DropIndex(
-                name: "IX_datacenters_workspace_id",
-                table: "datacenters");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_datacenters_workspace_id\";");
 
             migrationBuilder.DropUniqueConstraint(
                 name: "AK_applications_workspace_id_id",
                 table: "applications");
 
-            migrationBuilder.DropIndex(
-                name: "IX_applications_workspace_id_app_code",
-                table: "applications");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_applications_workspace_id_app_code\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_app_dependencies_workspace_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_app_dependencies_workspace_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_app_dependencies_workspace_id_dest_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_app_dependencies_workspace_id_dest_app_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_app_dependencies_workspace_id_dest_port_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_app_dependencies_workspace_id_dest_port_id\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_app_dependencies_workspace_id_source_app_id",
-                table: "app_dependencies");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_app_dependencies_workspace_id_source_app_id\";");
 
             migrationBuilder.DropColumn(
                 name: "created_at",

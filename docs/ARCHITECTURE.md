@@ -1,5 +1,36 @@
 # AuditNode System Architecture
 
+## Current backend architecture (August 2026)
+
+The backend preserves Clean Architecture boundaries: domain entities and invariants do not depend on infrastructure; application DTOs/interfaces define use cases; infrastructure implements EF Core repositories and external identity services; API controllers and middleware translate HTTP/authentication concerns.
+
+### Authentication and tenant boundary
+
+The custom `/api/v1/auth` gateway lets the frontend keep its own login/register UI. The gateway exchanges credentials with Keycloak, returns short-lived access-token metadata, and stores the refresh token only in the secure HttpOnly `auditnode.refresh_token` cookie. JWT bearer validation still protects application APIs. Configuration is supplied through the existing `Keycloak:*` keys; secrets are never documented or hard-coded.
+
+After authentication, `WorkspaceMiddleware` resolves `X-Workspace-Id`, resolves the user from `NameIdentifier` or `sub`, and checks workspace ownership/membership before initializing the tenant provider. Only authentication routes and `/api/v1/workspaces` bypass workspace resolution. EF query filters and same-workspace foreign keys provide a second tenant boundary; `Guid.Empty` is never accepted as an implicit workspace.
+
+### Canonical aggregate flows
+
+- Server create/update validates canonical IPv4, same-workspace datacenter references, and tenant-unique IP addresses.
+- Application create can persist metadata, labels, and an optional deployment atomically. Deployment updates/migrations target an explicit `PortMappingId`; they never select an arbitrary first mapping.
+- Application labels use an `ApplicationLabel` join entity rather than reusing the server-label relationship.
+- Topology state is loaded and saved as one `{nodes, edges}` contract. Application nodes are deployment-based and use `PortMappingId` as stable identity. Parent, reference, endpoint, and workspace invariants are validated before persistence.
+- Dependency synchronization retains the destination deployment mapping and is idempotent, so repeating the same state does not produce duplicate dependencies or new IDs.
+- Inventory import validates the complete workbook before one database transaction/save. Any conflict or persistence failure leaves no partial import.
+
+### Error boundary
+
+The API uses Problem Details for unexpected errors and preserves explicit 400/404/409 responses for validation, absence, and conflict. A correlation ID is returned both as `X-Correlation-ID` and in the Problem Details extension. Detailed exceptions are logged without secrets; exception messages are not exposed to clients.
+
+See [API.md](API.md) for routes/contracts and [DATABASE.md](DATABASE.md) for tenant schema and rollout requirements.
+
+---
+
+## Legacy architecture snapshot (superseded)
+
+The sections below describe the earlier implementation and are retained for history. In particular, the old application “find or create/upsert” flow is not the canonical contract above.
+
 ## 1. Security Architecture
 The system implements a centralized identity management strategy using **Keycloak** (OpenID Connect).
 

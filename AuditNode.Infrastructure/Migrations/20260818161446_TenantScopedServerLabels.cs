@@ -11,21 +11,13 @@ namespace AuditNode.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_server_labels_labels_LabelsId",
-                table: "server_labels");
+            migrationBuilder.Sql("ALTER TABLE \"server_labels\" DROP CONSTRAINT IF EXISTS \"FK_server_labels_labels_LabelsId\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_server_labels_servers_ServersId",
-                table: "server_labels");
+            migrationBuilder.Sql("ALTER TABLE \"server_labels\" DROP CONSTRAINT IF EXISTS \"FK_server_labels_servers_ServersId\";");
 
-            migrationBuilder.DropPrimaryKey(
-                name: "PK_server_labels",
-                table: "server_labels");
+            migrationBuilder.Sql("ALTER TABLE \"server_labels\" DROP CONSTRAINT IF EXISTS \"PK_server_labels\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_server_labels_ServersId",
-                table: "server_labels");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_server_labels_ServersId\";");
 
             migrationBuilder.RenameColumn(
                 name: "ServersId",
@@ -127,25 +119,15 @@ namespace AuditNode.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropForeignKey(
-                name: "FK_server_labels_labels_workspace_id_label_id",
-                table: "server_labels");
+            migrationBuilder.Sql("ALTER TABLE \"server_labels\" DROP CONSTRAINT IF EXISTS \"FK_server_labels_labels_workspace_id_label_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_server_labels_servers_workspace_id_server_id",
-                table: "server_labels");
+            migrationBuilder.Sql("ALTER TABLE \"server_labels\" DROP CONSTRAINT IF EXISTS \"FK_server_labels_servers_workspace_id_server_id\";");
 
-            migrationBuilder.DropForeignKey(
-                name: "FK_server_labels_workspaces_workspace_id",
-                table: "server_labels");
+            migrationBuilder.Sql("ALTER TABLE \"server_labels\" DROP CONSTRAINT IF EXISTS \"FK_server_labels_workspaces_workspace_id\";");
 
-            migrationBuilder.DropPrimaryKey(
-                name: "PK_server_labels",
-                table: "server_labels");
+            migrationBuilder.Sql("ALTER TABLE \"server_labels\" DROP CONSTRAINT IF EXISTS \"PK_server_labels\";");
 
-            migrationBuilder.DropIndex(
-                name: "IX_server_labels_workspace_id_label_id",
-                table: "server_labels");
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_server_labels_workspace_id_label_id\";");
 
             migrationBuilder.DropColumn(
                 name: "workspace_id",

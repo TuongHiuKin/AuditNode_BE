@@ -40,7 +40,7 @@ ALTER TABLE applications ADD COLUMN IF NOT EXISTS workspace_id uuid;
 ALTER TABLE labels ADD COLUMN IF NOT EXISTS workspace_id uuid;
 ALTER TABLE port_mappings ADD COLUMN IF NOT EXISTS workspace_id uuid;
 ALTER TABLE app_dependencies ADD COLUMN IF NOT EXISTS workspace_id uuid;
-ALTER TABLE topology_nodes ADD COLUMN IF NOT EXISTS workspace_id uuid;
+-- ALTER TABLE IF EXISTS topology_nodes ADD COLUMN IF NOT EXISTS workspace_id uuid;
 ALTER TABLE boundary_frames ADD COLUMN IF NOT EXISTS workspace_id uuid;
 ALTER TABLE boundary_frames
     ALTER COLUMN owner_id TYPE varchar(100) USING owner_id::text;
@@ -49,7 +49,6 @@ WITH owners AS (
     SELECT owner_id::text AS owner_id FROM datacenters
     UNION SELECT owner_id::text FROM servers
     UNION SELECT owner_id::text FROM applications
-    UNION SELECT owner_id::text FROM labels
     UNION SELECT owner_id::text FROM boundary_frames
 )
 INSERT INTO workspaces (id, name, owner_user_id, is_personal)
@@ -79,12 +78,12 @@ WHERE entity.workspace_id IS NULL
   AND workspace.owner_user_id = entity.owner_id::text
   AND workspace.is_personal = true;
 
-UPDATE labels entity
-SET workspace_id = workspace.id
-FROM workspaces workspace
-WHERE entity.workspace_id IS NULL
-  AND workspace.owner_user_id = entity.owner_id::text
-  AND workspace.is_personal = true;
+-- UPDATE labels entity
+-- SET workspace_id = workspace.id
+-- FROM workspaces workspace
+-- WHERE entity.workspace_id IS NULL
+--   AND workspace.owner_user_id = entity.owner_id::text
+--   AND workspace.is_personal = true;
 
 UPDATE boundary_frames entity
 SET workspace_id = workspace.id
@@ -111,17 +110,17 @@ WHERE dependency.workspace_id IS NULL
   AND source.workspace_id = destination.workspace_id
   AND source.workspace_id = port.workspace_id;
 
-UPDATE topology_nodes node
-SET workspace_id = server.workspace_id
-FROM servers server
-WHERE node.workspace_id IS NULL
-  AND server.id = node.reference_id;
+-- UPDATE topology_nodes node
+-- SET workspace_id = server.workspace_id
+-- FROM servers server
+-- WHERE node.workspace_id IS NULL
+--   AND server.id = node.reference_id;
 
-UPDATE topology_nodes node
-SET workspace_id = application.workspace_id
-FROM applications application
-WHERE node.workspace_id IS NULL
-  AND application.id = node.reference_id;
+-- UPDATE topology_nodes node
+-- SET workspace_id = application.workspace_id
+-- FROM applications application
+-- WHERE node.workspace_id IS NULL
+--   AND application.id = node.reference_id;
 
 CREATE TABLE IF NOT EXISTS shared_label_frames (
     id uuid PRIMARY KEY,
@@ -171,8 +170,7 @@ CREATE INDEX IF NOT EXISTS ix_labels_workspace_key_value
     ON labels (workspace_id, key, value);
 CREATE INDEX IF NOT EXISTS ix_app_dependencies_workspace
     ON app_dependencies (workspace_id);
-CREATE INDEX IF NOT EXISTS ix_topology_nodes_workspace
-    ON topology_nodes (workspace_id);
+-- CREATE INDEX topology_nodes
 CREATE INDEX IF NOT EXISTS ix_boundary_frames_workspace
     ON boundary_frames (workspace_id);
 
@@ -187,5 +185,5 @@ UNION ALL SELECT 'applications', count(*) FROM applications WHERE workspace_id I
 UNION ALL SELECT 'labels', count(*) FROM labels WHERE workspace_id IS NULL
 UNION ALL SELECT 'port_mappings', count(*) FROM port_mappings WHERE workspace_id IS NULL
 UNION ALL SELECT 'app_dependencies', count(*) FROM app_dependencies WHERE workspace_id IS NULL
-UNION ALL SELECT 'topology_nodes', count(*) FROM topology_nodes WHERE workspace_id IS NULL
+-- UNION topology_nodes
 UNION ALL SELECT 'boundary_frames', count(*) FROM boundary_frames WHERE workspace_id IS NULL;
