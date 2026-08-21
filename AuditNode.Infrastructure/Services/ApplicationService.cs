@@ -159,7 +159,7 @@ public class ApplicationService : IApplicationService
     }
 
     private bool HasWorkspace() =>
-        _tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty;
+        _tenantProvider.WorkspaceId.HasValue ;
 
     private static bool HasDeploymentChange(UpdateApplicationDto dto) =>
         dto.PortMappingId.HasValue || dto.TargetServerId.HasValue || dto.PortNumber.HasValue;

@@ -130,8 +130,8 @@ public class ServerService : IServerService
         return await _repository.GetByIdsAsync(ids.Where(id => id != Guid.Empty).Distinct());
     }
 
-    private bool HasWorkspace() =>
-        _tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty;
+    private bool HasWorkspace() { Console.WriteLine("HasWorkspace called. WorkspaceId: " + _tenantProvider.WorkspaceId); return
+        _tenantProvider.WorkspaceId.HasValue; }
 
     private static string NormalizeIp(string ipAddress) => IPAddress.Parse(ipAddress).ToString();
 

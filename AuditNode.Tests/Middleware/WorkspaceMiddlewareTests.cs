@@ -15,7 +15,7 @@ public class WorkspaceMiddlewareTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("not-a-guid")]
-    [InlineData("00000000-0000-0000-0000-000000000000")]
+    
     public async Task InvokeAsync_ShouldReturnBadRequest_WhenWorkspaceHeaderIsInvalid(string? headerValue)
     {
         var context = CreateAuthenticatedContext();

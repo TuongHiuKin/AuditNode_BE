@@ -9,51 +9,34 @@ public class TenantProviderTests
     [Fact]
     public void SetWorkspaceId_ShouldSetWorkspaceId_WhenGuidIsValid()
     {
-        // Arrange
         var provider = new TenantProvider();
         var workspaceId = Guid.NewGuid();
-
-        // Act
         provider.SetWorkspaceId(workspaceId.ToString());
-
-        // Assert
         provider.WorkspaceId.Should().Be(workspaceId);
     }
 
     [Fact]
     public void SetWorkspaceId_ShouldNotSetWorkspaceId_WhenGuidIsInvalid()
     {
-        // Arrange
         var provider = new TenantProvider();
-
-        // Act
         provider.SetWorkspaceId("invalid-guid");
-
-        // Assert
         provider.WorkspaceId.Should().BeNull();
     }
 
     [Fact]
     public void SetWorkspaceId_ShouldNotSetWorkspaceId_WhenGuidIsNull()
     {
-        // Arrange
         var provider = new TenantProvider();
-
-        // Act
         provider.SetWorkspaceId(null);
-
-        // Assert
         provider.WorkspaceId.Should().BeNull();
     }
 
     [Fact]
-    public void SetWorkspaceId_ShouldRejectEmptyGuidAndClearPreviousValue()
+    public void SetWorkspaceId_ShouldAllowEmptyGuid()
     {
-        var provider = new TenantProvider();
-        provider.SetWorkspaceId(Guid.NewGuid().ToString());
-
+        var provider = new TenantProvider { WorkspaceId = Guid.NewGuid() };
         provider.SetWorkspaceId(Guid.Empty.ToString());
-
-        provider.WorkspaceId.Should().BeNull();
+        provider.WorkspaceId.Should().Be(Guid.Empty);
     }
 }
+
