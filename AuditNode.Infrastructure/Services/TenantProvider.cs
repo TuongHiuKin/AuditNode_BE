@@ -8,7 +8,7 @@ public class TenantProvider : ITenantProvider
 
     public void SetWorkspaceId(string? workspaceIdStr)
     {
-        if (Guid.TryParse(workspaceIdStr, out var guid) && guid != Guid.Empty)
+        if (Guid.TryParse(workspaceIdStr, out var guid))
         {
             WorkspaceId = guid;
             return;

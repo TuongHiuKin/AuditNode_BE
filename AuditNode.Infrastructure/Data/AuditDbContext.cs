@@ -429,70 +429,70 @@ public class AuditDbContext : DbContext
         {
             if (entry.Entity is Server server)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     server.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is Datacenter datacenter)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     datacenter.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is AppEntity app)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     app.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is TopologyNode node)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     node.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is TopologyEdge edge)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     edge.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is PortMapping pm)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     pm.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is AppDependency ad)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     ad.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is Label label)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     label.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is ApplicationLabel applicationLabel)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     applicationLabel.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
             }
             else if (entry.Entity is ServerLabel serverLabel)
             {
-                if (_tenantProvider.WorkspaceId.HasValue && _tenantProvider.WorkspaceId.Value != Guid.Empty)
+                if (_tenantProvider.WorkspaceId.HasValue )
                 {
                     serverLabel.WorkspaceId = _tenantProvider.WorkspaceId.Value;
                 }
