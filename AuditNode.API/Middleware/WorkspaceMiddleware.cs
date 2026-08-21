@@ -39,10 +39,10 @@ public class WorkspaceMiddleware
         var workspaceIdStr = workspaceIdHeader.ToString();
 
         // 2. Validate UUID format
-        if (!Guid.TryParse(workspaceIdStr, out var workspaceId) || workspaceId == Guid.Empty)
+        if (!Guid.TryParse(workspaceIdStr, out var workspaceId))
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = "A non-empty workspace ID is required." });
+            await context.Response.WriteAsJsonAsync(new { error = "A valid workspace ID is required." });
             return;
         }
 
