@@ -70,3 +70,8 @@ Thumbs.db
 # Gemini CLI / Agent Specific
 .gemini/
 MEMORY.md
+
+# Node & JS artifacts
+node_modules/
+package-lock.json
+package.json

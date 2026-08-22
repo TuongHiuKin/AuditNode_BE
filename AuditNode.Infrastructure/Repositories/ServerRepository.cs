@@ -152,6 +152,7 @@ public class ServerRepository : IServerRepository
                 label = new Label
                 {
                     Id = Guid.NewGuid(),
+                    WorkspaceId = server.WorkspaceId,
                     Key = value.Key,
                     Value = value.Value
                 };
@@ -163,6 +164,7 @@ public class ServerRepository : IServerRepository
             {
                 _dbContext.ServerLabels.Add(new ServerLabel
                 {
+                    WorkspaceId = server.WorkspaceId,
                     ServerId = server.Id,
                     LabelId = label.Id,
                     Server = server,

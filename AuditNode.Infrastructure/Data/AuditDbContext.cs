@@ -401,11 +401,19 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.DestAppCode).HasColumnName("dest_app_code");
             entity.Property(e => e.DestPortNumber).HasColumnName("dest_port_number");
             entity.Property(e => e.ConnectionType).HasColumnName("connection_type");
-            entity.Property(e => e.DestServerHostname).HasColumnName("dest_server_hostname");
             entity.Property(e => e.Environment).HasColumnName("environment");
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id");
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
+
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            var workspaceIdProp = entityType.FindProperty("WorkspaceId");
+            if (workspaceIdProp != null && workspaceIdProp.ClrType == typeof(Guid))
+            {
+                workspaceIdProp.Sentinel = new Guid("ffffffff-ffff-ffff-ffff-ffffffffffff");
+            }
+        }
     }
 
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)

@@ -151,4 +151,71 @@ public class ServerRepositoryTests
         result.Single(r => r.Id == s1.Id).Applications.Single().PortMappingId.Should()
             .Be(context.PortMappings.Single(mapping => mapping.ServerId == s1.Id).Id);
     }
+
+    [Fact]
+    public async Task Create_and_UpdateServer_with_Labels_in_Default_Workspace_succeeds()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var options = new DbContextOptionsBuilder<AuditDbContext>()
+            .UseInMemoryDatabase(databaseName)
+            .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+
+        var defaultTenant = new Mock<ITenantProvider>();
+        defaultTenant.SetupGet(x => x.WorkspaceId).Returns(Guid.Empty);
+
+        var dc = new Datacenter { Id = Guid.NewGuid(), Name = "DC-Default", Location = "Loc" };
+        var serverId = Guid.NewGuid();
+        var server = new Server
+        {
+            Id = serverId,
+            Hostname = "Server-Default",
+            IpAddress = "192.168.1.50",
+            DatacenterId = dc.Id,
+            Status = "Active",
+            OsType = "Linux",
+            Environment = "Production"
+        };
+
+        var initialLabels = new List<AuditNode.Application.DTOs.LabelDto>
+        {
+            new() { Key = "env", Value = "prod" },
+            new() { Key = "tier", Value = "backend" }
+        };
+
+        await using (var context = new AuditDbContext(options, defaultTenant.Object))
+        {
+            context.Datacenters.Add(dc);
+            await context.SaveChangesAsync();
+
+            var repository = new ServerRepository(context);
+            await repository.CreateServerAsync(server, initialLabels);
+        }
+
+        await using (var context = new AuditDbContext(options, defaultTenant.Object))
+        {
+            var repository = new ServerRepository(context);
+            var loaded = await repository.GetByIdAsync(serverId);
+            loaded.Should().NotBeNull();
+            loaded!.Labels.Should().HaveCount(2);
+
+            var updatedLabels = new List<AuditNode.Application.DTOs.LabelDto>
+            {
+                new() { Key = "env", Value = "staging" },
+                new() { Key = "tier", Value = "backend" },
+                new() { Key = "team", Value = "core" }
+            };
+
+            await repository.UpdateAsync(loaded, updatedLabels);
+        }
+
+        await using (var context = new AuditDbContext(options, defaultTenant.Object))
+        {
+            var repository = new ServerRepository(context);
+            var loaded = await repository.GetByIdAsync(serverId);
+            loaded.Should().NotBeNull();
+            loaded!.Labels.Should().HaveCount(3);
+            loaded.Labels.Select(l => l.Key).Should().Contain(new[] { "env", "tier", "team" });
+        }
+    }
 }

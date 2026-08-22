@@ -119,12 +119,13 @@ public class ApplicationRepository : IApplicationRepository
                 existing.Key == value.Key && existing.Value == value.Value);
             if (label is null)
             {
-                label = new Label { Id = Guid.NewGuid(), Key = value.Key, Value = value.Value };
+                label = new Label { Id = Guid.NewGuid(), WorkspaceId = application.WorkspaceId, Key = value.Key, Value = value.Value };
                 _dbContext.Labels.Add(label);
             }
 
             _dbContext.ApplicationLabels.Add(new ApplicationLabel
             {
+                WorkspaceId = application.WorkspaceId,
                 ApplicationId = application.Id,
                 LabelId = label.Id,
                 Application = application,
