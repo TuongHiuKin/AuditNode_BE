@@ -1,75 +1,190 @@
-using AuditNode.Application.DTOs.Auth;
+using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System;
-using System.Threading.Tasks;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AuditNode.API.Controllers;
 
-[AllowAnonymous]
+[Authorize]
 [ApiController]
 [Route("api/v1/auth")]
-public class AuthController : ControllerBase
+public sealed class AuthController : ControllerBase
 {
-    private readonly IAuthService _authService;
+    private const string RefreshCookieName = "auditnode.refresh_token";
+    private const string RefreshCookiePath = "/api/v1/auth";
+    private readonly IIdentityAuthService _identityAuthService;
 
-    public AuthController(IAuthService authService)
+    public AuthController(IIdentityAuthService identityAuthService)
     {
-        _authService = authService;
+        _identityAuthService = identityAuthService;
     }
 
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     [HttpPost("login")]
-    public async Task<ActionResult<AuthResponseDto>> Login([FromBody] LoginRequestDto request)
+    public async Task<IActionResult> Login(
+        [FromBody] LoginRequestDto request,
+        CancellationToken cancellationToken)
     {
-        if (request == null || string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
         {
-            return BadRequest(new { error = "Username and Password are required." });
+            return BadRequest(new { error = "Username and password are required." });
         }
 
         try
         {
-            var response = await _authService.LoginAsync(request);
-            return Ok(response);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(new { error = ex.Message });
-        }
-        catch (NotImplementedException ex)
-        {
-            return StatusCode(501, new { error = ex.Message });
-        }
-        catch (Exception ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
-    [HttpPost("register")]
-    public async Task<IActionResult> Register([FromBody] RegisterRequestDto request)
-    {
-        if (request == null || string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
-        {
-            return BadRequest(new { error = "Valid registration data is required." });
-        }
-
-        try
-        {
-            var success = await _authService.RegisterAsync(request);
-            if (success)
+            var tokens = await _identityAuthService.LoginAsync(request, cancellationToken);
+            SetRefreshCookie(tokens.RefreshToken, tokens.RefreshExpiresIn);
+            return Ok(new AuthenticationResponseDto
             {
-                return Ok(new { message = "User registered successfully." });
-            }
-            return BadRequest(new { error = "Registration failed." });
+                AccessToken = tokens.AccessToken,
+                ExpiresIn = tokens.ExpiresIn
+            });
         }
-        catch (NotImplementedException ex)
+        catch (IdentityAuthenticationException)
         {
-            return StatusCode(501, new { error = ex.Message });
+            return Unauthorized(new { error = "Invalid username or password." });
         }
-        catch (Exception ex)
+        catch (IdentityConfigurationException)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { error = "Authentication service is not configured." });
+        }
+        catch (IdentityUpstreamUnavailableException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { error = "Authentication service is unavailable." });
         }
     }
+
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [HttpPost("register")]
+    public async Task<IActionResult> Register(
+        [FromBody] RegisterRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Username) ||
+            string.IsNullOrWhiteSpace(request.Email) ||
+            string.IsNullOrWhiteSpace(request.Password))
+        {
+            return BadRequest(new { error = "Username, email, and password are required." });
+        }
+
+        try
+        {
+            await _identityAuthService.RegisterAsync(request, cancellationToken);
+            return StatusCode(StatusCodes.Status201Created);
+        }
+        catch (IdentityConflictException)
+        {
+            return Conflict(new { error = "Username or email already exists." });
+        }
+        catch (IdentityConfigurationException)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { error = "Authentication service is not configured." });
+        }
+        catch (IdentityUpstreamUnavailableException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { error = "Authentication service is unavailable." });
+        }
+    }
+
+    [AllowAnonymous]
+    [EnableRateLimiting("auth")]
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh(CancellationToken cancellationToken)
+    {
+        if (!Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken) ||
+            string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return Unauthorized(new { error = "Refresh session is missing." });
+        }
+
+        try
+        {
+            var tokens = await _identityAuthService.RefreshAsync(refreshToken, cancellationToken);
+            SetRefreshCookie(tokens.RefreshToken, tokens.RefreshExpiresIn);
+            return Ok(new RefreshResponseDto
+            {
+                AccessToken = tokens.AccessToken,
+                ExpiresIn = tokens.ExpiresIn
+            });
+        }
+        catch (IdentityAuthenticationException)
+        {
+            ExpireRefreshCookie();
+            return Unauthorized(new { error = "Refresh session is invalid." });
+        }
+        catch (IdentityConfigurationException)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { error = "Authentication service is not configured." });
+        }
+        catch (IdentityUpstreamUnavailableException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { error = "Authentication service is unavailable." });
+        }
+    }
+
+    [AllowAnonymous]
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (Request.Cookies.TryGetValue(RefreshCookieName, out var refreshToken) &&
+                !string.IsNullOrWhiteSpace(refreshToken))
+            {
+                await _identityAuthService.LogoutAsync(refreshToken, cancellationToken);
+            }
+        }
+        catch (IdentityAuthenticationException)
+        {
+            // The local session is still cleared when the upstream session is already invalid.
+        }
+        catch (IdentityUpstreamUnavailableException)
+        {
+            // Logout remains locally effective when Keycloak is temporarily unavailable.
+        }
+        catch (IdentityConfigurationException)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                new { error = "Authentication service is not configured." });
+        }
+        finally
+        {
+            ExpireRefreshCookie();
+        }
+
+        return NoContent();
+    }
+
+    [HttpGet("me")]
+    public IActionResult Me() => Ok(_identityAuthService.GetCurrentUser(User));
+
+    private void SetRefreshCookie(string refreshToken, int refreshExpiresIn)
+    {
+        Response.Cookies.Append(RefreshCookieName, refreshToken, CookieOptions(
+            TimeSpan.FromSeconds(Math.Max(refreshExpiresIn, 1))));
+    }
+
+    private void ExpireRefreshCookie()
+    {
+        Response.Cookies.Delete(RefreshCookieName, CookieOptions(TimeSpan.Zero));
+    }
+
+    private static CookieOptions CookieOptions(TimeSpan maxAge) => new()
+    {
+        HttpOnly = true,
+        Secure = true,
+        SameSite = SameSiteMode.None,
+        Path = RefreshCookiePath,
+        IsEssential = true,
+        MaxAge = maxAge
+    };
 }

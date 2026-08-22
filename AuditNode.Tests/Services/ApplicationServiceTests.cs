@@ -1,99 +1,117 @@
 using AuditNode.Application.DTOs;
-using AuditNode.Infrastructure.Services;
-using AuditNode.Infrastructure.Data;
+using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
+using AuditNode.Infrastructure.Services;
 using FluentAssertions;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
+using Moq;
 using Xunit;
-using System.Collections.Generic;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
+using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Tests.Services;
 
 public class ApplicationServiceTests
 {
-    private AuditDbContext GetDbContext()
+    private readonly Mock<IApplicationRepository> _repository = new();
+    private readonly Mock<ITenantProvider> _tenant = new();
+
+    public ApplicationServiceTests() =>
+        _tenant.SetupGet(x => x.WorkspaceId).Returns(Guid.NewGuid());
+
+    [Fact]
+    public async Task Create_rejects_duplicate_app_code_in_workspace()
     {
-        var options = new DbContextOptionsBuilder<AuditDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
-            .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
-            .Options;        
-        return new AuditDbContext(options);
+        var dto = ValidCreate();
+        _repository.Setup(x => x.AppCodeExistsAsync("APP01", null)).ReturnsAsync(true);
+
+        var result = await Service().CreateAsync(dto);
+
+        result.Status.Should().Be(ApplicationOperationStatus.DuplicateAppCode);
+        _repository.Verify(x => x.CreateAsync(
+            It.IsAny<AppEntity>(), It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<PortMapping?>()), Times.Never);
     }
 
     [Fact]
-    public async Task GetAllAsync_ShouldReturnApplications()
+    public async Task Create_with_deployment_rejects_server_outside_workspace()
     {
-        using var context = GetDbContext();
-        context.Applications.Add(new AuditNode.Domain.Entities.Application { Id = Guid.NewGuid(), AppCode = "A1", AppName = "App1", OwnerTeam = "T1" });
-        await context.SaveChangesAsync();
+        var dto = ValidCreate();
+        dto.Deployment = new CreateApplicationDeploymentDto
+        {
+            ServerId = Guid.NewGuid(), PortNumber = 443, Protocol = "TCP"
+        };
+        _repository.Setup(x => x.ServerExistsAsync(dto.Deployment.ServerId)).ReturnsAsync(false);
 
-        var service = new ApplicationService(context);
-        var result = await service.GetAllAsync();
+        var result = await Service().CreateAsync(dto);
 
-        result.Should().HaveCount(1);
-        result.First().AppCode.Should().Be("A1");
+        result.Status.Should().Be(ApplicationOperationStatus.ServerNotFound);
     }
 
     [Fact]
-    public async Task GetAllAsync_WithLabels_ShouldFilterCorrectly()
+    public async Task Create_persists_labels_and_optional_deployment_in_one_repository_call()
     {
-        using var context = GetDbContext();
-        
-        var labelTier1 = new Label { Id = Guid.NewGuid(), Key = "tier", Value = "1" };
-        var labelTier2 = new Label { Id = Guid.NewGuid(), Key = "tier", Value = "2" };
-        
-        var app1 = new AuditNode.Domain.Entities.Application { Id = Guid.NewGuid(), AppCode = "A1", AppName = "App 1", OwnerTeam = "T1", Labels = new List<Label> { labelTier1 } };
-        var app2 = new AuditNode.Domain.Entities.Application { Id = Guid.NewGuid(), AppCode = "A2", AppName = "App 2", OwnerTeam = "T1", Labels = new List<Label> { labelTier2 } };
-        var app3 = new AuditNode.Domain.Entities.Application { Id = Guid.NewGuid(), AppCode = "A3", AppName = "App 3", OwnerTeam = "T1" };
+        var dto = ValidCreate();
+        dto.Labels = [new LabelDto { Key = "tier", Value = "critical" }];
+        dto.Deployment = new CreateApplicationDeploymentDto
+        {
+            ServerId = Guid.NewGuid(), PortNumber = 443, Protocol = "tcp"
+        };
+        _repository.Setup(x => x.ServerExistsAsync(dto.Deployment.ServerId)).ReturnsAsync(true);
+        _repository.Setup(x => x.CreateAsync(
+                It.IsAny<AppEntity>(), It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<PortMapping>()))
+            .ReturnsAsync((AppEntity app, IReadOnlyCollection<LabelDto> _, PortMapping? _) => app);
+        _repository.Setup(x => x.GetByIdAsync(It.IsAny<Guid>()))
+            .ReturnsAsync((AppEntity?)null);
 
-        context.Applications.AddRange(app1, app2, app3);
-        await context.SaveChangesAsync();
+        var result = await Service().CreateAsync(dto);
 
-        var service = new ApplicationService(context);
-
-        var resultTier1 = await service.GetAllAsync(new[] { "1" });
-        resultTier1.Should().HaveCount(1);
-        resultTier1.First().AppCode.Should().Be("A1");
-
-        var resultBoth = await service.GetAllAsync(new[] { "tier" });
-        resultBoth.Should().HaveCount(2);
-
-        var resultNone = await service.GetAllAsync(new[] { "nonexistent" });
-        resultNone.Should().BeEmpty();
+        result.Status.Should().Be(ApplicationOperationStatus.Success);
+        _repository.Verify(x => x.CreateAsync(
+            It.Is<AppEntity>(app => app.AppCode == "APP01"),
+            It.Is<IReadOnlyCollection<LabelDto>>(labels => labels.Count == 1),
+            It.Is<PortMapping>(mapping => mapping.Id != Guid.Empty && mapping.ServerId == dto.Deployment.ServerId &&
+                                          mapping.PortNumber == 443 && mapping.Protocol == "TCP")), Times.Once);
     }
 
     [Fact]
-    public async Task GetByIdAsync_ShouldReturnApp_WhenExists()
+    public async Task Metadata_only_update_never_selects_or_migrates_a_deployment()
     {
-        using var context = GetDbContext();
         var id = Guid.NewGuid();
-        context.Applications.Add(new AuditNode.Domain.Entities.Application { Id = id, AppCode = "A1", AppName = "App1", OwnerTeam = "T1" });
-        await context.SaveChangesAsync();
+        var app = new AppEntity { Id = id, AppCode = "APP01" };
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(app);
+        var dto = ValidUpdate();
 
-        var service = new ApplicationService(context);
-        var result = await service.GetByIdAsync(id);
+        var result = await Service().UpdateAsync(id, dto);
 
-        result.Should().NotBeNull();
-        result!.Id.Should().Be(id);
+        result.Status.Should().Be(ApplicationOperationStatus.Success);
+        _repository.Verify(x => x.GetPortMappingAsync(It.IsAny<Guid>()), Times.Never);
+        _repository.Verify(x => x.UpdateAsync(app, dto.Labels, null), Times.Once);
     }
 
     [Fact]
-    public async Task CreateAsync_ShouldAddNewApp_AndReturnDto()
+    public async Task Deployment_update_requires_mapping_owned_by_application()
     {
-        using var context = GetDbContext();
-        var service = new ApplicationService(context);
-        var dto = new CreateApplicationDto { AppCode = "NEW1", AppName = "New App", OwnerTeam = "Team 1" };
+        var id = Guid.NewGuid();
+        var dto = ValidUpdate();
+        dto.PortMappingId = Guid.NewGuid();
+        dto.TargetServerId = Guid.NewGuid();
+        dto.PortNumber = 443;
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(new AppEntity { Id = id });
+        _repository.Setup(x => x.GetPortMappingAsync(dto.PortMappingId.Value))
+            .ReturnsAsync(new PortMapping { Id = dto.PortMappingId.Value, AppId = Guid.NewGuid() });
 
-        var result = await service.CreateAsync(dto);
+        var result = await Service().UpdateAsync(id, dto);
 
-        result.Should().NotBeNull();
-        result.AppCode.Should().Be("NEW1");
-        
-        var inDb = await context.Applications.FirstOrDefaultAsync(a => a.AppCode == "NEW1");
-        inDb.Should().NotBeNull();
+        result.Status.Should().Be(ApplicationOperationStatus.DeploymentNotFound);
     }
+
+    private ApplicationService Service() => new(_repository.Object, _tenant.Object);
+
+    private static CreateApplicationDto ValidCreate() => new()
+    {
+        AppCode = "app01", AppName = "App", OwnerTeam = "Team"
+    };
+
+    private static UpdateApplicationDto ValidUpdate() => new()
+    {
+        AppName = "App", OwnerTeam = "Team", Risk = "LOW", Icon = "", TechStack = "", Labels = []
+    };
 }

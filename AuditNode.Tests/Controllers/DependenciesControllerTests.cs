@@ -1,6 +1,6 @@
-using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -10,51 +10,43 @@ namespace AuditNode.Tests.Controllers;
 
 public class DependenciesControllerTests
 {
-    private readonly Mock<IDependencyService> _mockService;
-    private readonly DependenciesController _controller;
+    private readonly Mock<IDependencyService> _service = new();
 
-    public DependenciesControllerTests()
+    [Fact]
+    public async Task Successful_sync_returns_no_content()
     {
-        _mockService = new Mock<IDependencyService>();
-        _controller = new DependenciesController(_mockService.Object);
+        var dto = new SyncDependenciesDto();
+        _service.Setup(x => x.SyncDependenciesAsync(dto)).ReturnsAsync(DependencySyncStatus.Success);
+
+        var result = await Controller().SyncDependencies(dto);
+
+        result.Should().BeOfType<NoContentResult>();
     }
 
     [Fact]
-    public async Task SyncDependencies_ShouldReturnOk_WhenSuccessful()
+    public async Task Duplicate_sync_returns_conflict()
     {
-        // Arrange
-        var dto = new SyncDependenciesDto { Dependencies = new List<DependencyItemDto>() };
-        _mockService.Setup(s => s.SyncDependenciesAsync(dto)).Returns(Task.CompletedTask);
+        var dto = new SyncDependenciesDto();
+        _service.Setup(x => x.SyncDependenciesAsync(dto)).ReturnsAsync(DependencySyncStatus.Duplicate);
 
-        // Act
-        var result = await _controller.SyncDependencies(dto);
+        var result = await Controller().SyncDependencies(dto);
 
-        // Assert
-        result.Should().BeOfType<OkObjectResult>();
+        result.Should().BeOfType<ConflictObjectResult>();
     }
 
     [Fact]
-    public async Task SyncDependencies_ShouldReturnBadRequest_WhenDtoIsNull()
+    public async Task Unexpected_exception_returns_safe_500()
     {
-        // Act
-        var result = await _controller.SyncDependencies(null!);
+        const string secret = "connection string";
+        var dto = new SyncDependenciesDto();
+        _service.Setup(x => x.SyncDependenciesAsync(dto)).ThrowsAsync(new Exception(secret));
 
-        // Assert
-        result.Should().BeOfType<BadRequestObjectResult>();
+        var result = await Controller().SyncDependencies(dto);
+
+        var failure = result.Should().BeOfType<ObjectResult>().Subject;
+        failure.StatusCode.Should().Be(500);
+        failure.Value!.ToString().Should().NotContain(secret);
     }
 
-    [Fact]
-    public async Task SyncDependencies_ShouldReturnStatusCode500_OnException()
-    {
-        // Arrange
-        var dto = new SyncDependenciesDto { Dependencies = new List<DependencyItemDto>() };
-        _mockService.Setup(s => s.SyncDependenciesAsync(dto)).ThrowsAsync(new Exception("Fail"));
-
-        // Act
-        var result = await _controller.SyncDependencies(dto);
-
-        // Assert
-        var statusResult = result.As<ObjectResult>();
-        statusResult.StatusCode.Should().Be(500);
-    }
+    private DependenciesController Controller() => new(_service.Object);
 }

@@ -1,6 +1,6 @@
-using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -39,13 +39,13 @@ public class InfrastructureControllerTests
     {
         // Arrange
         var dto = new MigrateAppDto { PortMappingId = Guid.NewGuid(), TargetServerId = Guid.NewGuid() };
-        _mockService.Setup(s => s.MigrateAppAsync(dto)).ReturnsAsync(true);
+        _mockService.Setup(s => s.MigrateAppAsync(dto)).ReturnsAsync(DeploymentOperationStatus.Success);
 
         // Act
         var result = await _controller.MigrateApp(dto);
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
+        result.Should().BeOfType<NoContentResult>();
     }
 
     [Fact]
@@ -53,13 +53,27 @@ public class InfrastructureControllerTests
     {
         // Arrange
         var dto = new MigrateAppDto { PortMappingId = Guid.NewGuid(), TargetServerId = Guid.NewGuid() };
-        _mockService.Setup(s => s.MigrateAppAsync(dto)).ReturnsAsync(false);
+        _mockService.Setup(s => s.MigrateAppAsync(dto)).ReturnsAsync(DeploymentOperationStatus.NotFound);
 
         // Act
         var result = await _controller.MigrateApp(dto);
 
         // Assert
         result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
+    public async Task MigrateApp_ShouldReturnConflict_WhenPortCollides()
+    {
+        var dto = new MigrateAppDto
+        {
+            PortMappingId = Guid.NewGuid(), TargetServerId = Guid.NewGuid(), NewPortNumber = 443
+        };
+        _mockService.Setup(s => s.MigrateAppAsync(dto)).ReturnsAsync(DeploymentOperationStatus.PortCollision);
+
+        var result = await _controller.MigrateApp(dto);
+
+        result.Should().BeOfType<ConflictObjectResult>();
     }
 
     [Fact]
@@ -73,7 +87,7 @@ public class InfrastructureControllerTests
         var result = await _controller.PurgeApp(appId);
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
+        result.Should().BeOfType<NoContentResult>();
     }
 
     [Fact]

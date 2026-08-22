@@ -1,103 +1,127 @@
-using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
-using System;
-using System.Collections.Generic;
 using Xunit;
 
 namespace AuditNode.Tests.Controllers;
 
 public class ServersControllerTests
 {
-    private readonly Mock<IServerService> _mockService;
-    private readonly ServersController _controller;
+    private readonly Mock<IServerService> _service = new();
 
-    public ServersControllerTests()
+    [Fact]
+    public async Task Get_by_id_returns_bad_request_for_empty_id()
     {
-        _mockService = new Mock<IServerService>();
-        _controller = new ServersController(_mockService.Object);
+        var result = await Controller().GetServer(Guid.Empty);
+
+        ResultOf(result).Should().BeOfType<BadRequestObjectResult>();
+        _service.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task ExportServers_ShouldReturnOk_WithSelectedServers()
+    public async Task Get_by_id_returns_not_found_when_server_is_not_visible_to_tenant()
     {
-        // Arrange
-        var ids = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
-        var mockServers = new List<ServerResponseDto>
-        {
-            new ServerResponseDto { Id = ids[0], Hostname = "S1" },
-            new ServerResponseDto { Id = ids[1], Hostname = "S2" }
-        };
+        var id = Guid.NewGuid();
+        _service.Setup(x => x.GetServerAsync(id)).ReturnsAsync((ServerResponseDto?)null);
 
-        _mockService.Setup(s => s.ExportServersAsync(ids))
-            .ReturnsAsync(mockServers);
+        var result = await Controller().GetServer(id);
 
-        // Act
-        var result = await _controller.ExportServers(ids);
-
-        // Assert
-        var okResult = result.Result.As<OkObjectResult>();
-        okResult.Should().NotBeNull();
-        okResult.Value.Should().BeEquivalentTo(mockServers);
+        ResultOf(result).Should().BeOfType<NotFoundObjectResult>();
     }
 
     [Fact]
-    public async Task ExportServers_ShouldReturnBadRequest_WhenNoIdsProvided()
+    public async Task Create_returns_created_at_get_route()
     {
-        // Act
-        var result = await _controller.ExportServers(null!);
+        var dto = ValidCreate();
+        var created = new ServerResponseDto { Id = Guid.NewGuid(), IpAddress = dto.IpAddress };
+        _service.Setup(x => x.CreateServerAsync(dto))
+            .ReturnsAsync(new ServerOperationResult(ServerOperationStatus.Success, created));
 
-        // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        var result = await Controller().CreateServer(dto);
+
+        var createdResult = ResultOf(result).Should().BeOfType<CreatedAtActionResult>().Subject;
+        createdResult.ActionName.Should().Be(nameof(ServersController.GetServer));
+        createdResult.RouteValues!["id"].Should().Be(created.Id);
     }
 
     [Fact]
-    public async Task UpdateServer_ShouldReturnNoContent_WhenUpdateIsSuccessful()
+    public async Task Create_returns_conflict_for_duplicate_ip()
     {
-        // Arrange
-        var serverId = Guid.NewGuid();
-        var updateDto = new UpdateServerDto { Hostname = "NewHost" };
-        _mockService.Setup(s => s.UpdateServerAsync(serverId, updateDto)).ReturnsAsync(true);
+        var dto = ValidCreate();
+        _service.Setup(x => x.CreateServerAsync(dto))
+            .ReturnsAsync(new ServerOperationResult(ServerOperationStatus.DuplicateIp));
 
-        // Act
-        var result = await _controller.UpdateServer(serverId, updateDto);
+        var result = await Controller().CreateServer(dto);
 
-        // Assert
-        result.Should().BeOfType<NoContentResult>();
+        ResultOf(result).Should().BeOfType<ConflictObjectResult>();
+    }
+
+
+
+    [Fact]
+    public async Task Update_returns_bad_request_for_unknown_datacenter_in_workspace()
+    {
+        var id = Guid.NewGuid();
+        var dto = ValidUpdate();
+        _service.Setup(x => x.UpdateServerAsync(id, dto))
+            .ReturnsAsync(new ServerOperationResult(ServerOperationStatus.DatacenterNotFound));
+
+        var result = await Controller().UpdateServer(id, dto);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
-    public async Task UpdateServer_ShouldReturnNotFound_WhenServerDoesNotExist()
+    public async Task Delete_returns_not_found_when_server_is_not_visible_to_tenant()
     {
-        // Arrange
-        var serverId = Guid.NewGuid();
-        var updateDto = new UpdateServerDto { Hostname = "NewHost" };
-        _mockService.Setup(s => s.UpdateServerAsync(serverId, updateDto)).ReturnsAsync(false);
+        var id = Guid.NewGuid();
+        _service.Setup(x => x.PurgeServerAsync(id)).ReturnsAsync(ServerOperationStatus.NotFound);
 
-        // Act
-        var result = await _controller.UpdateServer(serverId, updateDto);
+        var result = await Controller().DeleteServer(id);
 
-        // Assert
-        var notFoundResult = result.As<NotFoundObjectResult>();
-        notFoundResult.Should().NotBeNull();
-        notFoundResult.Value.Should().BeEquivalentTo(new { error = $"Server with ID {serverId} not found." });
+        result.Should().BeOfType<NotFoundObjectResult>();
     }
 
     [Fact]
-    public async Task UpdateServer_ShouldReturnBadRequest_WhenDtoIsNull()
+    public async Task Unexpected_exception_returns_safe_500_without_exception_message()
     {
-        // Arrange
-        var serverId = Guid.NewGuid();
+        const string secretMessage = "database host and password";
+        _service.Setup(x => x.GetServerAsync(It.IsAny<Guid>()))
+            .ThrowsAsync(new InvalidOperationException(secretMessage));
 
-        // Act
-        var result = await _controller.UpdateServer(serverId, null!);
+        var result = await Controller().GetServer(Guid.NewGuid());
 
-        // Assert
-        var badRequestResult = result.As<BadRequestObjectResult>();
-        badRequestResult.Should().NotBeNull();
-        badRequestResult.Value.Should().BeEquivalentTo(new { error = "Update data is missing." });
+        var objectResult = ResultOf(result).Should().BeOfType<ObjectResult>().Subject;
+        objectResult.StatusCode.Should().Be(500);
+        objectResult.Value.Should().BeOfType<ProblemDetails>();
+        objectResult.Value!.ToString().Should().NotContain(secretMessage);
     }
+
+    private ServersController Controller() => new(_service.Object);
+
+    private static IActionResult ResultOf<T>(ActionResult<T> result) => result.Result!;
+
+    private static CreateServerDto ValidCreate() => new()
+    {
+        DatacenterId = Guid.NewGuid(),
+        IpAddress = "10.20.30.40",
+        Hostname = "srv-01",
+        OsType = "Linux",
+        Environment = "Production",
+        Status = "Active"
+    };
+
+    private static UpdateServerDto ValidUpdate() => new()
+    {
+        DatacenterId = Guid.NewGuid(),
+        IpAddress = "10.20.30.41",
+        Hostname = "srv-01",
+        OsType = "Linux",
+        Environment = "Production",
+        Status = "Active"
+    };
 }
+

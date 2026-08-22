@@ -18,67 +18,78 @@ public class DependencyService : IDependencyService
         _logger = logger;
     }
 
-    public async Task SyncDependenciesAsync(SyncDependenciesDto dto)
+    public async Task<DependencySyncStatus> SyncDependenciesAsync(SyncDependenciesDto dto)
     {
-        var payload = dto?.Dependencies ?? new List<DependencyItemDto>();
-        _logger.LogInformation("Received {Count} dependencies for sync.", payload.Count);
+        var payload = dto?.Dependencies;
+        if (payload is null || !_dbContext.CurrentWorkspaceId.HasValue || _dbContext.CurrentWorkspaceId == Guid.Empty)
+            return DependencySyncStatus.InvalidRequest;
+        if (payload.Any(item =>
+                item.SourceAppId == Guid.Empty || item.DestAppId == Guid.Empty || item.DestinationPortMappingId == Guid.Empty))
+            return DependencySyncStatus.InvalidRequest;
+        if (payload.Any(item => item.SourceAppId == item.DestAppId))
+            return DependencySyncStatus.SelfLoop;
 
-        // 1. Fetch all existing records from app_dependencies
-        var existingDb = await _dbContext.AppDependencies.ToListAsync();
+        var keys = payload.Select(Key).ToArray();
+        if (keys.Distinct().Count() != keys.Length)
+            return DependencySyncStatus.Duplicate;
 
-        // 2. Calculate connectionsToDelete: DB items not in Payload (Match by SourceAppId, DestAppId & DestPortId)
-        var toDelete = existingDb
-            .Where(db => !payload.Any(p => 
-                p.SourceAppId == db.SourceAppId && 
-                p.DestAppId == db.DestAppId && 
-                p.DestPortId == db.DestPortId))
+        var appIds = payload.SelectMany(item => new[] { item.SourceAppId, item.DestAppId }).Distinct().ToArray();
+        var visibleAppIds = await _dbContext.Applications
+            .Where(application => appIds.Contains(application.Id))
+            .Select(application => application.Id)
+            .ToListAsync();
+        if (visibleAppIds.Count != appIds.Length)
+            return DependencySyncStatus.NotFound;
+
+        var destinationPortIds = payload.Select(item => item.DestinationPortMappingId).Distinct().ToArray();
+        var destinationPorts = await _dbContext.PortMappings
+            .Where(mapping => destinationPortIds.Contains(mapping.Id))
+            .Select(mapping => new { mapping.Id, mapping.AppId })
+            .ToDictionaryAsync(mapping => mapping.Id, mapping => mapping.AppId);
+        if (destinationPorts.Count != destinationPortIds.Length)
+            return DependencySyncStatus.NotFound;
+        if (payload.Any(item => destinationPorts[item.DestinationPortMappingId] != item.DestAppId))
+            return DependencySyncStatus.DestinationMismatch;
+
+        var existing = await _dbContext.AppDependencies.ToListAsync();
+        var desiredKeys = keys.ToHashSet();
+        var canonicalExisting = existing.GroupBy(Key).ToDictionary(group => group.Key, group => group.First());
+        var toDelete = existing
+            .Where(dependency => !desiredKeys.Contains(Key(dependency)) ||
+                                 canonicalExisting[Key(dependency)].Id != dependency.Id)
             .ToList();
+        var toInsert = payload
+            .Where(item => !canonicalExisting.ContainsKey(Key(item)))
+            .Select(item => new AppDependency
+            {
+                Id = Guid.NewGuid(),
+                SourceAppId = item.SourceAppId,
+                DestAppId = item.DestAppId,
+                DestPortId = item.DestinationPortMappingId,
+                ConnectionType = "Automatic",
+                CreatedAt = DateTime.UtcNow
+            }).ToList();
 
-        // 3. Calculate connectionsToInsert: Payload items not in DB
-        var toInsertDto = payload
-            .Where(p => !existingDb.Any(db => 
-                db.SourceAppId == p.SourceAppId && 
-                db.DestAppId == p.DestAppId && 
-                db.DestPortId == p.DestPortId))
-            .ToList();
-
-        var toInsertEntities = toInsertDto.Select(incoming => new AppDependency
-        {
-            Id = Guid.NewGuid(),
-            SourceAppId = incoming.SourceAppId,
-            DestAppId = incoming.DestAppId,
-            DestPortId = incoming.DestPortId,
-            ConnectionType = "Automatic",
-            CreatedAt = DateTime.UtcNow
-        }).ToList();
-
-        _logger.LogInformation("Delta calculated: {InsertCount} to insert, {DeleteCount} to delete.", 
-            toInsertEntities.Count, toDelete.Count);
-
-        // 4. Wrap the operations in a Database Transaction
-        using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
         try
         {
-            if (toDelete.Any())
-            {
-                _dbContext.AppDependencies.RemoveRange(toDelete);
-            }
-
-            if (toInsertEntities.Any())
-            {
-                await _dbContext.AppDependencies.AddRangeAsync(toInsertEntities);
-            }
-
+            _dbContext.AppDependencies.RemoveRange(toDelete);
+            await _dbContext.AppDependencies.AddRangeAsync(toInsert);
             await _dbContext.SaveChangesAsync();
             await transaction.CommitAsync();
-            
-            _logger.LogInformation("Sync transaction committed successfully.");
+            return DependencySyncStatus.Success;
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            _logger.LogError(ex, "Error occurred during dependency sync transaction.");
+            _logger.LogError(exception, "Dependency synchronization failed.");
             await transaction.RollbackAsync();
             throw;
         }
     }
+
+    private static string Key(DependencyItemDto item) =>
+        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestinationPortMappingId:N}";
+
+    private static string Key(AppDependency item) =>
+        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestPortId:N}";
 }

@@ -1,6 +1,7 @@
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Errors;
 
 namespace AuditNode.API.Controllers;
 
@@ -24,9 +25,9 @@ public class AnalyticsController : ControllerBase
             var topologyData = await _analyticsRepository.GetTopologyAsync(environment, datacenterId);
             return Ok(topologyData);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(500, ApiProblem.Create(ControllerContext.HttpContext, 500, "Topology analytics could not be retrieved."));
         }
     }
 
@@ -38,9 +39,9 @@ public class AnalyticsController : ControllerBase
             var dependencyData = await _analyticsRepository.GetDependenciesAsync(environment, datacenterId);
             return Ok(dependencyData);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(500, ApiProblem.Create(ControllerContext.HttpContext, 500, "Dependency analytics could not be retrieved."));
         }
     }
 }

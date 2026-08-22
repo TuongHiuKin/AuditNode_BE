@@ -1,27 +1,24 @@
+using AuditNode.API.Middleware;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
 using AuditNode.Infrastructure.Services;
+
 using AuditNode.Application.Validators;
 using Microsoft.EntityFrameworkCore;
 using FluentValidation.AspNetCore;
 using FluentValidation;
 using Scalar.AspNetCore;
+using AuditNode.API.Security;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.AspNetCore.Mvc.ApplicationModels;
-using AuditNode.API.Routing;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
-var keycloakAuthority = builder.Configuration["Keycloak:Authority"]
-    ?? throw new InvalidOperationException("Keycloak:Authority must be configured.");
-var allowedCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
-    .Distinct(StringComparer.OrdinalIgnoreCase)
-    .ToArray()
-    ?? [];
 
 // Add services to the container
+builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -34,26 +31,22 @@ builder.Services.AddOpenApi("v1", options =>
 });
 
 // Configure JWT Bearer Authentication with Keycloak
-Console.WriteLine($"[DEBUG SECURITY] Keycloak Authority Loaded: {keycloakAuthority}");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.Authority = keycloakAuthority;
-        options.RequireHttpsMetadata = builder.Configuration.GetValue<bool>("Keycloak:RequireHttpsMetadata");
+        options.Authority = builder.Configuration["Keycloak:Authority"];
+        options.RequireHttpsMetadata = false; // Set to true in production
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = keycloakAuthority,
-            ValidateAudience = builder.Configuration.GetValue<bool>("Keycloak:ValidateAudience"),
-            ValidAudience = builder.Configuration["Keycloak:Audience"],
+            ValidateAudience = false, // Set to false for public client SPA tokens
             ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            RoleClaimType = "realm_access.roles"
+            ValidateIssuerSigningKey = true
         };
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context => {
-                Console.WriteLine($"[Auth Failed] {context.Exception.Message}");
+                Console.WriteLine($"[Auth Failed] {context.Exception.GetType().Name}");
                 return Task.CompletedTask;
             },
             OnTokenValidated = context => {
@@ -68,6 +61,38 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddProblemDetails(options =>
+{
+    options.CustomizeProblemDetails = context =>
+        context.ProblemDetails.Extensions["correlationId"] = context.HttpContext.TraceIdentifier;
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
+
+builder.Services.AddOptions<KeycloakRuntimeOptions>()
+    .Bind(builder.Configuration.GetSection("Keycloak"))
+    .Validate(options => options.IsValid(), "Required Keycloak configuration is missing.")
+    .ValidateOnStart();
+
+builder.Services.AddHttpClient(KeycloakAuthService.HttpClientName);
+builder.Services.AddTransient<IKeycloakHttpClientFactory, KeycloakHttpClientFactoryAdapter>();
+builder.Services.AddScoped<IIdentityAuthService, KeycloakAuthService>();
+
+// Register Keycloak Role Claims Transformation for RBAC
+builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
 
 // Register DbContext with PostgreSQL provider
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -80,14 +105,12 @@ builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
+builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
 
 // Register Services
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUserService, AuditNode.API.Services.CurrentUserService>();
-builder.Services.AddHttpClient();
-builder.Services.AddScoped<IAuthService, AuditNode.Infrastructure.Services.KeycloakAuthService>();
 builder.Services.AddScoped<IApplicationService, AuditNode.Infrastructure.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Infrastructure.Services.ServerService>();
+builder.Services.AddScoped<IWorkspaceService, AuditNode.Infrastructure.Services.WorkspaceService>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
@@ -98,24 +121,21 @@ builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Serv
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateServerDtoValidator>();
 
-// Keep browser origins in environment-specific configuration, not source code.
+// Add CORS policy
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policyBuilder =>
     {
-        if (allowedCorsOrigins.Length > 0)
-        {
-            policyBuilder
-                .WithOrigins(allowedCorsOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        }
+        policyBuilder
+            .WithOrigins("http://localhost:5173", "http://localhost:3000")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 
 // Add controllers
-builder.Services.AddControllers(options =>
-    options.Conventions.Add(new RouteTokenTransformerConvention(new LowercaseRouteTokenTransformer())))
+builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
@@ -135,34 +155,43 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-if (builder.Configuration.GetValue("Https:RedirectEnabled", true))
+app.Use(async (context, next) =>
 {
-    app.UseHttpsRedirection();
-}
+    context.Response.Headers["X-Correlation-ID"] = context.TraceIdentifier;
+    await next();
+});
+app.UseExceptionHandler();
+
+app.UseHttpsRedirection();
+
+app.UseRouting();
 
 // Enable CORS early in the pipeline
 app.UseCors("AllowReact");
 
-// Inject Raw Network Debugging Middleware
-app.Use(async (context, next) =>
-{
-    if (context.Request.Path.Value != null && 
-       (context.Request.Path.Value.Contains("bulk-import", StringComparison.OrdinalIgnoreCase) || 
-        context.Request.Path.Value.Contains("import", StringComparison.OrdinalIgnoreCase)))
-    {
-        Console.WriteLine($"[RAW NETWORK DEBUG] Path: {context.Request.Path}");
-        Console.WriteLine($"[RAW NETWORK DEBUG] Content-Type: {context.Request.ContentType}");
-        Console.WriteLine($"[RAW NETWORK DEBUG] Content-Length: {context.Request.ContentLength}");
-    }
-    await next();
-});
+app.UseRateLimiter();
 
 // Authentication MUST run before Authorization
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Workspace isolation middleware
+app.UseMiddleware<WorkspaceMiddleware>();
 
 // Map controllers
 app.MapControllers();
 
 app.Run();
 
+public sealed class KeycloakHttpClientFactoryAdapter : IKeycloakHttpClientFactory
+{
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public KeycloakHttpClientFactoryAdapter(IHttpClientFactory httpClientFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+    }
+
+    public HttpClient CreateClient() =>
+        _httpClientFactory.CreateClient(KeycloakAuthService.HttpClientName);
+}

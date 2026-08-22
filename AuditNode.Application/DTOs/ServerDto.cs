@@ -11,11 +11,12 @@ public class ServerResponseDto
     public string Datacenter { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public List<ApplicationOnServerDto> Applications { get; set; } = new();
-    public IEnumerable<LabelDto> Labels { get; set; } = new List<LabelDto>();
+    public List<LabelDto> Labels { get; set; } = new();
 }
 
 public class ApplicationOnServerDto
 {
+    public Guid PortMappingId { get; set; }
     public Guid Id { get; set; }
     public string AppCode { get; set; } = string.Empty;
     public string AppName { get; set; } = string.Empty;

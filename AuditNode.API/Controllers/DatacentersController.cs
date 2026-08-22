@@ -3,10 +3,6 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System;
-using System.Collections.Generic;
-using System.Security.Claims;
-using System.Threading.Tasks;
 
 namespace AuditNode.API.Controllers;
 
@@ -29,25 +25,11 @@ public class DatacentersController : ControllerBase
         return Ok(result);
     }
 
+    [Authorize(Roles = "Admin")]
     [HttpPost]
     public async Task<ActionResult<DatacenterDto>> CreateDatacenter(CreateDatacenterDto dto)
     {
-        try
-        {
-            var result = await _datacenterService.CreateDatacenterAsync(dto);
-            return Ok(result);
-        }
-        catch (InvalidOperationException ex)
-        {
-            return BadRequest(new { error = ex.Message });
-        }
-    }
-
-    [HttpDelete("{id}")]
-    [Authorize]
-    public async Task<IActionResult> DeleteDatacenter(Guid id)
-    {
-        // Implementation for deleting datacenter...
-        return Ok(new { message = "Datacenter deleted successfully" });
+        var result = await _datacenterService.CreateDatacenterAsync(dto);
+        return Ok(result);
     }
 }

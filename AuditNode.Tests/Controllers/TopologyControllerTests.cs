@@ -1,6 +1,6 @@
-using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -46,11 +46,11 @@ public class TopologyControllerTests
             }
         };
 
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
             .ReturnsAsync(mockTree);
 
         // Act
-        var result = await _controller.GetTree(null, 0, null);
+        var result = await _controller.GetTree(null, 0, null, null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
@@ -63,14 +63,14 @@ public class TopologyControllerTests
     {
         // Arrange
         int take = 50;
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, take))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, take, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
-        await _controller.GetTree(null, 0, take);
+        await _controller.GetTree(null, 0, take, null);
 
         // Assert
-        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, take), Times.Once);
+        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, take, null), Times.Once);
     }
 
     [Fact]
@@ -78,25 +78,37 @@ public class TopologyControllerTests
     {
         // Arrange
         int largeTake = 500;
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
-        await _controller.GetTree(null, 0, largeTake);
+        await _controller.GetTree(null, 0, largeTake, null);
 
         // Assert
-        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100), Times.Once);
+        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100, null), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(-1, 10)]
+    [InlineData(0, 0)]
+    [InlineData(0, -1)]
+    public async Task GetTree_rejects_invalid_pagination(int skip, int take)
+    {
+        var result = await _controller.GetTree(null, skip, take, null);
+
+        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        _mockRepo.VerifyNoOtherCalls();
     }
 
     [Fact]
     public async Task GetTree_WhenEmpty_ShouldReturnEmptyList()
     {
         // Arrange
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100))
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
-        var result = await _controller.GetTree(null, 0, null);
+        var result = await _controller.GetTree(null, 0, null, null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
@@ -109,7 +121,7 @@ public class TopologyControllerTests
     {
         // Arrange
         var emptyMap = new DependencyMapDto();
-        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(It.IsAny<Guid[]>(), It.IsAny<string>(), It.IsAny<Guid?>()))
+        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(It.IsAny<string>(), It.IsAny<Guid?>(), null))
             .ReturnsAsync(emptyMap);
 
         // Act
@@ -134,13 +146,13 @@ public class TopologyControllerTests
         };
 
         _mockRepo.Setup(repo => repo.SaveTopologyStateAsync(state))
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync(TopologyStateStatus.Success);
 
         // Act
         var result = await _controller.SaveState(state);
 
         // Assert
-        result.Should().BeOfType<OkObjectResult>();
+        result.Should().BeOfType<NoContentResult>();
         _mockRepo.Verify(repo => repo.SaveTopologyStateAsync(state), Times.Once);
     }
 
@@ -155,25 +167,40 @@ public class TopologyControllerTests
     }
 
     [Fact]
-    public async Task GetExternalDependencies_ShouldReturnOk_WithDependencies()
+    public async Task GetTree_WithLabelsParameter_ShouldPassLabelsToRepository()
     {
         // Arrange
-        var id = Guid.NewGuid();
-        var labelIds = new[] { Guid.NewGuid() };
-        var deps = new List<ServerNodeDto>
-        {
-            new ServerNodeDto { Id = Guid.NewGuid(), Hostname = "ExtSrv" }
-        };
+        var labels = new List<string> { "env:prod", "tier:db" };
+        var mockTree = new List<TopologyTreeDto>();
 
-        _mockRepo.Setup(repo => repo.GetExternalDependenciesAsync(id, labelIds))
-            .ReturnsAsync(deps);
+        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, labels))
+            .ReturnsAsync(mockTree);
 
         // Act
-        var result = await _controller.GetExternalDependencies(id, labelIds);
+        var result = await _controller.GetTree(null, 0, null, labels);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
         okResult.Should().NotBeNull();
-        okResult.Value.Should().BeEquivalentTo(deps);
+        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100, labels), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetDependencyMap_WithLabelsParameter_ShouldPassLabelsToRepository()
+    {
+        // Arrange
+        var labels = new List<string> { "env:prod" };
+        var mockMap = new DependencyMapDto();
+
+        _mockRepo.Setup(repo => repo.GetDependencyMapAsync(null, null, labels))
+            .ReturnsAsync(mockMap);
+
+        // Act
+        var result = await _controller.GetDependencyMap(null, null, labels);
+
+        // Assert
+        var okResult = result.Result.As<OkObjectResult>();
+        okResult.Should().NotBeNull();
+        _mockRepo.Verify(repo => repo.GetDependencyMapAsync(null, null, labels), Times.Once);
     }
 }

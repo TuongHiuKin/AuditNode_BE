@@ -3,7 +3,6 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
-using System.Linq;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Infrastructure.Repositories;
@@ -17,172 +16,147 @@ public class ApplicationRepository : IApplicationRepository
         _dbContext = dbContext;
     }
 
-    public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync()
+    public async Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync(
+        string? labelKey = null,
+        string? labelValue = null)
     {
-        var query = _dbContext.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server);
-        
+        var query = ReadQuery();
+        if (!string.IsNullOrWhiteSpace(labelKey))
+        {
+            query = query.Where(application => application.ApplicationLabels.Any(link =>
+                link.Label != null &&
+                link.Label.Key == labelKey &&
+                (string.IsNullOrWhiteSpace(labelValue) || link.Label.Value == labelValue)));
+        }
+
         return await MapToResponseDto(query).ToListAsync();
     }
 
     public async Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids)
     {
-        var query = _dbContext.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server)
-            .Where(a => ids.Contains(a.Id));
-
-        return await MapToResponseDto(query).ToListAsync();
+        var requestedIds = ids.Where(id => id != Guid.Empty).Distinct().ToArray();
+        return await MapToResponseDto(ReadQuery().Where(application => requestedIds.Contains(application.Id)))
+            .ToListAsync();
     }
 
-    private IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query)
+    public Task<AppEntity?> GetByIdAsync(Guid id) => ReadQuery().FirstOrDefaultAsync(application => application.Id == id);
+
+    public Task<bool> AppCodeExistsAsync(string appCode, Guid? excludeApplicationId = null) =>
+        _dbContext.Applications.AnyAsync(application =>
+            application.AppCode == appCode &&
+            (!excludeApplicationId.HasValue || application.Id != excludeApplicationId.Value));
+
+    public Task<bool> ServerExistsAsync(Guid serverId) =>
+        _dbContext.Servers.AnyAsync(server => server.Id == serverId);
+
+    public Task<bool> PortCollisionExistsAsync(
+        Guid serverId,
+        int portNumber,
+        Guid? excludePortMappingId = null) =>
+        _dbContext.PortMappings.AnyAsync(mapping =>
+            mapping.ServerId == serverId &&
+            mapping.PortNumber == portNumber &&
+            (!excludePortMappingId.HasValue || mapping.Id != excludePortMappingId.Value));
+
+    public Task<PortMapping?> GetPortMappingAsync(Guid portMappingId) =>
+        _dbContext.PortMappings.FirstOrDefaultAsync(mapping => mapping.Id == portMappingId);
+
+    public async Task<AppEntity> CreateAsync(
+        AppEntity application,
+        IReadOnlyCollection<LabelDto> labels,
+        PortMapping? deployment)
     {
-        return query.Select(a => new ApplicationResponseDto
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        _dbContext.Applications.Add(application);
+        if (deployment is not null)
+            _dbContext.PortMappings.Add(deployment);
+
+        await ReplaceLabelsAsync(application, labels);
+        await _dbContext.SaveChangesAsync();
+        await transaction.CommitAsync();
+        return application;
+    }
+
+    public async Task UpdateAsync(
+        AppEntity application,
+        IReadOnlyCollection<LabelDto>? labels,
+        PortMapping? deployment)
+    {
+        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        if (labels is not null)
+            await ReplaceLabelsAsync(application, labels);
+        if (deployment is not null)
+            _dbContext.PortMappings.Update(deployment);
+
+        await _dbContext.SaveChangesAsync();
+        await transaction.CommitAsync();
+    }
+
+    private IQueryable<AppEntity> ReadQuery() => _dbContext.Applications
+        .Include(application => application.PortMappings)
+            .ThenInclude(mapping => mapping.Server)
+        .Include(application => application.ApplicationLabels)
+            .ThenInclude(link => link.Label)
+        .AsSplitQuery();
+
+    private async Task ReplaceLabelsAsync(AppEntity application, IReadOnlyCollection<LabelDto> labels)
+    {
+        var currentLinks = await _dbContext.ApplicationLabels
+            .Where(link => link.ApplicationId == application.Id)
+            .ToListAsync();
+        _dbContext.ApplicationLabels.RemoveRange(currentLinks);
+        if (currentLinks.Count > 0)
+            await _dbContext.SaveChangesAsync();
+
+        var normalized = labels
+            .Select(label => new LabelDto { Key = label.Key.Trim(), Value = label.Value.Trim() })
+            .DistinctBy(label => new { label.Key, label.Value })
+            .ToArray();
+
+        foreach (var value in normalized)
         {
-            Id = a.Id,
-            AppCode = a.AppCode,
-            AppName = a.AppName,
-            OwnerTeam = a.OwnerTeam,
-            Risk = a.Risk,
-            Icon = a.Icon,
-            TechStack = a.TechStack,
-            Servers = a.PortMappings.Select(pm => new ServerOnApplicationDto
+            var label = await _dbContext.Labels.FirstOrDefaultAsync(existing =>
+                existing.Key == value.Key && existing.Value == value.Value);
+            if (label is null)
             {
-                Id = pm.Server!.Id,
-                Hostname = pm.Server!.Hostname,
-                IpAddress = pm.Server!.IpAddress,
-                PortNumber = pm.PortNumber,
-                Protocol = pm.Protocol
+                label = new Label { Id = Guid.NewGuid(), WorkspaceId = application.WorkspaceId, Key = value.Key, Value = value.Value };
+                _dbContext.Labels.Add(label);
+            }
+
+            _dbContext.ApplicationLabels.Add(new ApplicationLabel
+            {
+                WorkspaceId = application.WorkspaceId,
+                ApplicationId = application.Id,
+                LabelId = label.Id,
+                Application = application,
+                Label = label
+            });
+        }
+    }
+
+    private static IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query) =>
+        query.Select(application => new ApplicationResponseDto
+        {
+            Id = application.Id,
+            AppCode = application.AppCode,
+            AppName = application.AppName,
+            OwnerTeam = application.OwnerTeam,
+            Risk = application.Risk,
+            Icon = application.Icon,
+            TechStack = application.TechStack,
+            Servers = application.PortMappings.Select(mapping => new ServerOnApplicationDto
+            {
+                PortMappingId = mapping.Id,
+                Id = mapping.ServerId,
+                Hostname = mapping.Server!.Hostname,
+                IpAddress = mapping.Server.IpAddress,
+                PortNumber = mapping.PortNumber,
+                Protocol = mapping.Protocol
+            }).ToList(),
+            Labels = application.ApplicationLabels.Select(link => new LabelDto
+            {
+                Key = link.Label!.Key,
+                Value = link.Label.Value
             }).ToList()
         });
-    }
-
-    public async Task<AppEntity?> GetByIdAsync(Guid id)
-    {
-        return await _dbContext.Applications
-            .Include(a => a.PortMappings)
-                .ThenInclude(pm => pm.Server)
-            .FirstOrDefaultAsync(a => a.Id == id);
-    }
-
-    public async Task UpdateAsync(AppEntity application)
-    {
-        _dbContext.Entry(application).State = EntityState.Modified;
-        await _dbContext.SaveChangesAsync();
-    }
-
-    public async Task<bool> UpdateApplicationWithNetworkAsync(Guid id, UpdateApplicationDto updateDto)
-    {
-        using var transaction = await _dbContext.Database.BeginTransactionAsync();
-        try
-        {
-            // Step 1: Fetch and update Application metadata
-            var app = await _dbContext.Applications.FirstOrDefaultAsync(a => a.Id == id);
-            if (app == null) return false;
-
-            app.AppName = updateDto.AppName;
-            app.OwnerTeam = updateDto.OwnerTeam;
-            app.Risk = updateDto.Risk;
-            app.Icon = updateDto.Icon;
-            app.TechStack = updateDto.TechStack;
-
-            // Step 2: Flexible PortMapping Update Logic
-            var portMapping = await _dbContext.PortMappings.FirstOrDefaultAsync(p => p.AppId == id);
-            
-            if (updateDto.TargetServerId.HasValue || updateDto.PortNumber.HasValue)
-            {
-                if (portMapping == null)
-                {
-                    // Create new mapping if none exists
-                    portMapping = new PortMapping
-                    {
-                        Id = Guid.NewGuid(),
-                        AppId = id,
-                        ServerId = updateDto.TargetServerId ?? Guid.Empty,
-                        PortNumber = updateDto.PortNumber ?? 0,
-                        Protocol = "TCP"
-                    };
-                    _dbContext.PortMappings.Add(portMapping);
-                }
-                else
-                {
-                    bool isNetworkModified = false;
-
-                    // Independent Update: Server ID
-                    if (updateDto.TargetServerId.HasValue && updateDto.TargetServerId.Value != Guid.Empty && portMapping.ServerId != updateDto.TargetServerId.Value)
-                    {
-                        portMapping.ServerId = updateDto.TargetServerId.Value;
-                        isNetworkModified = true;
-                    }
-
-                    // Independent Update: Port Number
-                    if (updateDto.PortNumber.HasValue && portMapping.PortNumber != updateDto.PortNumber.Value)
-                    {
-                        portMapping.PortNumber = updateDto.PortNumber.Value;
-                        isNetworkModified = true;
-                    }
-
-                    if (isNetworkModified)
-                    {
-                        _dbContext.PortMappings.Update(portMapping);
-                    }
-                }
-            }
-
-            // Step 3: Guaranteed Save and Commit
-            await _dbContext.SaveChangesAsync();
-            await transaction.CommitAsync();
-
-            return true;
-        }
-        catch (Exception)
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
-    }
-
-    public async Task<AppEntity> RegisterApplicationAsync(AppEntity application)
-    {
-        using var transaction = await _dbContext.Database.BeginTransactionAsync();
-        try
-        {
-            var existingApp = await _dbContext.Applications
-                .FirstOrDefaultAsync(a => a.AppCode == application.AppCode);
-
-            if (existingApp == null)
-            {
-                _dbContext.Applications.Add(application);
-                await _dbContext.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return application;
-            }
-            else
-            {
-                // Update non-key fields if business rules dictate
-                existingApp.AppName = application.AppName;
-                existingApp.OwnerTeam = application.OwnerTeam;
-                existingApp.Risk = application.Risk;
-                existingApp.Icon = application.Icon;
-                existingApp.TechStack = application.TechStack;
-
-                // Transfer port mappings to existing app
-                foreach (var pm in application.PortMappings)
-                {
-                    pm.AppId = existingApp.Id;
-                    _dbContext.PortMappings.Add(pm);
-                }
-
-                await _dbContext.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return existingApp;
-            }
-        }
-        catch (Exception)
-        {
-            await transaction.RollbackAsync();
-            throw;
-        }
-    }
 }

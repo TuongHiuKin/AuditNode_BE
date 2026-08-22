@@ -1,9 +1,9 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace AuditNode.Domain.Entities;
 
 public class Application
 {
+    public Guid WorkspaceId { get; set; }
+    public Workspace? Workspace { get; set; }
     public Guid Id { get; set; }
     public string AppCode { get; set; } = string.Empty;
     public string AppName { get; set; } = string.Empty;
@@ -11,14 +11,10 @@ public class Application
     public string Risk { get; set; } = string.Empty;
     public string Icon { get; set; } = string.Empty;
     public string TechStack { get; set; } = string.Empty;
-    public string OwnerId { get; set; } = string.Empty;
-    [Column("parent_frame_id")]
-    public Guid? ParentFrameId { get; set; }
-    public virtual BoundaryFrame? ParentFrame { get; set; }
-    public virtual ICollection<Label> Labels { get; set; } = new List<Label>();
 
     // Navigation properties
     public ICollection<PortMapping> PortMappings { get; set; } = new List<PortMapping>();
+    public ICollection<ApplicationLabel> ApplicationLabels { get; set; } = new List<ApplicationLabel>();
     public ICollection<AppDependency> SourceDependencies { get; set; } = new List<AppDependency>();
     public ICollection<AppDependency> DestinationDependencies { get; set; } = new List<AppDependency>();
 }

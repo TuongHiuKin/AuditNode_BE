@@ -11,5 +11,4 @@ public class ServerDetailDto
     public string Environment { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public List<ApplicationOnServerDto> Applications { get; set; } = new();
-    public IEnumerable<LabelDto> Labels { get; set; } = new List<LabelDto>();
 }

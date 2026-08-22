@@ -10,11 +10,12 @@ public class ApplicationResponseDto
     public string Icon { get; set; } = string.Empty;
     public string TechStack { get; set; } = string.Empty;
     public List<ServerOnApplicationDto> Servers { get; set; } = new();
-    public IEnumerable<LabelDto> Labels { get; set; } = new List<LabelDto>();
+    public List<LabelDto> Labels { get; set; } = new();
 }
 
 public class ServerOnApplicationDto
 {
+    public Guid PortMappingId { get; set; }
     public Guid Id { get; set; }
     public string Hostname { get; set; } = string.Empty;
     public string IpAddress { get; set; } = string.Empty;

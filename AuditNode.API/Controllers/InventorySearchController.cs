@@ -2,6 +2,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Errors;
 
 namespace AuditNode.API.Controllers;
 
@@ -25,9 +26,12 @@ public class InventorySearchController : ControllerBase
             var results = await _searchService.SearchAsync(keyword ?? string.Empty);
             return Ok(results);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return BadRequest(new { error = ex.Message });
+            return StatusCode(500, ApiProblem.Create(
+                ControllerContext.HttpContext,
+                500,
+                "Inventory search could not be completed."));
         }
     }
 }

@@ -14,7 +14,7 @@ public class InventorySearchService : IInventorySearchService
         _context = context;
     }
 
-    public async Task<IEnumerable<SearchResultDto>> SearchAsync(string? keyword)
+    public async Task<IEnumerable<SearchResultDto>> SearchAsync(string keyword)
     {
         if (string.IsNullOrWhiteSpace(keyword) || keyword.Length < 2)
         {
@@ -44,7 +44,7 @@ public class InventorySearchService : IInventorySearchService
                 Id = a.Id,
                 Type = "APP",
                 Title = a.AppName,
-                Subtitle = $"On Server: {(a.PortMappings.OrderBy(pm => pm.PortNumber).Select(pm => pm.Server == null ? null : pm.Server.Hostname).FirstOrDefault() ?? "Unknown")} (Port: {(a.PortMappings.OrderBy(p => p.PortNumber).Select(p => p.PortNumber.ToString()).FirstOrDefault() ?? "N/A")})",
+                Subtitle = $"On Server: {(a.PortMappings.OrderBy(pm => pm.PortNumber).Select(pm => pm.Server.Hostname).FirstOrDefault() ?? "Unknown")} (Port: {(a.PortMappings.OrderBy(p => p.PortNumber).Select(p => p.PortNumber.ToString()).FirstOrDefault() ?? "N/A")})",
                 MatchReason = a.AppName.ToLower().Contains(lowerKeyword) ? "Matched by App Name" : "Matched by App Code"
             })
             .Take(20);

@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace AuditNode.Infrastructure.Services;
 
@@ -36,22 +37,32 @@ public class InfrastructureService : IInfrastructureService
         return count;
     }
 
-    public async Task<bool> MigrateAppAsync(MigrateAppDto migrateDto)
+    public async Task<DeploymentOperationStatus> MigrateAppAsync(MigrateAppDto migrateDto)
     {
         _logger.LogInformation("Starting migration for PortMapping {PortMappingId}...", migrateDto.PortMappingId);
+
+        if (migrateDto.PortMappingId == Guid.Empty ||
+            migrateDto.TargetServerId == Guid.Empty ||
+            migrateDto.NewPortNumber is < 1 or > 65535)
+            return DeploymentOperationStatus.InvalidRequest;
+
+        var portMapping = await _context.PortMappings
+            .FirstOrDefaultAsync(pm => pm.Id == migrateDto.PortMappingId);
+        if (portMapping is null)
+            return DeploymentOperationStatus.NotFound;
+
+        if (!await _context.Servers.AnyAsync(server => server.Id == migrateDto.TargetServerId))
+            return DeploymentOperationStatus.ServerNotFound;
+
+        if (await _context.PortMappings.AnyAsync(mapping =>
+                mapping.ServerId == migrateDto.TargetServerId &&
+                mapping.PortNumber == migrateDto.NewPortNumber &&
+                mapping.Id != migrateDto.PortMappingId))
+            return DeploymentOperationStatus.PortCollision;
 
         using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            var portMapping = await _context.PortMappings
-                .FirstOrDefaultAsync(pm => pm.Id == migrateDto.PortMappingId);
-
-            if (portMapping == null)
-            {
-                _logger.LogWarning("PortMapping {PortMappingId} not found", migrateDto.PortMappingId);
-                return false;
-            }
-
             bool isNetworkModified = false;
 
             // Independent assignment: Target Server
@@ -86,7 +97,13 @@ public class InfrastructureService : IInfrastructureService
                 await transaction.RollbackAsync(); // Nothing to do
             }
 
-            return true;
+            return DeploymentOperationStatus.Success;
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            await transaction.RollbackAsync();
+            return DeploymentOperationStatus.PortCollision;
         }
         catch (Exception ex)
         {
@@ -172,6 +189,7 @@ public class InfrastructureService : IInfrastructureService
             .Include(pm => pm.Application)
             .Select(pm => new DeployedAppDto
             {
+                PortMappingId = pm.Id,
                 AppId = pm.AppId,
                 AppCode = pm.Application!.AppCode,
                 AppName = pm.Application!.AppName,

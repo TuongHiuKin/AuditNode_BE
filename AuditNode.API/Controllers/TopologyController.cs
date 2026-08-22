@@ -21,78 +21,93 @@ public class TopologyController : ControllerBase
     public async Task<ActionResult<IEnumerable<TopologyTreeDto>>> GetTree(
         [FromQuery] Guid? datacenterId,
         [FromQuery] int skip = 0,
-        [FromQuery] int? take = null)
+        [FromQuery] int? take = null,
+        [FromQuery] List<string>? labels = null)
     {
-        int pageSize = take ?? 100;
-        if (pageSize > 100) pageSize = 100; // Hard limit for protection
+        var pageSize = take ?? 100;
+        if (skip < 0 || pageSize <= 0)
+            return BadRequest(Problem(400, "Skip must be non-negative and take must be positive."));
+        pageSize = Math.Min(pageSize, 100);
 
-        var tree = await _topologyRepository.GetTopologyTreeAsync(datacenterId, skip, pageSize);
-        return Ok(tree);
+        try
+        {
+            return Ok(await _topologyRepository.GetTopologyTreeAsync(datacenterId, skip, pageSize, labels));
+        }
+        catch (Exception)
+        {
+            return Failure("Topology tree could not be retrieved.");
+        }
     }
 
     [HttpGet("map")]
     public async Task<ActionResult<DependencyMapDto>> GetDependencyMap(
-        [FromQuery] Guid[]? labelIds,
         [FromQuery] string? environment,
-        [FromQuery] Guid? datacenterId)
+        [FromQuery] Guid? datacenterId,
+        [FromQuery] List<string>? labels = null)
     {
-        var map = await _topologyRepository.GetDependencyMapAsync(labelIds, environment, datacenterId);
-        return Ok(map);
+        try
+        {
+            return Ok(await _topologyRepository.GetDependencyMapAsync(environment, datacenterId, labels));
+        }
+        catch (Exception)
+        {
+            return Failure("Dependency map could not be retrieved.");
+        }
     }
 
     [HttpGet("status")]
     public async Task<ActionResult<IEnumerable<ApplicationStatusDto>>> GetStatus()
     {
-        var status = await _topologyRepository.GetApplicationStatusAsync();
-        return Ok(status);
+        try
+        {
+            return Ok(await _topologyRepository.GetApplicationStatusAsync());
+        }
+        catch (Exception)
+        {
+            return Failure("Application status could not be retrieved.");
+        }
     }
 
-    [HttpGet("nodes/{id}/external-dependencies")]
-    public async Task<ActionResult<IEnumerable<ServerNodeDto>>> GetExternalDependencies(
-        Guid id,
-        [FromQuery] Guid[]? labelIds)
+    [HttpGet("state")]
+    public async Task<ActionResult<TopologyStateDto>> GetState()
     {
-        var deps = await _topologyRepository.GetExternalDependenciesAsync(id, labelIds);
-        return Ok(deps);
+        try
+        {
+            return Ok(await _topologyRepository.GetTopologyStateAsync());
+        }
+        catch (Exception)
+        {
+            return Failure("Topology state could not be retrieved.");
+        }
     }
 
     [HttpPost("state")]
-    public async Task<IActionResult> SaveState([FromBody] SaveTopologyStateDto state)
+    [HttpPut("state")]
+    [Authorize(Roles = "Admin,Auditor")]
+    public async Task<IActionResult> SaveState([FromBody] TopologyStateDto state)
     {
-        if (state == null || state.Nodes == null)
-        {
-            return BadRequest("Invalid topology state payload.");
-        }
+        if (state?.Nodes is null || state.Edges is null)
+            return BadRequest(Problem(400, "A complete topology state is required."));
 
         try
         {
-            await _topologyRepository.SaveTopologyStateAsync(state);
-            return Ok(new { message = "Topology state saved successfully." });
+            var status = await _topologyRepository.SaveTopologyStateAsync(state);
+            return status switch
+            {
+                TopologyStateStatus.Success => NoContent(),
+                TopologyStateStatus.DuplicateId => Conflict(Problem(409, "Topology node and edge IDs must be unique.")),
+                TopologyStateStatus.InvalidParent => BadRequest(Problem(400, "Topology parent relationships are invalid.")),
+                TopologyStateStatus.InvalidReference => BadRequest(Problem(400, "Topology references are invalid for the current workspace.")),
+                TopologyStateStatus.InvalidEdge => BadRequest(Problem(400, "Topology edges are invalid.")),
+                _ => BadRequest(Problem(400, "Topology state is invalid."))
+            };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(500, new { error = ex.Message });
+            return Failure("Topology state could not be saved.");
         }
     }
 
-    [HttpPost("sync")]
-    public async Task<IActionResult> SyncTopology([FromBody] TopologySyncRequestDto request)
-    {
-        var ownerId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(ownerId)) return Unauthorized("Invalid User ID in token.");
-
-        try
-        {
-            await _topologyRepository.SyncTopologyAsync(request, ownerId);
-            return Ok(new { message = "Topology sync completed successfully." });
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            return Unauthorized(ex.Message);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { error = ex.Message });
-        }
-    }
+    private static ProblemDetails Problem(int status, string title) => new() { Status = status, Title = title };
+    private ObjectResult Failure(string title) => StatusCode(500, Problem(500, title));
 }

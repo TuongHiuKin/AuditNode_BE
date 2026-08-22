@@ -20,71 +20,78 @@ public class InfrastructureController : ControllerBase
     [HttpGet("apps/{id:guid}/dependencies-count")]
     public async Task<ActionResult<int>> GetDependenciesCount(Guid id)
     {
+        if (id == Guid.Empty)
+            return BadRequest(Problem(400, "A non-empty application identifier is required."));
         try
         {
-            var count = await _infrastructureService.GetDependenciesCountAsync(id);
-            return Ok(count);
+            return Ok(await _infrastructureService.GetDependenciesCountAsync(id));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(500, new { error = "Failed to retrieve dependency count", message = ex.Message });
+            return Failure("Dependency count could not be retrieved.");
         }
     }
 
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpPut("apps/migrate")]
     public async Task<IActionResult> MigrateApp([FromBody] MigrateAppDto migrateDto)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest(ModelState);
-        }
-
         try
         {
-            var success = await _infrastructureService.MigrateAppAsync(migrateDto);
-            if (!success)
+            var status = await _infrastructureService.MigrateAppAsync(migrateDto);
+            return status switch
             {
-                return NotFound(new { error = "PortMapping not found" });
-            }
-
-            return Ok(new { message = "Migration successful" });
+                DeploymentOperationStatus.Success => NoContent(),
+                DeploymentOperationStatus.InvalidRequest =>
+                    BadRequest(Problem(400, "Explicit deployment, server and valid port values are required.")),
+                DeploymentOperationStatus.NotFound =>
+                    NotFound(Problem(404, "Deployment was not found.")),
+                DeploymentOperationStatus.ServerNotFound =>
+                    BadRequest(Problem(400, "Target server was not found in the current workspace.")),
+                DeploymentOperationStatus.PortCollision =>
+                    Conflict(Problem(409, "The target server port is already assigned.")),
+                _ => Failure("Deployment could not be migrated.")
+            };
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(500, new { error = "Migration failed", message = ex.Message });
+            return Failure("Deployment could not be migrated.");
         }
     }
 
+    [Authorize(Roles = "Admin,Auditor")]
     [HttpDelete("apps/{id:guid}/purge")]
     public async Task<IActionResult> PurgeApp(Guid id)
     {
+        if (id == Guid.Empty)
+            return BadRequest(Problem(400, "A non-empty application identifier is required."));
         try
         {
-            var success = await _infrastructureService.PurgeAppAsync(id);
-            if (!success)
-            {
-                return NotFound(new { error = "Application not found" });
-            }
-
-            return Ok(new { message = "Application and dependencies purged successfully" });
+            return await _infrastructureService.PurgeAppAsync(id)
+                ? NoContent()
+                : NotFound(Problem(404, "Application was not found."));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(500, new { error = "Purge failed", message = ex.Message });
+            return Failure("Application could not be purged.");
         }
     }
 
     [HttpGet("servers/{id:guid}/deployed-apps")]
     public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id)
     {
+        if (id == Guid.Empty)
+            return BadRequest(Problem(400, "A non-empty server identifier is required."));
         try
         {
-            var apps = await _infrastructureService.GetDeployedAppsByServerAsync(id);
-            return Ok(apps);
+            return Ok(await _infrastructureService.GetDeployedAppsByServerAsync(id));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return StatusCode(500, new { error = "Failed to retrieve deployed applications", message = ex.Message });
+            return Failure("Deployed applications could not be retrieved.");
         }
     }
+
+    private static ProblemDetails Problem(int status, string title) => new() { Status = status, Title = title };
+    private ObjectResult Failure(string title) => StatusCode(500, Problem(500, title));
 }

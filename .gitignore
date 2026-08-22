@@ -42,6 +42,16 @@ TestResults/
 .DS_Store
 Thumbs.db
 
+<<<<<<< HEAD
+# Gemini CLI / Agent Specific
+.gemini/
+MEMORY.md
+
+# Node & JS artifacts
+node_modules/
+package-lock.json
+package.json
+=======
 # --- AUTO-DISCOVERED SECURITY RULES ---
 # Environment files
 .env
@@ -62,3 +72,4 @@ Thumbs.db
 
 /build_infra.txt
 /create_architecture.ps1
+>>>>>>> origin/main

@@ -1,13 +1,12 @@
 using AuditNode.Application.DTOs;
-using AuditNode.Domain.Entities;
 
 namespace AuditNode.Application.Interfaces;
 
 public interface IApplicationService
 {
-    Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string[]? labels = null);
+    Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string? labelKey = null, string? labelValue = null);
     Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids);
     Task<ApplicationResponseDto?> GetByIdAsync(Guid id);
-    Task<ApplicationResponseDto> CreateAsync(CreateApplicationDto createDto);
-    Task<bool> UpdateAsync(Guid id, UpdateApplicationDto updateDto);
+    Task<ApplicationOperationResult> CreateAsync(CreateApplicationDto createDto);
+    Task<ApplicationOperationResult> UpdateAsync(Guid id, UpdateApplicationDto updateDto);
 }

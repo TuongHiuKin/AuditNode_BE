@@ -1,6 +1,6 @@
-using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
@@ -50,15 +50,26 @@ public class InventorySearchControllerTests
     }
 
     [Fact]
-    public async Task Search_ShouldReturnBadRequest_OnException()
+    public async Task Search_ShouldReturnSafe500WithCorrelationId_OnException()
     {
         // Arrange
         _mockService.Setup(s => s.SearchAsync(It.IsAny<string>())).ThrowsAsync(new Exception("Search failed"));
 
         // Act
+        _controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext
+            {
+                TraceIdentifier = "corr-123"
+            }
+        };
         var result = await _controller.Search("fail");
 
         // Assert
-        result.Result.Should().BeOfType<BadRequestObjectResult>();
+        var failure = result.Result.Should().BeOfType<ObjectResult>().Subject;
+        failure.StatusCode.Should().Be(500);
+        var problem = failure.Value.Should().BeOfType<ProblemDetails>().Subject;
+        problem.Extensions["correlationId"].Should().Be("corr-123");
+        problem.ToString().Should().NotContain("Search failed");
     }
 }

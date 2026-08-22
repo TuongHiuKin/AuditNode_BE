@@ -1,5 +1,5 @@
-using AuditNode.Infrastructure.Data;
 using AuditNode.Application.DTOs;
+using AuditNode.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -18,33 +18,16 @@ public class LabelsController : ControllerBase
         _context = context;
     }
 
-    /// <summary>
-    /// GET /api/v1/inventory/labels
-    /// Retrieves all unique labels for the authenticated user to populate frontend dropdowns.
-    /// </summary>
-    [HttpGet("/api/v1/inventory/labels")]
-    public async Task<ActionResult<IEnumerable<TopologyLabelDto>>> GetLabels()
+    [HttpGet]
+    public async Task<ActionResult<IEnumerable<LabelDto>>> GetLabels()
     {
-        // 1. Extract OwnerId from Claims
-        var currentUserId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (string.IsNullOrEmpty(currentUserId))
-        {
-            return Unauthorized("User ID not found in token.");
-        }
-
-        // 2. Fetch and Project Labels directly from the Database
         var labels = await _context.Labels
-            .AsNoTracking() // Architectural Best Practice: Always use AsNoTracking for read-only GET requests
-            .Where(l => l.OwnerId == currentUserId)
-            .OrderBy(l => l.Key)
-            .ThenBy(l => l.Value)
-            .Select(l => new TopologyLabelDto
+            .Select(l => new LabelDto
             {
-                Id = l.Id,
                 Key = l.Key,
-                Value = l.Value,
-                ColorHex = l.ColorHex
+                Value = l.Value
             })
+            .Distinct()
             .ToListAsync();
 
         return Ok(labels);

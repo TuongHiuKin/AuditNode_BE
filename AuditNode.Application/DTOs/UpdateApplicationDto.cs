@@ -9,12 +9,14 @@ public class UpdateApplicationDto
     public string Risk { get; set; } = string.Empty;
     public string Icon { get; set; } = string.Empty;
     public string TechStack { get; set; } = string.Empty;
+    public List<LabelDto>? Labels { get; set; }
 
-    // Network Residency - Aligned with frontend JSON keys
+    [JsonPropertyName("portMappingId")]
+    public Guid? PortMappingId { get; set; }
+
     [JsonPropertyName("serverId")]
     public Guid? TargetServerId { get; set; }
 
     [JsonPropertyName("portNumber")]
     public int? PortNumber { get; set; }
-    public IEnumerable<LabelDto> Labels { get; set; } = new List<LabelDto>();
 }

@@ -1,10 +1,9 @@
-using AuditNode.Application.Interfaces;
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
 
@@ -13,14 +12,12 @@ namespace AuditNode.Tests.Controllers;
 public class InventoryImportControllerTests
 {
     private readonly Mock<IInventoryImportService> _mockService;
-    private readonly Mock<ILogger<InventoryImportController>> _mockLogger;
     private readonly InventoryImportController _controller;
 
     public InventoryImportControllerTests()
     {
         _mockService = new Mock<IInventoryImportService>();
-        _mockLogger = new Mock<ILogger<InventoryImportController>>();
-        _controller = new InventoryImportController(_mockService.Object, _mockLogger.Object);
+        _controller = new InventoryImportController(_mockService.Object);
     }
 
     [Fact]
@@ -40,7 +37,7 @@ public class InventoryImportControllerTests
     }
 
     [Fact]
-    public async Task BulkImport_ShouldReturnOk_WhenFileIsValid()
+    public async Task ImportInventory_ShouldReturnOk_WhenFileIsValid()
     {
         // Arrange
         var fileMock = new Mock<IFormFile>();
@@ -55,24 +52,13 @@ public class InventoryImportControllerTests
         fileMock.Setup(_ => _.OpenReadStream()).Returns(ms);
         fileMock.Setup(_ => _.FileName).Returns(fileName);
         fileMock.Setup(_ => _.Length).Returns(ms.Length);
+        fileMock.Setup(_ => _.ContentType).Returns("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 
         var importResult = new ImportResponseDto { SavedCount = 10, Errors = new List<ImportErrorDto>() };
-        _mockService.Setup(s => s.ImportInventoryAsync(It.IsAny<Stream>(), It.IsAny<string>())).ReturnsAsync(importResult);
-
-        var claims = new List<System.Security.Claims.Claim>
-        {
-            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, "test-user-id")
-        };
-        var identity = new System.Security.Claims.ClaimsIdentity(claims, "TestAuthType");
-        var claimsPrincipal = new System.Security.Claims.ClaimsPrincipal(identity);
-
-        _controller.ControllerContext = new ControllerContext
-        {
-            HttpContext = new DefaultHttpContext { User = claimsPrincipal }
-        };
+        _mockService.Setup(s => s.ImportInventoryAsync(It.IsAny<Stream>())).ReturnsAsync(importResult);
 
         // Act
-        var result = await _controller.BulkImport(fileMock.Object);
+        var result = await _controller.ImportInventory(fileMock.Object);
 
         // Assert
         var okResult = result.As<OkObjectResult>();
@@ -80,17 +66,46 @@ public class InventoryImportControllerTests
     }
 
     [Fact]
-    public async Task BulkImport_ShouldReturnBadRequest_WhenNoFile()
+    public async Task ImportInventory_rejects_oversized_file_before_opening_stream()
+    {
+        var file = new Mock<IFormFile>();
+        file.SetupGet(x => x.FileName).Returns("large.xlsx");
+        file.SetupGet(x => x.ContentType).Returns("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        file.SetupGet(x => x.Length).Returns(InventoryImportController.MaxImportBytes + 1);
+
+        var result = await _controller.ImportInventory(file.Object);
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        file.Verify(x => x.OpenReadStream(), Times.Never);
+    }
+
+    [Fact]
+    public async Task ImportInventory_maps_conflicts_to_409()
+    {
+        var file = ValidFile();
+        _mockService.Setup(x => x.ImportInventoryAsync(It.IsAny<Stream>()))
+            .ReturnsAsync(new ImportResponseDto
+            {
+                Conflicts = [new ImportConflictDto { Row = 2, Message = "duplicate" }]
+            });
+
+        var result = await _controller.ImportInventory(file.Object);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task ImportInventory_ShouldReturnBadRequest_WhenNoFile()
     {
         // Act
-        var result = await _controller.BulkImport(null!);
+        var result = await _controller.ImportInventory(null!);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
     }
 
     [Fact]
-    public async Task BulkImport_ShouldReturnBadRequest_WhenInvalidExtension()
+    public async Task ImportInventory_ShouldReturnBadRequest_WhenInvalidExtension()
     {
         // Arrange
         var fileMock = new Mock<IFormFile>();
@@ -98,9 +113,19 @@ public class InventoryImportControllerTests
         fileMock.Setup(_ => _.Length).Returns(10);
 
         // Act
-        var result = await _controller.BulkImport(fileMock.Object);
+        var result = await _controller.ImportInventory(fileMock.Object);
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    private static Mock<IFormFile> ValidFile()
+    {
+        var file = new Mock<IFormFile>();
+        file.SetupGet(x => x.FileName).Returns("test.xlsx");
+        file.SetupGet(x => x.ContentType).Returns("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        file.SetupGet(x => x.Length).Returns(10);
+        file.Setup(x => x.OpenReadStream()).Returns(new MemoryStream(new byte[10]));
+        return file;
     }
 }
