@@ -10,6 +10,7 @@ public enum ApplicationOperationStatus
     DeploymentNotFound,
     DuplicateAppCode,
     PortCollision
+    ,Forbidden
 }
 
 public sealed record ApplicationOperationResult(

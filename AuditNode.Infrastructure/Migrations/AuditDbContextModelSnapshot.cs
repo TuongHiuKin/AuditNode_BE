@@ -198,8 +198,7 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.Property<string>("DestServerHostname")
                         .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("dest_server_hostname");
+                        .HasColumnType("text");
 
                     b.Property<string>("Environment")
                         .HasColumnType("text")
@@ -541,7 +540,6 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnName("created_at");
 
                     b.Property<string>("Description")
-                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("description");
 
@@ -601,13 +599,77 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("character varying(40)")
                         .HasColumnName("role");
 
+                    b.Property<string>("ScopeMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("scope_mode");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
                     b.HasKey("WorkspaceId", "UserId");
 
                     b.HasIndex("UserId");
 
                     b.ToTable("workspace_members", null, t =>
                         {
-                            t.HasCheckConstraint("ck_workspace_members_role", "role IN ('workspace_admin', 'editor', 'auditor', 'viewer')");
+                            t.HasCheckConstraint("ck_workspace_members_role", "role IN ('workspace_admin', 'auditor', 'viewer')");
+                            t.HasCheckConstraint("ck_workspace_members_scope_mode", "scope_mode IN ('all', 'labels', 'frames')");
+                            t.HasCheckConstraint("ck_workspace_members_admin_all", "role <> 'workspace_admin' OR scope_mode = 'all'");
+                        });
+                });
+
+            modelBuilder.Entity("AuditNode.Domain.Entities.WorkspaceMemberScope", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<string>("ScopeType")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("scope_type");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_id");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkspaceId", "UserId");
+
+                    b.HasIndex("WorkspaceId", "UserId", "ScopeType", "TargetId")
+                        .IsUnique();
+
+                    b.ToTable("workspace_member_scopes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_workspace_member_scopes_type", "scope_type IN ('label', 'frame')");
+                            t.HasCheckConstraint("ck_workspace_member_scopes_target", "target_id <> '00000000-0000-0000-0000-000000000000'");
                         });
                 });
 
@@ -848,6 +910,17 @@ namespace AuditNode.Infrastructure.Migrations
                     b.Navigation("Workspace");
                 });
 
+            modelBuilder.Entity("AuditNode.Domain.Entities.WorkspaceMemberScope", b =>
+                {
+                    b.HasOne("AuditNode.Domain.Entities.WorkspaceMember", "Member")
+                        .WithMany("Scopes")
+                        .HasForeignKey("WorkspaceId", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Member");
+                });
+
             modelBuilder.Entity("AuditNode.Domain.Entities.Application", b =>
                 {
                     b.Navigation("ApplicationLabels");
@@ -891,6 +964,11 @@ namespace AuditNode.Infrastructure.Migrations
             modelBuilder.Entity("AuditNode.Domain.Entities.Workspace", b =>
                 {
                     b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("AuditNode.Domain.Entities.WorkspaceMember", b =>
+                {
+                    b.Navigation("Scopes");
                 });
 #pragma warning restore 612, 618
         }

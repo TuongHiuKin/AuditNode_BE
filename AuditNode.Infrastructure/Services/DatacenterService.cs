@@ -9,15 +9,25 @@ namespace AuditNode.Infrastructure.Services;
 public class DatacenterService : IDatacenterService
 {
     private readonly AuditDbContext _context;
+    private readonly IScopedResourcePolicy _policy;
+    private readonly ICurrentUserService _currentUser;
+    private readonly ITenantProvider _tenant;
 
-    public DatacenterService(AuditDbContext context)
+    public DatacenterService(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
     {
         _context = context;
+        _policy = policy;
+        _currentUser = currentUser;
+        _tenant = tenant;
     }
 
     public async Task<IEnumerable<DatacenterDto>> GetDatacentersAsync()
     {
-        var datacenters = await _context.Datacenters.ToListAsync();
+        if (!_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)) return [];
+        var serverIds = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "server");
+        var query = _context.Datacenters.AsQueryable();
+        if (serverIds is not null) query = query.Where(datacenter => datacenter.Servers.Any(server => serverIds.Contains(server.Id)));
+        var datacenters = await query.ToListAsync();
         return datacenters.Select(d => new DatacenterDto
         {
             Id = d.Id,

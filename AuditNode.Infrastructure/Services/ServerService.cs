@@ -11,11 +11,15 @@ public class ServerService : IServerService
 {
     private readonly IServerRepository _repository;
     private readonly ITenantProvider _tenantProvider;
+    private readonly IScopedResourcePolicy _scopePolicy;
+    private readonly ICurrentUserService _currentUser;
 
-    public ServerService(IServerRepository repository, ITenantProvider tenantProvider)
+    public ServerService(IServerRepository repository, ITenantProvider tenantProvider, IScopedResourcePolicy scopePolicy, ICurrentUserService currentUser)
     {
         _repository = repository;
         _tenantProvider = tenantProvider;
+        _scopePolicy = scopePolicy;
+        _currentUser = currentUser;
     }
 
     public async Task<IEnumerable<ServerResponseDto>> GetServersAsync()
@@ -23,7 +27,9 @@ public class ServerService : IServerService
         if (!HasWorkspace())
             return Array.Empty<ServerResponseDto>();
 
-        return await _repository.GetAllWithAppsAsync();
+        var serverIds = await ReadableIdsAsync("server");
+        var appIds = await ReadableIdsAsync("application");
+        return await _repository.GetScopedAsync(serverIds, appIds);
     }
 
     public async Task<ServerResponseDto?> GetServerAsync(Guid id)
@@ -32,6 +38,7 @@ public class ServerService : IServerService
             return null;
 
         var server = await _repository.GetByIdAsync(id);
+        if (server is not null && !await CanAsync("server", id, false)) return null;
         return server is null ? null : Map(server);
     }
 
@@ -39,6 +46,7 @@ public class ServerService : IServerService
     {
         if (!HasWorkspace())
             return new(ServerOperationStatus.InvalidWorkspace);
+        if (!await CanCreateAsync(dto.Labels)) return new(ServerOperationStatus.Forbidden);
 
         if (!await _repository.DatacenterExistsAsync(dto.DatacenterId))
             return new(ServerOperationStatus.DatacenterNotFound);
@@ -80,6 +88,8 @@ public class ServerService : IServerService
         var server = await _repository.GetByIdAsync(id);
         if (server is null)
             return new(ServerOperationStatus.NotFound);
+        if (!await CanAsync("server", id, true)) return new(ServerOperationStatus.Forbidden);
+        if (dto.Labels is not null && !await CanCreateAsync(dto.Labels)) return new(ServerOperationStatus.Forbidden);
 
         if (!await _repository.DatacenterExistsAsync(dto.DatacenterId))
             return new(ServerOperationStatus.DatacenterNotFound);
@@ -117,6 +127,7 @@ public class ServerService : IServerService
         var server = await _repository.GetByIdAsync(id);
         if (server is null)
             return ServerOperationStatus.NotFound;
+        if (!await CanAsync("server", id, true)) return ServerOperationStatus.Forbidden;
 
         await _repository.DeleteAsync(server);
         return ServerOperationStatus.Success;
@@ -127,8 +138,34 @@ public class ServerService : IServerService
         if (!HasWorkspace())
             return Array.Empty<ServerResponseDto>();
 
-        return await _repository.GetByIdsAsync(ids.Where(id => id != Guid.Empty).Distinct());
+        return await _repository.GetScopedAsync(await ReadableIdsAsync("server"), await ReadableIdsAsync("application"), ids.Where(id => id != Guid.Empty).Distinct());
     }
+
+    private async Task<IEnumerable<ServerResponseDto>> FilterReadableAsync(IReadOnlyCollection<ServerResponseDto> servers)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue) return [];
+        var allowed = new List<ServerResponseDto>();
+        foreach (var server in servers)
+            if (await _scopePolicy.CanReadAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, "server", server.Id)) allowed.Add(server);
+        return allowed;
+    }
+
+    private Task<IReadOnlySet<Guid>?> ReadableIdsAsync(string type) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue
+            ? Task.FromResult<IReadOnlySet<Guid>?>(new HashSet<Guid>())
+            : _scopePolicy.GetReadableIdsAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, type);
+
+    private Task<bool> CanAsync(string type, Guid id, bool write) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue
+            ? Task.FromResult(false)
+            : write
+                ? _scopePolicy.CanWriteAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, type, id)
+                : _scopePolicy.CanReadAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, type, id);
+
+    private Task<bool> CanCreateAsync(IReadOnlyCollection<LabelDto> labels) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue
+            ? Task.FromResult(false)
+            : _scopePolicy.CanCreateAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, "server", labels);
 
     private bool HasWorkspace() { Console.WriteLine("HasWorkspace called. WorkspaceId: " + _tenantProvider.WorkspaceId); return
         _tenantProvider.WorkspaceId.HasValue; }

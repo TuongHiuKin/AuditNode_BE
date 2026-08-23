@@ -8,10 +8,16 @@ namespace AuditNode.Infrastructure.Services;
 public class InventorySearchService : IInventorySearchService
 {
     private readonly AuditDbContext _context;
+    private readonly IScopedResourcePolicy _policy;
+    private readonly ICurrentUserService _currentUser;
+    private readonly ITenantProvider _tenant;
 
-    public InventorySearchService(AuditDbContext context)
+    public InventorySearchService(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
     {
         _context = context;
+        _policy = policy;
+        _currentUser = currentUser;
+        _tenant = tenant;
     }
 
     public async Task<IEnumerable<SearchResultDto>> SearchAsync(string keyword)
@@ -22,6 +28,9 @@ public class InventorySearchService : IInventorySearchService
         }
 
         var lowerKeyword = keyword.ToLower();
+        if (!_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)) return [];
+        var allowedServers = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "server");
+        var allowedApplications = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "application");
 
         // 1. Server Query - Direct projection ensures only needed columns are fetched
         var serverQuery = _context.Servers
@@ -35,6 +44,7 @@ public class InventorySearchService : IInventorySearchService
                 MatchReason = s.Hostname.ToLower().Contains(lowerKeyword) ? "Matched by Server Hostname" : "Matched by Server IP"
             })
             .Take(20);
+        if (allowedServers is not null) serverQuery = serverQuery.Where(result => allowedServers.Contains(result.Id));
 
         // 2. Application Query - Join with hosting context projected directly to DTO to avoid record duplication
         var appQuery = _context.Applications
@@ -48,6 +58,7 @@ public class InventorySearchService : IInventorySearchService
                 MatchReason = a.AppName.ToLower().Contains(lowerKeyword) ? "Matched by App Name" : "Matched by App Code"
             })
             .Take(20);
+        if (allowedApplications is not null) appQuery = appQuery.Where(result => allowedApplications.Contains(result.Id));
 
         // Execute and combine results. Limited to Top 20 overall.
         var servers = await serverQuery.ToListAsync();

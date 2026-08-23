@@ -22,6 +22,7 @@ public class WorkspaceMiddleware
         // Skip workspace validation for non-API paths or specific endpoints like auth and workspace selection
         if (!context.Request.Path.StartsWithSegments("/api") || 
             context.Request.Path.StartsWithSegments("/api/v1/auth") ||
+            context.Request.Path.StartsWithSegments("/api/v1/admin") ||
             context.Request.Path.StartsWithSegments("/api/v1/workspaces"))
         {
             await _next(context);
@@ -62,14 +63,11 @@ public class WorkspaceMiddleware
             return;
         }
 
-        if (workspaceIdStr != "11111111-1111-1111-1111-111111111111")
+        if (!await workspaceService.UserHasAccessAsync(workspaceId, userId))
         {
-            if (!await workspaceService.UserHasAccessAsync(workspaceId, userId))
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new { error = "Workspace access is forbidden." });
-                return;
-            }
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new { error = "Workspace access is forbidden." });
+            return;
         }
 
         tenantProvider.SetWorkspaceId(workspaceIdStr);

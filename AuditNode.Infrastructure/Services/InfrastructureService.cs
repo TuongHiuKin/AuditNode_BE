@@ -11,15 +11,22 @@ public class InfrastructureService : IInfrastructureService
 {
     private readonly AuditDbContext _context;
     private readonly ILogger<InfrastructureService> _logger;
+    private readonly IScopedResourcePolicy _policy;
+    private readonly ICurrentUserService _currentUser;
+    private readonly ITenantProvider _tenant;
 
-    public InfrastructureService(AuditDbContext context, ILogger<InfrastructureService> logger)
+    public InfrastructureService(AuditDbContext context, ILogger<InfrastructureService> logger, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
     {
         _context = context;
         _logger = logger;
+        _policy = policy;
+        _currentUser = currentUser;
+        _tenant = tenant;
     }
 
     public async Task<int> GetDependenciesCountAsync(Guid appId)
     {
+        if (!await CanReadAsync("application", appId)) return 0;
         _logger.LogInformation("Checking dependency count for application {AppId}", appId);
 
         // 1. Get all port mapping IDs for this specific app
@@ -184,8 +191,10 @@ public class InfrastructureService : IInfrastructureService
     {
         _logger.LogInformation("Fetching deployed applications for server {ServerId}", serverId);
 
+        if (!await CanReadAsync("server", serverId)) return [];
+        var allowedApps = await ReadableIdsAsync("application");
         return await _context.PortMappings
-            .Where(pm => pm.ServerId == serverId)
+            .Where(pm => pm.ServerId == serverId && (allowedApps == null || allowedApps.Contains(pm.AppId)))
             .Include(pm => pm.Application)
             .Select(pm => new DeployedAppDto
             {
@@ -197,4 +206,14 @@ public class InfrastructureService : IInfrastructureService
             })
             .ToListAsync();
     }
+
+    private Task<bool> CanReadAsync(string type, Guid id) =>
+        !_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult(false)
+            : _policy.CanReadAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, type, id);
+
+    private Task<IReadOnlySet<Guid>?> ReadableIdsAsync(string type) =>
+        !_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<IReadOnlySet<Guid>?>(new HashSet<Guid>())
+            : _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, type);
 }

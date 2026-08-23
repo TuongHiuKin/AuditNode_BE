@@ -39,7 +39,11 @@ public class LabelsControllerTests
 
         using (var context = new AuditDbContext(options, mockTenantProvider.Object))
         {
-            var controller = new LabelsController(context);
+            var policy = new Mock<IScopedResourcePolicy>();
+            policy.Setup(x => x.GetReadableIdsAsync(workspaceId, "test-user", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+            var currentUser = new Mock<ICurrentUserService>();
+            currentUser.SetupGet(x => x.UserId).Returns("test-user");
+            var controller = new LabelsController(context, policy.Object, currentUser.Object, mockTenantProvider.Object);
 
             // Act
             var result = await controller.GetLabels();

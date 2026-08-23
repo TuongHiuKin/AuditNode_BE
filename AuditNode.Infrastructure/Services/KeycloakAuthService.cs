@@ -9,8 +9,9 @@ using Microsoft.Extensions.Configuration;
 
 namespace AuditNode.Infrastructure.Services;
 
-public sealed class KeycloakAuthService : IIdentityAuthService
+public sealed class KeycloakAuthService : IIdentityAuthService, IIdentityAdminService
 {
+    private static readonly SemaphoreSlim AdminMutationLock = new(1, 1);
     public const string HttpClientName = "Keycloak";
 
     private readonly IKeycloakHttpClientFactory _httpClientFactory;
@@ -146,6 +147,123 @@ public sealed class KeycloakAuthService : IIdentityAuthService
                 ?? principal.FindFirst("email")?.Value,
             Roles = roles
         };
+    }
+
+    public async Task<IReadOnlyList<IdentityAdminUserDto>> ListUsersAsync(string? search, int first, int max, CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var url = $"{UsersEndpoint()}?first={Math.Max(0, first)}&max={Math.Clamp(max, 1, 100)}" +
+                  (string.IsNullOrWhiteSpace(search) ? string.Empty : $"&search={Uri.EscapeDataString(search)}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var adminIds = await GetSystemAdminIdsAsync(token, cancellationToken);
+            return document.RootElement.EnumerateArray().Select(user => new IdentityAdminUserDto(
+                user.GetProperty("id").GetString() ?? string.Empty,
+                user.TryGetProperty("username", out var username) ? username.GetString() ?? string.Empty : string.Empty,
+                user.TryGetProperty("email", out var email) ? email.GetString() : null,
+                !user.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean(),
+                IsSystemAdmin: adminIds.Contains(user.GetProperty("id").GetString() ?? string.Empty))).ToList();
+        }
+        catch (JsonException) { throw new IdentityUpstreamUnavailableException(); }
+    }
+
+    public async Task SetEnabledAsync(string userId, bool enabled, CancellationToken cancellationToken = default)
+    {
+        await AdminMutationLock.WaitAsync(cancellationToken);
+        try
+        {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        if (!enabled) await EnsureNotLastSystemAdminAsync(userId, token, cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"{UsersEndpoint()}/{Uri.EscapeDataString(userId)}")
+        { Content = new StringContent(JsonSerializer.Serialize(new { enabled }), Encoding.UTF8, "application/json") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
+        }
+        finally { AdminMutationLock.Release(); }
+    }
+
+    public Task CreateUserAsync(CreateIdentityAdminUserDto request, CancellationToken cancellationToken = default) =>
+        RegisterAsync(new RegisterRequestDto { Username = request.Username, Email = request.Email, Password = request.Password }, cancellationToken);
+
+    public async Task SetSystemAdminAsync(string userId, bool enabled, CancellationToken cancellationToken = default)
+    {
+        await AdminMutationLock.WaitAsync(cancellationToken);
+        try
+        {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        var roleUrl = $"{RealmAdminEndpoint()}/roles/{Uri.EscapeDataString("SystemAdmin")}";
+        using var roleRequest = new HttpRequestMessage(HttpMethod.Get, roleUrl);
+        roleRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var roleResponse = await SendAsync(roleRequest, cancellationToken);
+        if (!roleResponse.IsSuccessStatusCode) throw roleResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
+        var roleJson = await roleResponse.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!enabled) await EnsureNotLastSystemAdminAsync(userId, token, cancellationToken);
+
+        using var mapping = new HttpRequestMessage(enabled ? HttpMethod.Post : HttpMethod.Delete,
+            $"{UsersEndpoint()}/{Uri.EscapeDataString(userId)}/role-mappings/realm")
+        { Content = new StringContent($"[{roleJson}]", Encoding.UTF8, "application/json") };
+        mapping.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var mappingResponse = await SendAsync(mapping, cancellationToken);
+        if (!mappingResponse.IsSuccessStatusCode) throw mappingResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
+        }
+        finally { AdminMutationLock.Release(); }
+    }
+
+    private async Task EnsureNotLastSystemAdminAsync(string userId, string token, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{RealmAdminEndpoint()}/roles/SystemAdmin/users?first=0&max=2");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw new IdentityUpstreamUnavailableException();
+        try
+        {
+            using var users = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            if (users.RootElement.ValueKind != JsonValueKind.Array) throw new IdentityUpstreamUnavailableException();
+            if (users.RootElement.GetArrayLength() <= 1 && users.RootElement.EnumerateArray().Any(x => x.GetProperty("id").GetString() == userId)) throw new IdentityConflictException();
+        }
+        catch (JsonException) { throw new IdentityUpstreamUnavailableException(); }
+    }
+
+    private async Task<HashSet<string>> GetSystemAdminIdsAsync(string token, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{RealmAdminEndpoint()}/roles/SystemAdmin/users?first=0&max=1000");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw new IdentityUpstreamUnavailableException();
+        try
+        {
+            using var users = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            return users.RootElement.EnumerateArray().Select(x => x.GetProperty("id").GetString()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToHashSet(StringComparer.Ordinal);
+        }
+        catch (JsonException) { throw new IdentityUpstreamUnavailableException(); }
+    }
+
+    public async Task<IdentityAdminUserDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var token = await GetAdminTokenAsync(cancellationToken);
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{UsersEndpoint()}/{Uri.EscapeDataString(userId)}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound) return null;
+        if (!response.IsSuccessStatusCode) throw response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
+        try
+        {
+            using var user = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            var root = user.RootElement;
+            return new IdentityAdminUserDto(root.GetProperty("id").GetString() ?? string.Empty,
+                root.TryGetProperty("username", out var username) ? username.GetString() ?? string.Empty : string.Empty,
+                root.TryGetProperty("email", out var email) ? email.GetString() : null,
+                !root.TryGetProperty("enabled", out var enabled) || enabled.GetBoolean());
+        }
+        catch (JsonException) { throw new IdentityUpstreamUnavailableException(); }
     }
 
     private async Task<IdentityTokenSet> ExchangeTokensAsync(
@@ -316,6 +434,12 @@ public sealed class KeycloakAuthService : IIdentityAuthService
 
         var serverBase = authority[..markerIndex].TrimEnd('/');
         return $"{serverBase}/admin/realms/{Uri.EscapeDataString(Required("Keycloak:Realm"))}/users";
+    }
+
+    private string RealmAdminEndpoint()
+    {
+        var users = UsersEndpoint();
+        return users[..users.LastIndexOf("/users", StringComparison.Ordinal)];
     }
 
     private string Authority() => Required("Keycloak:Authority").TrimEnd('/');

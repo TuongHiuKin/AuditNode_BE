@@ -1,4 +1,5 @@
 using AuditNode.API.Controllers;
+using AuditNode.API.Security;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,6 +21,8 @@ public class SecurityVerificationTests
     [InlineData(typeof(ServersController))]
     [InlineData(typeof(TopologyController))]
     [InlineData(typeof(WorkspacesController))]
+    [InlineData(typeof(WorkspaceSharingController))]
+    [InlineData(typeof(AdminUsersController))]
     public void Controller_Should_Have_AuthorizeAttribute(Type controllerType)
     {
         // Assert
@@ -28,29 +31,23 @@ public class SecurityVerificationTests
     }
 
     [Theory]
-    [InlineData(typeof(DatacentersController), nameof(DatacentersController.CreateDatacenter), "Admin")]
-    [InlineData(typeof(ApplicationsController), nameof(ApplicationsController.PostApplication), "Admin,Auditor")]
-    [InlineData(typeof(ApplicationsController), nameof(ApplicationsController.PutApplication), "Admin,Auditor")]
-    [InlineData(typeof(DependenciesController), nameof(DependenciesController.SyncDependencies), "Admin,Auditor")]
-    [InlineData(typeof(InventoryImportController), nameof(InventoryImportController.ImportInventory), "Admin,Auditor")]
-    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.MigrateApp), "Admin,Auditor")]
-    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.PurgeApp), "Admin,Auditor")]
-    [InlineData(typeof(ServersController), nameof(ServersController.CreateServer), "Admin,Auditor")]
-    [InlineData(typeof(ServersController), nameof(ServersController.UpdateServer), "Admin,Auditor")]
-    [InlineData(typeof(ServersController), nameof(ServersController.DeleteServer), "Admin,Auditor")]
-    [InlineData(typeof(TopologyController), nameof(TopologyController.SaveState), "Admin,Auditor")]
-    public void Mutating_Actions_Should_Require_Specific_Roles(Type controllerType, string methodName, string expectedRoles)
+    [InlineData(typeof(DatacentersController), nameof(DatacentersController.CreateDatacenter))]
+    [InlineData(typeof(DependenciesController), nameof(DependenciesController.SyncDependencies))]
+    [InlineData(typeof(InventoryImportController), nameof(InventoryImportController.ImportInventory))]
+    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.MigrateApp))]
+    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.PurgeApp))]
+    [InlineData(typeof(TopologyController), nameof(TopologyController.SaveState))]
+    public void Sensitive_Mutations_Should_Require_WorkspaceAuthorization(Type controllerType, string methodName)
     {
         // Arrange
         var methodInfo = controllerType.GetMethod(methodName);
         methodInfo.Should().NotBeNull($"Method {methodName} should exist on {controllerType.Name}");
 
         // Act
-        var authorizeAttr = methodInfo!.GetCustomAttribute<AuthorizeAttribute>();
+        var authorizeAttr = methodInfo!.GetCustomAttribute<WorkspaceMutationAttribute>();
 
         // Assert
-        authorizeAttr.Should().NotBeNull($"Method {methodName} on {controllerType.Name} must be decorated with [Authorize]");
-        authorizeAttr!.Roles.Should().Be(expectedRoles, $"Method {methodName} on {controllerType.Name} requires roles '{expectedRoles}'");
+        authorizeAttr.Should().NotBeNull($"Method {methodName} on {controllerType.Name} must enforce workspace authorization");
     }
 
     [Theory]
@@ -90,6 +87,6 @@ public class SecurityVerificationTests
             .ToList();
 
         // Act & Assert
-        controllerTypes.Should().HaveCount(12, "We expect exactly 12 controllers to be protected");
+        controllerTypes.Should().HaveCount(14, "We expect exactly 14 controllers to be protected");
     }
 }

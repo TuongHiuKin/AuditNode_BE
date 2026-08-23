@@ -11,22 +11,22 @@ public class ApplicationService : IApplicationService
 {
     private readonly IApplicationRepository _repository;
     private readonly ITenantProvider _tenantProvider;
+    private readonly IScopedResourcePolicy _scopePolicy;
+    private readonly ICurrentUserService _currentUser;
 
-    public ApplicationService(IApplicationRepository repository, ITenantProvider tenantProvider)
+    public ApplicationService(IApplicationRepository repository, ITenantProvider tenantProvider, IScopedResourcePolicy scopePolicy, ICurrentUserService currentUser)
     {
         _repository = repository;
         _tenantProvider = tenantProvider;
+        _scopePolicy = scopePolicy;
+        _currentUser = currentUser;
     }
 
-    public Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string? labelKey = null, string? labelValue = null) =>
-        HasWorkspace()
-            ? _repository.GetApplicationsAsync(labelKey, labelValue)
-            : Task.FromResult<IEnumerable<ApplicationResponseDto>>(Array.Empty<ApplicationResponseDto>());
+    public async Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string? labelKey = null, string? labelValue = null) =>
+        HasWorkspace() ? await _repository.GetScopedAsync(await ReadableIdsAsync("application"), await ReadableIdsAsync("server"), labelKey: labelKey, labelValue: labelValue) : [];
 
-    public Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids) =>
-        HasWorkspace()
-            ? _repository.GetByIdsAsync(ids)
-            : Task.FromResult<IEnumerable<ApplicationResponseDto>>(Array.Empty<ApplicationResponseDto>());
+    public async Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids) =>
+        HasWorkspace() ? await _repository.GetScopedAsync(await ReadableIdsAsync("application"), await ReadableIdsAsync("server"), ids) : [];
 
     public async Task<ApplicationResponseDto?> GetByIdAsync(Guid id)
     {
@@ -34,6 +34,7 @@ public class ApplicationService : IApplicationService
             return null;
 
         var application = await _repository.GetByIdAsync(id);
+        if (application is not null && !await CanAsync(id, false)) return null;
         return application is null ? null : Map(application);
     }
 
@@ -41,6 +42,7 @@ public class ApplicationService : IApplicationService
     {
         if (!HasWorkspace())
             return new(ApplicationOperationStatus.InvalidWorkspace);
+        if (!await CanCreateAsync(createDto.Labels)) return new(ApplicationOperationStatus.Forbidden);
 
         var appCode = createDto.AppCode.Trim().ToUpperInvariant();
         if (await _repository.AppCodeExistsAsync(appCode))
@@ -49,6 +51,8 @@ public class ApplicationService : IApplicationService
         PortMapping? deployment = null;
         if (createDto.Deployment is not null)
         {
+            if (!await CanResourceAsync("server", createDto.Deployment.ServerId, true))
+                return new(ApplicationOperationStatus.Forbidden);
             var validation = await ValidateDeploymentAsync(
                 createDto.Deployment.ServerId,
                 createDto.Deployment.PortNumber,
@@ -102,6 +106,8 @@ public class ApplicationService : IApplicationService
         var application = await _repository.GetByIdAsync(id);
         if (application is null)
             return new(ApplicationOperationStatus.NotFound);
+        if (!await CanAsync(id, true)) return new(ApplicationOperationStatus.Forbidden);
+        if (updateDto.Labels is not null && !await CanCreateAsync(updateDto.Labels)) return new(ApplicationOperationStatus.Forbidden);
 
         PortMapping? deployment = null;
         if (HasDeploymentChange(updateDto))
@@ -110,6 +116,8 @@ public class ApplicationService : IApplicationService
                 !updateDto.TargetServerId.HasValue || updateDto.TargetServerId == Guid.Empty ||
                 !updateDto.PortNumber.HasValue || updateDto.PortNumber is < 1 or > 65535)
                 return new(ApplicationOperationStatus.InvalidRequest);
+            if (!await CanResourceAsync("server", updateDto.TargetServerId.Value, true))
+                return new(ApplicationOperationStatus.Forbidden);
 
             deployment = await _repository.GetPortMappingAsync(updateDto.PortMappingId.Value);
             if (deployment is null || deployment.AppId != id)
@@ -160,6 +168,39 @@ public class ApplicationService : IApplicationService
 
     private bool HasWorkspace() =>
         _tenantProvider.WorkspaceId.HasValue ;
+
+    private async Task<IEnumerable<ApplicationResponseDto>> FilterReadableAsync(IReadOnlyCollection<ApplicationResponseDto> applications)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue) return [];
+        var allowed = new List<ApplicationResponseDto>();
+        foreach (var application in applications)
+            if (await _scopePolicy.CanReadAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, "application", application.Id)) allowed.Add(application);
+        return allowed;
+    }
+
+    private Task<IReadOnlySet<Guid>?> ReadableIdsAsync(string type) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue
+            ? Task.FromResult<IReadOnlySet<Guid>?>(new HashSet<Guid>())
+            : _scopePolicy.GetReadableIdsAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, type);
+
+    private Task<bool> CanAsync(Guid id, bool write) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue
+            ? Task.FromResult(false)
+            : write
+                ? _scopePolicy.CanWriteAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, "application", id)
+                : _scopePolicy.CanReadAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, "application", id);
+
+    private Task<bool> CanResourceAsync(string type, Guid id, bool write) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue
+            ? Task.FromResult(false)
+            : write
+                ? _scopePolicy.CanWriteAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, type, id)
+                : _scopePolicy.CanReadAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, type, id);
+
+    private Task<bool> CanCreateAsync(IReadOnlyCollection<LabelDto> labels) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId) || !_tenantProvider.WorkspaceId.HasValue
+            ? Task.FromResult(false)
+            : _scopePolicy.CanCreateAsync(_tenantProvider.WorkspaceId.Value, _currentUser.UserId!, "application", labels);
 
     private static bool HasDeploymentChange(UpdateApplicationDto dto) =>
         dto.PortMappingId.HasValue || dto.TargetServerId.HasValue || dto.PortNumber.HasValue;

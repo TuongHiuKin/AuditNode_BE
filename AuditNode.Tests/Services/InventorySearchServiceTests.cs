@@ -23,7 +23,11 @@ public class InventorySearchServiceTests
         var mockTenantProvider = new Mock<ITenantProvider>();
         mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
         _context = new AuditDbContext(options, mockTenantProvider.Object);
-        _service = new InventorySearchService(_context);
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "test-user", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(x => x.UserId).Returns("test-user");
+        _service = new InventorySearchService(_context, policy.Object, currentUser.Object, mockTenantProvider.Object);
     }
 
     [Theory]

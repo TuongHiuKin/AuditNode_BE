@@ -39,6 +39,20 @@ public class ApplicationRepository : IApplicationRepository
             .ToListAsync();
     }
 
+    public async Task<IEnumerable<ApplicationResponseDto>> GetScopedAsync(IReadOnlySet<Guid>? applicationIds, IReadOnlySet<Guid>? serverIds, IEnumerable<Guid>? requestedIds = null, string? labelKey = null, string? labelValue = null)
+    {
+        var query = ReadQuery();
+        if (applicationIds is not null) query = query.Where(application => applicationIds.Contains(application.Id));
+        if (requestedIds is not null)
+        {
+            var ids = requestedIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+            query = query.Where(application => ids.Contains(application.Id));
+        }
+        if (!string.IsNullOrWhiteSpace(labelKey))
+            query = query.Where(application => application.ApplicationLabels.Any(link => link.Label != null && link.Label.Key == labelKey && (string.IsNullOrWhiteSpace(labelValue) || link.Label.Value == labelValue)));
+        return await MapToResponseDto(query, serverIds).ToListAsync();
+    }
+
     public Task<AppEntity?> GetByIdAsync(Guid id) => ReadQuery().FirstOrDefaultAsync(application => application.Id == id);
 
     public Task<bool> AppCodeExistsAsync(string appCode, Guid? excludeApplicationId = null) =>
@@ -134,7 +148,7 @@ public class ApplicationRepository : IApplicationRepository
         }
     }
 
-    private static IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query) =>
+    private static IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query, IReadOnlySet<Guid>? allowedServerIds = null) =>
         query.Select(application => new ApplicationResponseDto
         {
             Id = application.Id,
@@ -144,7 +158,7 @@ public class ApplicationRepository : IApplicationRepository
             Risk = application.Risk,
             Icon = application.Icon,
             TechStack = application.TechStack,
-            Servers = application.PortMappings.Select(mapping => new ServerOnApplicationDto
+            Servers = application.PortMappings.Where(mapping => allowedServerIds == null || allowedServerIds.Contains(mapping.ServerId)).Select(mapping => new ServerOnApplicationDto
             {
                 PortMappingId = mapping.Id,
                 Id = mapping.ServerId,

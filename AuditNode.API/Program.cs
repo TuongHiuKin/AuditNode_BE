@@ -14,11 +14,14 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Threading.RateLimiting;
+using AuditNode.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -60,7 +63,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options => options.AddPolicy("SystemAdminOnly", policy => policy.RequireRole("SystemAdmin")));
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -90,6 +93,7 @@ builder.Services.AddOptions<KeycloakRuntimeOptions>()
 builder.Services.AddHttpClient(KeycloakAuthService.HttpClientName);
 builder.Services.AddTransient<IKeycloakHttpClientFactory, KeycloakHttpClientFactoryAdapter>();
 builder.Services.AddScoped<IIdentityAuthService, KeycloakAuthService>();
+builder.Services.AddScoped<IIdentityAdminService, KeycloakAuthService>();
 
 // Register Keycloak Role Claims Transformation for RBAC
 builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
@@ -111,6 +115,11 @@ builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
 builder.Services.AddScoped<IApplicationService, AuditNode.Infrastructure.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Infrastructure.Services.ServerService>();
 builder.Services.AddScoped<IWorkspaceService, AuditNode.Infrastructure.Services.WorkspaceService>();
+builder.Services.AddScoped<IWorkspaceAccessService, WorkspaceAccessService>();
+builder.Services.AddScoped<IWorkspaceSharingService, WorkspaceSharingService>();
+builder.Services.AddScoped<IWorkspaceUserSummaryService, WorkspaceUserSummaryService>();
+builder.Services.AddScoped<IWorkspaceShareOptionsService, WorkspaceShareOptionsService>();
+builder.Services.AddScoped<IScopedResourcePolicy, ScopedResourcePolicy>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();

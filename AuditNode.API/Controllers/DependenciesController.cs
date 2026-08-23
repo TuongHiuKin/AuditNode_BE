@@ -2,6 +2,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Security;
 
 namespace AuditNode.API.Controllers;
 
@@ -17,7 +18,7 @@ public class DependenciesController : ControllerBase
         _dependencyService = dependencyService;
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
+    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpPut("sync")]
     public async Task<IActionResult> SyncDependencies([FromBody] SyncDependenciesDto dto)
     {

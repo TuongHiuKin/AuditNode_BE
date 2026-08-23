@@ -8,6 +8,7 @@ public interface IApplicationRepository
 {
     Task<IEnumerable<ApplicationResponseDto>> GetApplicationsAsync(string? labelKey = null, string? labelValue = null);
     Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids);
+    Task<IEnumerable<ApplicationResponseDto>> GetScopedAsync(IReadOnlySet<Guid>? applicationIds, IReadOnlySet<Guid>? serverIds, IEnumerable<Guid>? requestedIds = null, string? labelKey = null, string? labelValue = null);
     Task<AppEntity?> GetByIdAsync(Guid id);
     Task<bool> AppCodeExistsAsync(string appCode, Guid? excludeApplicationId = null);
     Task<bool> ServerExistsAsync(Guid serverId);

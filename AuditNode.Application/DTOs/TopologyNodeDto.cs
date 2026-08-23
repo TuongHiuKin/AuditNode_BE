@@ -11,6 +11,7 @@ public class TopologyNodeDto
     public double? Height { get; set; }
     public Guid? ParentNodeId { get; set; }
     public Guid? ReferenceId { get; set; }
+    public bool IsRestricted { get; set; }
 }
 
 public class TopologyEdgeDto

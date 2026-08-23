@@ -4,21 +4,34 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace AuditNode.Infrastructure.Repositories;
 
 public class TopologyRepository : ITopologyRepository
 {
     private readonly AuditDbContext _context;
+    private readonly IScopedResourcePolicy _policy;
+    private readonly ICurrentUserService _currentUser;
+    private readonly ITenantProvider _tenant;
 
-    public TopologyRepository(AuditDbContext context)
+    public TopologyRepository(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
     {
         _context = context;
+        _policy = policy;
+        _currentUser = currentUser;
+        _tenant = tenant;
     }
 
     public async Task<TopologyStateDto> GetTopologyStateAsync()
     {
-        var nodes = await _context.TopologyNodes.AsNoTracking()
+        if (!_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)) return new();
+        var allowedServers = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "server");
+        var allowedApps = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "application");
+        var frameRoots = await _policy.GetGrantedFrameIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!);
+        var allowedMappings = allowedApps is null ? null : (await _context.PortMappings.Where(x => allowedApps.Contains(x.AppId) && (allowedServers == null || allowedServers.Contains(x.ServerId))).Select(x => x.Id).ToListAsync()).ToHashSet();
+        var rawNodes = await _context.TopologyNodes.AsNoTracking()
             .OrderBy(node => node.Id)
             .Select(node => new TopologyNodeDto
             {
@@ -32,7 +45,27 @@ public class TopologyRepository : ITopologyRepository
                 ParentNodeId = node.ParentNodeId,
                 ReferenceId = node.ReferenceId
             }).ToListAsync();
-        var edges = await _context.TopologyEdges.AsNoTracking()
+        var rawById = rawNodes.ToDictionary(x => x.Id);
+        var visibleIds = allowedServers is null && allowedApps is null
+            ? rawNodes.Select(node => node.Id).ToHashSet()
+            : rawNodes.Where(node => node.NodeType.Equals("server", StringComparison.OrdinalIgnoreCase)
+                ? node.ReferenceId.HasValue && (allowedServers == null || allowedServers.Contains(node.ReferenceId.Value))
+                : node.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase)
+                    ? node.ReferenceId.HasValue && (allowedMappings == null || allowedMappings.Contains(node.ReferenceId.Value))
+                    : false).Select(x => x.Id).ToHashSet();
+        foreach (var id in visibleIds.ToArray())
+        {
+            if (frameRoots is not { Count: > 0 }) continue;
+            var cursor = rawById[id].ParentNodeId;
+            while (cursor.HasValue && visibleIds.Add(cursor.Value) && rawById.TryGetValue(cursor.Value, out var parent))
+            {
+                if (frameRoots.Contains(cursor.Value)) break;
+                cursor = parent.ParentNodeId;
+            }
+        }
+        var nodes = rawNodes.Where(x => visibleIds.Contains(x.Id)).ToList();
+        foreach (var node in nodes.Where(x => x.ParentNodeId.HasValue && !visibleIds.Contains(x.ParentNodeId.Value))) node.ParentNodeId = null;
+        var rawEdges = await _context.TopologyEdges.AsNoTracking()
             .OrderBy(edge => edge.Id)
             .Select(edge => new TopologyEdgeDto
             {
@@ -45,7 +78,46 @@ public class TopologyRepository : ITopologyRepository
                 Label = edge.Label,
                 ReferenceId = edge.ReferenceId
             }).ToListAsync();
+        var edges = new List<TopologyEdgeDto>();
+        foreach (var edge in rawEdges.Where(x => visibleIds.Contains(x.SourceNodeId) || visibleIds.Contains(x.TargetNodeId)))
+        {
+            var sourceVisible = visibleIds.Contains(edge.SourceNodeId);
+            var targetVisible = visibleIds.Contains(edge.TargetNodeId);
+            if (!sourceVisible)
+            {
+                var opaque = OpaqueId(_currentUser.UserId!, edge.SourceNodeId);
+                nodes.Add(Restricted(opaque));
+                edge.SourceNodeId = opaque;
+                edge.Id = OpaqueId(_currentUser.UserId!, edge.Id);
+                edge.ReferenceId = null;
+            }
+            if (!targetVisible)
+            {
+                var opaque = OpaqueId(_currentUser.UserId!, edge.TargetNodeId);
+                nodes.Add(Restricted(opaque));
+                edge.TargetNodeId = opaque;
+                edge.Id = OpaqueId(_currentUser.UserId!, edge.Id);
+                edge.ReferenceId = null;
+            }
+            if (!sourceVisible || !targetVisible)
+            {
+                edge.SourceHandle = string.Empty;
+                edge.TargetHandle = string.Empty;
+                edge.EdgeType = "restricted";
+                edge.Label = string.Empty;
+                edge.ReferenceId = null;
+            }
+            edges.Add(edge);
+        }
+        nodes = nodes.DistinctBy(x => x.Id).ToList();
         return new TopologyStateDto { Nodes = nodes, Edges = edges };
+    }
+
+    private static TopologyNodeDto Restricted(Guid id) => new() { Id = id, NodeType = "restricted", Label = "External Resource (Restricted)", IsRestricted = true };
+    private static Guid OpaqueId(string userId, Guid value)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{userId}:{value:N}"));
+        return new Guid(hash.AsSpan(0, 16));
     }
 
     public async Task<TopologyStateStatus> SaveTopologyStateAsync(TopologyStateDto state)
@@ -246,6 +318,7 @@ public class TopologyRepository : ITopologyRepository
 
     public async Task<IEnumerable<TopologyTreeDto>> GetTopologyTreeAsync(Guid? datacenterId = null, int skip = 0, int take = 100, List<string>? labels = null)
     {
+        var (allowedServers, allowedApps) = await ScopeIdsAsync();
         var query = _context.Datacenters
             .Include(d => d.Servers)
                 .ThenInclude(s => s.PortMappings)
@@ -254,6 +327,7 @@ public class TopologyRepository : ITopologyRepository
                 .ThenInclude(s => s.Labels)
             .AsSplitQuery()
             .AsNoTracking();
+        if (allowedServers is not null) query = query.Where(d => d.Servers.Any(s => allowedServers.Contains(s.Id)));
 
         if (datacenterId.HasValue && datacenterId.Value != Guid.Empty)
         {
@@ -277,8 +351,8 @@ public class TopologyRepository : ITopologyRepository
             Name = d.Name,
             Location = d.Location,
             Servers = d.Servers
-                .Where(s => labels == null || !labels.Any() || s.Labels.Any(l =>
-                    labels.Contains(l.Key) || labels.Contains(l.Value) || labels.Contains(l.Key + ":" + l.Value)))
+                .Where(s => (allowedServers == null || allowedServers.Contains(s.Id)) && (labels == null || !labels.Any() || s.Labels.Any(l =>
+                    labels.Contains(l.Key) || labels.Contains(l.Value) || labels.Contains(l.Key + ":" + l.Value))))
                 .Select(s => new ServerNodeDto
                 {
                     Id = s.Id,
@@ -290,7 +364,7 @@ public class TopologyRepository : ITopologyRepository
                         Key = l.Key,
                         Value = l.Value
                     }).ToList(),
-                    Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
+                    Applications = s.PortMappings.Where(pm => allowedApps == null || allowedApps.Contains(pm.AppId)).Select(pm => new ApplicationNodeDto
                     {
                         Id = pm.Id,
                         AppId = pm.AppId,
@@ -306,12 +380,14 @@ public class TopologyRepository : ITopologyRepository
 
     public async Task<DependencyMapDto> GetDependencyMapAsync(string? environment = null, Guid? datacenterId = null, List<string>? labels = null)
     {
+        var (allowedServers, allowedApps) = await ScopeIdsAsync();
         var serverQuery = _context.Servers
             .Include(s => s.PortMappings)
                 .ThenInclude(pm => pm.Application)
             .Include(s => s.Labels)
             .AsSplitQuery()
             .AsNoTracking();
+        if (allowedServers is not null) serverQuery = serverQuery.Where(s => allowedServers.Contains(s.Id));
 
         if (!string.IsNullOrWhiteSpace(environment))
         {
@@ -333,6 +409,7 @@ public class TopologyRepository : ITopologyRepository
 
         var connections = await _context.AppDependencies
             .AsNoTracking()
+            .Where(ad => allowedApps == null || allowedApps.Contains(ad.SourceAppId) || allowedApps.Contains(ad.DestAppId))
             .Select(ad => new ConnectionDto
             {
                 Id = ad.Id,
@@ -343,6 +420,22 @@ public class TopologyRepository : ITopologyRepository
                 ConnectionType = ad.ConnectionType
             })
             .ToListAsync();
+
+        var restrictedNodes = new Dictionary<Guid, RestrictedDependencyNodeDto>();
+        if (allowedApps is not null)
+        {
+            foreach (var connection in connections)
+            {
+                var sourceVisible = allowedApps.Contains(connection.SourceAppId);
+                var targetVisible = allowedApps.Contains(connection.TargetAppId) && (allowedServers == null || allowedServers.Contains(connection.DestinationServerId));
+                if (sourceVisible && targetVisible) continue;
+                if (!sourceVisible) { var opaque = OpaqueId(_currentUser.UserId!, connection.SourceAppId); restrictedNodes.TryAdd(opaque, new(opaque)); connection.SourceAppId = opaque; }
+                if (!targetVisible) { var opaque = OpaqueId(_currentUser.UserId!, connection.TargetAppId); restrictedNodes.TryAdd(opaque, new(opaque)); connection.TargetAppId = opaque; connection.DestinationServerId = OpaqueId(_currentUser.UserId!, connection.DestinationServerId); connection.DestinationPortMappingId = OpaqueId(_currentUser.UserId!, connection.DestinationPortMappingId); }
+                connection.Id = OpaqueId(_currentUser.UserId!, connection.Id);
+                connection.ConnectionType = "Restricted";
+                connection.IsRestricted = true;
+            }
+        }
 
         return new DependencyMapDto
         {
@@ -357,7 +450,7 @@ public class TopologyRepository : ITopologyRepository
                     Key = l.Key,
                     Value = l.Value
                 }).ToList(),
-                Applications = s.PortMappings.Select(pm => new ApplicationNodeDto
+                Applications = s.PortMappings.Where(pm => allowedApps == null || allowedApps.Contains(pm.AppId)).Select(pm => new ApplicationNodeDto
                 {
                     Id = pm.Id,
                     AppId = pm.AppId,
@@ -368,12 +461,14 @@ public class TopologyRepository : ITopologyRepository
                     Protocol = pm.Protocol
                 }).ToList()
             }).ToList(),
-            Connections = connections
+            Connections = connections,
+            RestrictedNodes = restrictedNodes.Values.ToList()
         };
     }
 
     public async Task<IEnumerable<ApplicationStatusDto>> GetApplicationStatusAsync()
     {
+        var (_, allowedApps) = await ScopeIdsAsync();
         var mappedAppIds = await _context.AppDependencies
             .AsNoTracking()
             .Select(ad => ad.SourceAppId)
@@ -383,6 +478,7 @@ public class TopologyRepository : ITopologyRepository
 
         return await _context.Applications
             .AsNoTracking()
+            .Where(a => allowedApps == null || allowedApps.Contains(a.Id))
             .Select(a => new ApplicationStatusDto
             {
                 Id = a.Id,
@@ -390,5 +486,13 @@ public class TopologyRepository : ITopologyRepository
                 IsMapped = mappedAppIds.Contains(a.Id)
             })
             .ToListAsync();
+
+    }
+
+    private async Task<(IReadOnlySet<Guid>? Servers, IReadOnlySet<Guid>? Applications)> ScopeIdsAsync()
+    {
+        if (!_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)) return (new HashSet<Guid>(), new HashSet<Guid>());
+        return (await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "server"),
+            await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "application"));
     }
 }

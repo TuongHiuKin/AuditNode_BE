@@ -14,6 +14,17 @@ namespace AuditNode.Tests.Repositories;
 
 public class TopologyRepositoryTests
 {
+    private static TopologyRepository Repository(AuditDbContext context)
+    {
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "test-user", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+        policy.Setup(x => x.GetGrantedFrameIdsAsync(It.IsAny<Guid>(), "test-user", It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("test-user");
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
+        return new TopologyRepository(context, policy.Object, user.Object, tenant.Object);
+    }
     private AuditDbContext GetDbContext()
     {
         var options = new DbContextOptionsBuilder<AuditDbContext>()
@@ -48,7 +59,7 @@ public class TopologyRepositoryTests
 
         await context.SaveChangesAsync();
 
-        var repository = new TopologyRepository(context);
+        var repository = Repository(context);
 
         // Act
         var result = await repository.GetApplicationStatusAsync();
@@ -76,7 +87,7 @@ public class TopologyRepositoryTests
         });
         await context.SaveChangesAsync();
 
-        var repository = new TopologyRepository(context);
+        var repository = Repository(context);
         var newNodeId = Guid.NewGuid();
         var state = new SaveTopologyStateDto
         {
@@ -140,7 +151,7 @@ public class TopologyRepositoryTests
         context.Labels.AddRange(lbl1, lbl2);
         await context.SaveChangesAsync();
 
-        var repository = new TopologyRepository(context);
+        var repository = Repository(context);
 
         // Act
         var result = await repository.GetDependencyMapAsync(labels: new List<string> { "env:prod" });
@@ -175,7 +186,7 @@ public class TopologyRepositoryTests
         context.Labels.AddRange(lbl1, lbl2);
         await context.SaveChangesAsync();
 
-        var repository = new TopologyRepository(context);
+        var repository = Repository(context);
 
         // Act
         var result = await repository.GetTopologyTreeAsync(datacenterId: null, skip: 0, take: 100, labels: new List<string> { "env:prod" });
@@ -204,7 +215,7 @@ public class TopologyRepositoryTests
         context.AddRange(app, first, second, firstMapping, secondMapping);
         await context.SaveChangesAsync();
 
-        var map = await new TopologyRepository(context).GetDependencyMapAsync();
+        var map = await Repository(context).GetDependencyMapAsync();
         var nodes = map.Servers.SelectMany(server => server.Applications).ToArray();
 
         nodes.Select(node => node.Id).Should().BeEquivalentTo([firstMapping.Id, secondMapping.Id]);
@@ -229,9 +240,43 @@ public class TopologyRepositoryTests
         context.AppDependencies.Add(dependency);
         await context.SaveChangesAsync();
 
-        var map = await new TopologyRepository(context).GetDependencyMapAsync();
+        var map = await Repository(context).GetDependencyMapAsync();
 
         map.Connections.Should().ContainSingle().Which.DestinationPortMappingId.Should().Be(dependency.DestPortId);
+    }
+
+    [Fact]
+    public async Task Scoped_dependency_map_preserves_boundary_connection_without_leaking_hidden_identifiers()
+    {
+        using var context = GetDbContext();
+        var visibleServer = new Server { Id = Guid.NewGuid(), Hostname = "visible", IpAddress = "10.0.0.1" };
+        var hiddenServer = new Server { Id = Guid.NewGuid(), Hostname = "secret-host", IpAddress = "10.0.0.99" };
+        var visibleApp = new AppEntity { Id = Guid.NewGuid(), AppCode = "VISIBLE", AppName = "Visible" };
+        var hiddenApp = new AppEntity { Id = Guid.NewGuid(), AppCode = "SECRET", AppName = "Secret Application" };
+        var hiddenMapping = new PortMapping { Id = Guid.NewGuid(), AppId = hiddenApp.Id, ServerId = hiddenServer.Id, PortNumber = 9443 };
+        var dependency = new AppDependency { Id = Guid.NewGuid(), SourceAppId = visibleApp.Id, DestAppId = hiddenApp.Id, DestPortId = hiddenMapping.Id, ConnectionType = "SensitiveProtocol" };
+        context.AddRange(visibleServer, hiddenServer, visibleApp, hiddenApp, hiddenMapping, dependency);
+        await context.SaveChangesAsync();
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "viewer", "server", It.IsAny<CancellationToken>())).ReturnsAsync(new HashSet<Guid> { visibleServer.Id });
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "viewer", "application", It.IsAny<CancellationToken>())).ReturnsAsync(new HashSet<Guid> { visibleApp.Id });
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("viewer");
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
+
+        var map = await new TopologyRepository(context, policy.Object, user.Object, tenant.Object).GetDependencyMapAsync();
+
+        var connection = map.Connections.Should().ContainSingle().Which;
+        connection.SourceAppId.Should().Be(visibleApp.Id);
+        connection.TargetAppId.Should().NotBe(hiddenApp.Id);
+        connection.DestinationServerId.Should().NotBe(hiddenServer.Id);
+        connection.DestinationPortMappingId.Should().NotBe(hiddenMapping.Id);
+        connection.Id.Should().NotBe(dependency.Id);
+        connection.ConnectionType.Should().Be("Restricted");
+        connection.IsRestricted.Should().BeTrue();
+        map.RestrictedNodes.Should().ContainSingle(x => x.Id == connection.TargetAppId && x.IsRestricted && x.DisplayName == "External Resource (Restricted)");
+        map.Servers.Should().NotContain(x => x.Id == hiddenServer.Id || x.Hostname == hiddenServer.Hostname);
     }
 
     [Fact]
@@ -254,7 +299,7 @@ public class TopologyRepositoryTests
                 new TopologyEdgeDto { Id = Guid.NewGuid(), SourceNodeId = firstNodeId, TargetNodeId = secondNodeId, EdgeType = "smoothstep" }
             ]
         };
-        var repository = new TopologyRepository(context);
+        var repository = Repository(context);
 
         var status = await repository.SaveTopologyStateAsync(state);
         var reloaded = await repository.GetTopologyStateAsync();
@@ -268,7 +313,7 @@ public class TopologyRepositoryTests
     {
         using var context = GetDbContext();
         var duplicate = Guid.NewGuid();
-        var repository = new TopologyRepository(context);
+        var repository = Repository(context);
 
         var status = await repository.SaveTopologyStateAsync(new TopologyStateDto
         {
@@ -288,7 +333,7 @@ public class TopologyRepositoryTests
     {
         using var context = GetDbContext();
         var parent = Guid.NewGuid();
-        var status = await new TopologyRepository(context).SaveTopologyStateAsync(new TopologyStateDto
+        var status = await Repository(context).SaveTopologyStateAsync(new TopologyStateDto
         {
             Nodes =
             [
@@ -298,5 +343,42 @@ public class TopologyRepositoryTests
         });
 
         status.Should().Be(TopologyStateStatus.InvalidParent);
+    }
+
+    [Fact]
+    public async Task Scoped_state_replaces_external_endpoint_with_restricted_opaque_node()
+    {
+        using var context = GetDbContext();
+        var visibleResource = Guid.NewGuid();
+        var hiddenResource = Guid.NewGuid();
+        var visibleNode = Guid.NewGuid();
+        var hiddenNode = Guid.NewGuid();
+        context.TopologyNodes.AddRange(
+            new TopologyNode { Id = visibleNode, NodeType = "server", Label = "Visible host", ReferenceId = visibleResource },
+            new TopologyNode { Id = hiddenNode, NodeType = "server", Label = "Secret host", ReferenceId = hiddenResource });
+        context.TopologyEdges.Add(new TopologyEdge { Id = Guid.NewGuid(), SourceNodeId = visibleNode, TargetNodeId = hiddenNode, EdgeType = "smoothstep" });
+        await context.SaveChangesAsync();
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "viewer", "server", It.IsAny<CancellationToken>())).ReturnsAsync(new HashSet<Guid> { visibleResource });
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "viewer", "application", It.IsAny<CancellationToken>())).ReturnsAsync(new HashSet<Guid>());
+        policy.Setup(x => x.GetGrantedFrameIdsAsync(It.IsAny<Guid>(), "viewer", It.IsAny<CancellationToken>())).ReturnsAsync(new HashSet<Guid>());
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("viewer");
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
+        var repository = new TopologyRepository(context, policy.Object, user.Object, tenant.Object);
+
+        var state = await repository.GetTopologyStateAsync();
+
+        state.Nodes.Should().ContainSingle(x => x.Id == visibleNode && !x.IsRestricted);
+        var restricted = state.Nodes.Should().ContainSingle(x => x.IsRestricted).Which;
+        restricted.Id.Should().NotBe(hiddenNode);
+        restricted.Label.Should().Be("External Resource (Restricted)");
+        restricted.ReferenceId.Should().BeNull();
+        var boundary = state.Edges.Should().ContainSingle(x => x.SourceNodeId == visibleNode && x.TargetNodeId == restricted.Id && x.ReferenceId == null).Which;
+        boundary.SourceHandle.Should().BeEmpty();
+        boundary.TargetHandle.Should().BeEmpty();
+        boundary.EdgeType.Should().Be("restricted");
+        boundary.Label.Should().BeEmpty();
     }
 }

@@ -103,7 +103,17 @@ public class ApplicationServiceTests
         result.Status.Should().Be(ApplicationOperationStatus.DeploymentNotFound);
     }
 
-    private ApplicationService Service() => new(_repository.Object, _tenant.Object);
+    private ApplicationService Service()
+    {
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.CanReadAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.CanWriteAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.CanCreateAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("test-user");
+        return new(_repository.Object, _tenant.Object, policy.Object, user.Object);
+    }
 
     private static CreateApplicationDto ValidCreate() => new()
     {

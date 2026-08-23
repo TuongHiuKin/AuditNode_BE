@@ -7,6 +7,7 @@ public interface IServerRepository
 {
     Task<IEnumerable<ServerResponseDto>> GetAllWithAppsAsync(string? environment = null, Guid? datacenterId = null);
     Task<IEnumerable<ServerResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids);
+    Task<IEnumerable<ServerResponseDto>> GetScopedAsync(IReadOnlySet<Guid>? serverIds, IReadOnlySet<Guid>? applicationIds, IEnumerable<Guid>? requestedIds = null);
     Task<Server?> GetByIdAsync(Guid id);
     Task<bool> DatacenterExistsAsync(Guid id);
     Task<bool> IpAddressExistsAsync(string ipAddress, Guid? excludeServerId = null);

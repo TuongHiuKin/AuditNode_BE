@@ -15,6 +15,17 @@ namespace AuditNode.Tests.Services;
 
 public class InfrastructureServiceTests
 {
+    private static InfrastructureService Service(AuditDbContext context)
+    {
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.CanReadAsync(It.IsAny<Guid>(), "test-user", It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "test-user", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("test-user");
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
+        return new InfrastructureService(context, NullLogger<InfrastructureService>.Instance, policy.Object, user.Object, tenant.Object);
+    }
     private AuditDbContext GetDbContext()
     {
         var options = new DbContextOptionsBuilder<AuditDbContext>()
@@ -47,7 +58,7 @@ public class InfrastructureServiceTests
 
         await dbContext.SaveChangesAsync();
 
-        var service = new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance);
+        var service = Service(dbContext);
 
         // Act
         var count = await service.GetDependenciesCountAsync(appId);
@@ -79,7 +90,7 @@ public class InfrastructureServiceTests
         });
         await dbContext.SaveChangesAsync();
 
-        var service = new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance);
+        var service = Service(dbContext);
         var migrateDto = new MigrateAppDto 
         { 
             PortMappingId = portMappingId, 
@@ -112,7 +123,7 @@ public class InfrastructureServiceTests
             new PortMapping { Id = Guid.NewGuid(), AppId = Guid.NewGuid(), ServerId = serverId, PortNumber = 443 });
         await dbContext.SaveChangesAsync();
 
-        var service = new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance);
+        var service = Service(dbContext);
         var result = await service.MigrateAppAsync(new MigrateAppDto
         {
             PortMappingId = mappingId, TargetServerId = serverId, NewPortNumber = 443
@@ -135,7 +146,7 @@ public class InfrastructureServiceTests
         });
         await dbContext.SaveChangesAsync();
 
-        var result = await new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance)
+        var result = await Service(dbContext)
             .GetDeployedAppsByServerAsync(serverId);
 
         result.Should().ContainSingle().Which.PortMappingId.Should().Be(mappingId);
@@ -161,7 +172,7 @@ public class InfrastructureServiceTests
 
         await dbContext.SaveChangesAsync();
 
-        var service = new InfrastructureService(dbContext, NullLogger<InfrastructureService>.Instance);
+        var service = Service(dbContext);
 
         // Act
         var result = await service.PurgeAppAsync(appId);

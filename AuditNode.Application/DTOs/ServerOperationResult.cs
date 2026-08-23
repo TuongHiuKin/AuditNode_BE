@@ -7,6 +7,7 @@ public enum ServerOperationStatus
     NotFound,
     DatacenterNotFound,
     DuplicateIp
+    ,Forbidden
 }
 
 public sealed record ServerOperationResult(

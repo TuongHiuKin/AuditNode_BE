@@ -2,6 +2,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Security;
 
 namespace AuditNode.API.Controllers;
 
@@ -83,7 +84,7 @@ public class TopologyController : ControllerBase
 
     [HttpPost("state")]
     [HttpPut("state")]
-    [Authorize(Roles = "Admin,Auditor")]
+    [WorkspaceMutation(ownerOrAdminOnly: true)]
     public async Task<IActionResult> SaveState([FromBody] TopologyStateDto state)
     {
         if (state?.Nodes is null || state.Edges is null)

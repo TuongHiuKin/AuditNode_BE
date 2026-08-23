@@ -144,11 +144,54 @@ public class ServerServiceTests
 
         await Service().ExportServersAsync([first, second, first, Guid.Empty]);
 
-        _repository.Verify(x => x.GetByIdsAsync(It.Is<IEnumerable<Guid>>(ids =>
+        _repository.Verify(x => x.GetScopedAsync(null, null, It.Is<IEnumerable<Guid>>(ids =>
             ids.Order().SequenceEqual(new[] { first, second }.Order()))), Times.Once);
     }
 
-    private ServerService Service() => new(_repository.Object, _tenant.Object);
+    private ServerService Service()
+    {
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.CanReadAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.CanWriteAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.CanCreateAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("test-user");
+        return new(_repository.Object, _tenant.Object, policy.Object, user.Object);
+    }
+
+    [Fact]
+    public async Task Create_ShouldFailClosed_WhenCurrentUserIsUnavailable()
+    {
+        var policy = new Mock<IScopedResourcePolicy>();
+        var user = new Mock<ICurrentUserService>();
+        var service = new ServerService(_repository.Object, _tenant.Object, policy.Object, user.Object);
+
+        var result = await service.CreateServerAsync(ValidCreate());
+
+        result.Status.Should().Be(ServerOperationStatus.Forbidden);
+        _repository.Verify(x => x.CreateServerAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Update_ShouldRejectLabelsThatWouldEscapeAuditorScope()
+    {
+        var id = Guid.NewGuid();
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(new Server { Id = id });
+        var policy = new Mock<IScopedResourcePolicy>();
+        policy.Setup(x => x.CanWriteAsync(It.IsAny<Guid>(), "auditor", "server", id, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        policy.Setup(x => x.CanCreateAsync(It.IsAny<Guid>(), "auditor", "server", It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("auditor");
+        var service = new ServerService(_repository.Object, _tenant.Object, policy.Object, user.Object);
+        var dto = ValidUpdate();
+        dto.Labels = [new LabelDto { Key = "env", Value = "production" }];
+
+        var result = await service.UpdateServerAsync(id, dto);
+
+        result.Status.Should().Be(ServerOperationStatus.Forbidden);
+        _repository.Verify(x => x.UpdateAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>?>()), Times.Never);
+    }
 
     private static CreateServerDto ValidCreate() => new()
     {

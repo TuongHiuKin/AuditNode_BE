@@ -24,6 +24,7 @@ public class AuditDbContext : DbContext
     public DbSet<DependencyView> DependencyViews { get; set; }
     public DbSet<Workspace> Workspaces { get; set; }
     public DbSet<WorkspaceMember> WorkspaceMembers { get; set; }
+    public DbSet<WorkspaceMemberScope> WorkspaceMemberScopes { get; set; }
     public DbSet<TopologyNode> TopologyNodes { get; set; }
     public DbSet<TopologyEdge> TopologyEdges { get; set; }
     public DbSet<Label> Labels { get; set; }
@@ -87,13 +88,18 @@ public class AuditDbContext : DbContext
 
         modelBuilder.Entity<WorkspaceMember>(entity =>
         {
-            entity.ToTable("workspace_members", table => table.HasCheckConstraint(
-                "ck_workspace_members_role",
-                "role IN ('workspace_admin', 'editor', 'auditor', 'viewer')"));
+            entity.ToTable("workspace_members", table =>
+            {
+                table.HasCheckConstraint("ck_workspace_members_role", "role IN ('workspace_admin', 'auditor', 'viewer')");
+                table.HasCheckConstraint("ck_workspace_members_scope_mode", "scope_mode IN ('all', 'labels', 'frames')");
+                table.HasCheckConstraint("ck_workspace_members_admin_all", "role <> 'workspace_admin' OR scope_mode = 'all'");
+            });
             entity.HasKey(e => new { e.WorkspaceId, e.UserId });
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id");
             entity.Property(e => e.UserId).HasColumnName("user_id").HasMaxLength(100).IsRequired();
             entity.Property(e => e.Role).HasColumnName("role").HasMaxLength(40).IsRequired();
+            entity.Property(e => e.ScopeMode).HasColumnName("scope_mode").HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Version).HasColumnName("version").IsConcurrencyToken().IsRequired();
             entity.Property(e => e.InvitedByUserId).HasColumnName("invited_by_user_id").HasMaxLength(100).IsRequired();
             entity.Property(e => e.JoinedAt).HasColumnName("joined_at").IsRequired();
             entity.HasIndex(e => e.UserId);
@@ -101,6 +107,27 @@ public class AuditDbContext : DbContext
                 .WithMany(e => e.Members)
                 .HasForeignKey(e => e.WorkspaceId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkspaceMemberScope>(entity =>
+        {
+            entity.ToTable("workspace_member_scopes", table =>
+            {
+                table.HasCheckConstraint("ck_workspace_member_scopes_type", "scope_type IN ('label', 'frame')");
+                table.HasCheckConstraint("ck_workspace_member_scopes_target", "target_id <> '00000000-0000-0000-0000-000000000000'");
+            });
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id");
+            entity.Property(e => e.UserId).HasColumnName("user_id").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ScopeType).HasColumnName("scope_type").HasMaxLength(20).IsRequired();
+            entity.Property(e => e.TargetId).HasColumnName("target_id").IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(100).IsRequired();
+            entity.HasIndex(e => new { e.WorkspaceId, e.UserId });
+            entity.HasIndex(e => new { e.WorkspaceId, e.UserId, e.ScopeType, e.TargetId }).IsUnique();
+            entity.HasOne(e => e.Member).WithMany(e => e.Scopes)
+                .HasForeignKey(e => new { e.WorkspaceId, e.UserId }).OnDelete(DeleteBehavior.Cascade);
         });
 
         // Datacenter

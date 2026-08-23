@@ -1,17 +1,10 @@
-using AuditNode.Application.Interfaces;
-using Microsoft.AspNetCore.Http;
 using System.Security.Claims;
+using AuditNode.Application.Interfaces;
 
 namespace AuditNode.API.Services;
 
-public class CurrentUserService : ICurrentUserService
+public sealed class CurrentUserService(IHttpContextAccessor accessor) : ICurrentUserService
 {
-    private readonly IHttpContextAccessor _httpContextAccessor;
-
-    public CurrentUserService(IHttpContextAccessor httpContextAccessor)
-    {
-        _httpContextAccessor = httpContextAccessor;
-    }
-
-    public string? UserId => _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    public string? UserId => accessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        ?? accessor.HttpContext?.User.FindFirstValue("sub");
 }

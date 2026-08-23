@@ -2,6 +2,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Security;
 
 namespace AuditNode.API.Controllers;
 
@@ -32,7 +33,7 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
+    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpPut("apps/migrate")]
     public async Task<IActionResult> MigrateApp([FromBody] MigrateAppDto migrateDto)
     {
@@ -59,7 +60,7 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
+    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpDelete("apps/{id:guid}/purge")]
     public async Task<IActionResult> PurgeApp(Guid id)
     {

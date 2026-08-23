@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Security;
 
 namespace AuditNode.API.Controllers;
 
@@ -25,7 +26,7 @@ public class DatacentersController : ControllerBase
         return Ok(result);
     }
 
-    [Authorize(Roles = "Admin")]
+    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpPost]
     public async Task<ActionResult<DatacenterDto>> CreateDatacenter(CreateDatacenterDto dto)
     {

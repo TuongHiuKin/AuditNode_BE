@@ -68,7 +68,6 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
     [HttpPost]
     public async Task<ActionResult<ApplicationResponseDto>> PostApplication([FromBody] CreateApplicationDto appDto)
     {
@@ -87,6 +86,7 @@ public class ApplicationsController : ControllerBase
                     Conflict(Problem(409, "The target server port is already assigned.")),
                 ApplicationOperationStatus.InvalidRequest or ApplicationOperationStatus.InvalidWorkspace =>
                     BadRequest(Problem(400, "Application data is invalid for the current workspace.")),
+                ApplicationOperationStatus.Forbidden => Forbid(),
                 _ => Failure(500, "Application could not be created.")
             };
         }
@@ -96,7 +96,6 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> PutApplication(Guid id, [FromBody] UpdateApplicationDto updateDto)
     {
@@ -118,6 +117,7 @@ public class ApplicationsController : ControllerBase
                     Conflict(Problem(409, "The target server port is already assigned.")),
                 ApplicationOperationStatus.InvalidRequest or ApplicationOperationStatus.InvalidWorkspace =>
                     BadRequest(Problem(400, "Application data is invalid for the current workspace.")),
+                ApplicationOperationStatus.Forbidden => Forbid(),
                 _ => Failure(500, "Application could not be updated.")
             };
         }

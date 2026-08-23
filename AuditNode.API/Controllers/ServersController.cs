@@ -52,7 +52,6 @@ public class ServersController : ControllerBase
     }
 
     [HttpPost]
-    [Authorize(Roles = "Admin,Auditor")]
     public async Task<ActionResult<ServerResponseDto>> CreateServer([FromBody] CreateServerDto dto)
     {
         try
@@ -68,6 +67,7 @@ public class ServersController : ControllerBase
                     Conflict(Problem(409, "A server with this IP address already exists in the current workspace.")),
                 ServerOperationStatus.InvalidWorkspace =>
                     BadRequest(Problem(400, "A valid workspace is required.")),
+                ServerOperationStatus.Forbidden => Forbid(),
                 _ => ServerFailure()
             };
         }
@@ -78,7 +78,6 @@ public class ServersController : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
-    [Authorize(Roles = "Admin,Auditor")]
     public async Task<IActionResult> UpdateServer(Guid id, [FromBody] UpdateServerDto dto)
     {
         if (id == Guid.Empty)
@@ -97,6 +96,7 @@ public class ServersController : ControllerBase
                     Conflict(Problem(409, "A server with this IP address already exists in the current workspace.")),
                 ServerOperationStatus.InvalidWorkspace =>
                     BadRequest(Problem(400, "A valid workspace is required.")),
+                ServerOperationStatus.Forbidden => Forbid(),
                 _ => ServerFailure()
             };
         }
@@ -107,7 +107,6 @@ public class ServersController : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
-    [Authorize(Roles = "Admin,Auditor")]
     public async Task<IActionResult> DeleteServer(Guid id)
     {
         if (id == Guid.Empty)
@@ -122,6 +121,7 @@ public class ServersController : ControllerBase
                 ServerOperationStatus.NotFound => NotFound(Problem(404, "Server was not found.")),
                 ServerOperationStatus.InvalidWorkspace =>
                     BadRequest(Problem(400, "A valid workspace is required.")),
+                ServerOperationStatus.Forbidden => Forbid(),
                 _ => ServerFailure()
             };
         }
