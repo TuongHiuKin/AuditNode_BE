@@ -75,12 +75,35 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("AuditNode.Security.RateLimit");
+        logger.LogWarning(
+            "Rate limit rejected request {Path} for actor {ActorId}; correlation {CorrelationId}",
+            context.HttpContext.Request.Path,
+            context.HttpContext.User.FindFirst("sub")?.Value ?? "anonymous",
+            context.HttpContext.TraceIdentifier);
+        return ValueTask.CompletedTask;
+    };
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 20,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("share-options", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst("sub")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true
@@ -193,10 +216,9 @@ app.UseRouting();
 // Enable CORS early in the pipeline
 app.UseCors("AllowReact");
 
-app.UseRateLimiter();
-
 // Authentication MUST run before Authorization
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 // Deliberately anonymous: probes expose only process/dependency availability.

@@ -3,6 +3,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace AuditNode.API.Controllers;
 
@@ -12,10 +13,14 @@ namespace AuditNode.API.Controllers;
 public sealed class WorkspaceSharingController(IWorkspaceSharingService sharingService, IWorkspaceShareOptionsService shareOptions) : ControllerBase
 {
     [HttpGet("~/api/v1/workspaces/{workspaceId:guid}/share-options")]
+    [EnableRateLimiting("share-options")]
     public async Task<ActionResult<WorkspaceShareOptionsDto>> Options(Guid workspaceId, [FromQuery] string? search, [FromQuery] int first = 0, [FromQuery] int max = 20, CancellationToken cancellationToken = default)
     {
-        if (first < 0 || max is < 1 or > 100) return BadRequest();
-        var result = await shareOptions.GetAsync(workspaceId, Actor(), search, first, max, cancellationToken);
+        var normalizedSearch = search?.Trim();
+        if (first is < 0 or > 100 || max is < 1 or > 20 || normalizedSearch?.Length > 100 ||
+            (!string.IsNullOrEmpty(normalizedSearch) && normalizedSearch.Length < 3))
+            return BadRequest(new { error = "Search must be empty or contain between 3 and 100 characters; first and max cannot exceed 100 and 20 respectively." });
+        var result = await shareOptions.GetAsync(workspaceId, Actor(), normalizedSearch, first, max, cancellationToken);
         return result is null ? Forbid() : Ok(result);
     }
     [HttpGet]
