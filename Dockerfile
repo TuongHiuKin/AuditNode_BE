@@ -4,13 +4,19 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
+COPY Directory.Build.props ./
+
 # ── Restore layer (copy only .csproj files first for layer caching) ──────────
 COPY AuditNode.Domain/AuditNode.Domain.csproj             AuditNode.Domain/
+COPY AuditNode.Domain/packages.lock.json                  AuditNode.Domain/
 COPY AuditNode.Application/AuditNode.Application.csproj   AuditNode.Application/
+COPY AuditNode.Application/packages.lock.json             AuditNode.Application/
 COPY AuditNode.Infrastructure/AuditNode.Infrastructure.csproj AuditNode.Infrastructure/
+COPY AuditNode.Infrastructure/packages.lock.json          AuditNode.Infrastructure/
 COPY AuditNode.API/AuditNode.API.csproj                   AuditNode.API/
+COPY AuditNode.API/packages.lock.json                     AuditNode.API/
 
-RUN dotnet restore AuditNode.API/AuditNode.API.csproj
+RUN dotnet restore AuditNode.API/AuditNode.API.csproj --locked-mode
 
 # ── Copy the rest of the source and publish ───────────────────────────────────
 COPY . .

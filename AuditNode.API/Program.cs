@@ -15,6 +15,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Threading.RateLimiting;
 using AuditNode.API.Services;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -102,6 +104,9 @@ builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransform
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AuditDbContext>(options =>
     options.UseNpgsql(connectionString));
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    .AddCheck<DatabaseReadyHealthCheck>("database", tags: ["ready"]);
 
 // Register Repositories
 builder.Services.AddScoped<IServerRepository, ServerRepository>();
@@ -131,12 +136,14 @@ builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateServerDtoValidator>();
 
 // Add CORS policy
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5173", "http://localhost:3000"];
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policyBuilder =>
     {
         policyBuilder
-            .WithOrigins("http://localhost:5173", "http://localhost:3000")
+            .WithOrigins(allowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -151,6 +158,24 @@ builder.Services.AddControllers()
     });
 
 var app = builder.Build();
+
+if (args.Contains("--e2e-migrate-only", StringComparer.Ordinal))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var database = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+    // E2E starts from an empty database and must not execute legacy migrations
+    // whose first recorded migration predates the schema checked into this repo.
+    await database.Database.EnsureCreatedAsync();
+    return;
+}
+
+if (args.Contains("--migrate-only", StringComparer.Ordinal))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var database = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+    await database.Database.MigrateAsync();
+    return;
+}
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
@@ -184,6 +209,16 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Deliberately anonymous: probes expose only process/dependency availability.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("live")
+}).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready")
+}).AllowAnonymous();
+
 // Workspace isolation middleware
 app.UseMiddleware<WorkspaceMiddleware>();
 
@@ -203,4 +238,28 @@ public sealed class KeycloakHttpClientFactoryAdapter : IKeycloakHttpClientFactor
 
     public HttpClient CreateClient() =>
         _httpClientFactory.CreateClient(KeycloakAuthService.HttpClientName);
+}
+
+public sealed class DatabaseReadyHealthCheck(AuditDbContext database) : IHealthCheck
+{
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await database.Database.CanConnectAsync(cancellationToken))
+            return HealthCheckResult.Unhealthy("Database is unavailable.");
+
+        var requiredViews = await database.Database.SqlQueryRaw<string>(
+                """
+                SELECT viewname AS "Value"
+                FROM pg_catalog.pg_views
+                WHERE schemaname = 'public'
+                  AND viewname IN ('v_topology_map', 'v_dependency_graph')
+                """)
+            .ToListAsync(cancellationToken);
+
+        return requiredViews.Count == 2
+            ? HealthCheckResult.Healthy()
+            : HealthCheckResult.Unhealthy("Required database views are unavailable.");
+    }
 }
