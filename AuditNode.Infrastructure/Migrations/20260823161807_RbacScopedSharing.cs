@@ -15,6 +15,25 @@ namespace AuditNode.Infrastructure.Migrations
                 name: "ck_workspace_members_role",
                 table: "workspace_members");
 
+            migrationBuilder.Sql(
+                """
+                INSERT INTO workspace_member_rbac_provenance
+                    (workspace_id, user_id, original_role, captured_role, capture_source, requires_manual_decision)
+                SELECT workspace_id, user_id, role, role, 'rbac_apply', false
+                FROM workspace_members
+                WHERE role = 'editor'
+                ON CONFLICT (workspace_id, user_id) DO UPDATE
+                SET original_role = 'editor',
+                    captured_role = 'editor',
+                    capture_source = 'rbac_apply',
+                    requires_manual_decision = false,
+                    reviewed_by_user_id = NULL,
+                    reviewed_at = NULL,
+                    review_artifact = NULL,
+                    review_artifact_sha256 = NULL,
+                    captured_at = CURRENT_TIMESTAMP;
+                """);
+
             migrationBuilder.Sql("UPDATE workspace_members SET role = 'auditor' WHERE role = 'editor';");
 
             migrationBuilder.AddColumn<string>(
@@ -82,15 +101,36 @@ namespace AuditNode.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("UPDATE workspace_members SET role = 'editor' WHERE role = 'auditor';");
-            migrationBuilder.DropTable(
-                name: "workspace_member_scopes");
-
             migrationBuilder.DropCheckConstraint(
                 name: "ck_workspace_members_role",
                 table: "workspace_members");
             migrationBuilder.DropCheckConstraint(name: "ck_workspace_members_scope_mode", table: "workspace_members");
             migrationBuilder.DropCheckConstraint(name: "ck_workspace_members_admin_all", table: "workspace_members");
+
+            migrationBuilder.Sql(
+                """
+                DO $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1
+                        FROM workspace_member_rbac_provenance
+                        WHERE requires_manual_decision OR original_role IS NULL
+                    ) THEN
+                        RAISE EXCEPTION 'RBAC rollback blocked: unresolved legacy auditor provenance exists. Complete the RBAC migration runbook review first.';
+                    END IF;
+                END $$;
+
+                UPDATE workspace_members AS member
+                SET role = 'editor'
+                FROM workspace_member_rbac_provenance AS provenance
+                WHERE member.workspace_id = provenance.workspace_id
+                  AND member.user_id = provenance.user_id
+                  AND member.role = 'auditor'
+                  AND provenance.original_role = 'editor';
+                """);
+
+            migrationBuilder.DropTable(
+                name: "workspace_member_scopes");
 
             migrationBuilder.DropColumn(
                 name: "scope_mode",

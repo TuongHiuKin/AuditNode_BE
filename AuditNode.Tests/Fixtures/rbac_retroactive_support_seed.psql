@@ -1,0 +1,7 @@
+-- Converts a disposable latest-schema test database into the state of an installation
+-- that recorded RbacScopedSharing before the safety-support migration was deployed.
+DROP TABLE workspace_member_scope_backfill_audit;
+DROP TABLE workspace_member_rbac_provenance;
+
+DELETE FROM "__EFMigrationsHistory"
+WHERE "MigrationId" = '20260823160000_RbacMigrationSafetySupport';

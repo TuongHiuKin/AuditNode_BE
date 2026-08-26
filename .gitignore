@@ -62,6 +62,8 @@ package.json
 *.sqlite
 *.bak
 *.sql
+!AuditNode.Infrastructure/Sql/20260826_rbac_scope_preflight.sql
+!AuditNode.Infrastructure/Sql/20260826_rbac_scope_backfill.sql
 *.mdf
 *.ldf
 

@@ -159,16 +159,6 @@ builder.Services.AddControllers()
 
 var app = builder.Build();
 
-if (args.Contains("--e2e-migrate-only", StringComparer.Ordinal))
-{
-    await using var scope = app.Services.CreateAsyncScope();
-    var database = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
-    // E2E starts from an empty database and must not execute legacy migrations
-    // whose first recorded migration predates the schema checked into this repo.
-    await database.Database.EnsureCreatedAsync();
-    return;
-}
-
 if (args.Contains("--migrate-only", StringComparer.Ordinal))
 {
     await using var scope = app.Services.CreateAsyncScope();

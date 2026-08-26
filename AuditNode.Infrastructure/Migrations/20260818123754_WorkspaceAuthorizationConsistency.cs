@@ -104,9 +104,6 @@ namespace AuditNode.Infrastructure.Migrations
                 WHERE datacenter.workspace_id IS NULL
                   AND candidate.datacenter_id = datacenter.id;
                   
-                UPDATE datacenters
-                SET workspace_id = '00000000-0000-0000-0000-000000000000'::uuid
-                WHERE workspace_id IS NULL;
                 """);
 
             migrationBuilder.AddUniqueConstraint(

@@ -1,0 +1,19 @@
+UPDATE workspace_member_rbac_provenance
+SET original_role = captured_role,
+    requires_manual_decision = false,
+    reviewed_by_user_id = 'fixture-reviewer',
+    reviewed_at = CURRENT_TIMESTAMP,
+    review_artifact = 'integration-fixture://native-role-review',
+    review_artifact_sha256 = repeat('a', 64)
+WHERE requires_manual_decision OR original_role IS NULL;
+
+-- Mark one deterministic fixture auditor as a proven legacy editor so the rollback
+-- contract demonstrates editor restoration without changing native auditors.
+UPDATE workspace_member_rbac_provenance
+SET original_role = 'editor',
+    reviewed_by_user_id = 'fixture-reviewer',
+    reviewed_at = CURRENT_TIMESTAMP,
+    review_artifact = 'integration-fixture://legacy-editor-review',
+    review_artifact_sha256 = repeat('b', 64)
+WHERE workspace_id = '11111111-1111-1111-1111-111111111111'
+  AND user_id = 'fixture-auditor';
