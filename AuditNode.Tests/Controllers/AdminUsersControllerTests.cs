@@ -61,6 +61,8 @@ public class AdminUsersControllerTests
     [InlineData("conflict", 409)]
     [InlineData("configuration", 500)]
     [InlineData("upstream", 503)]
+    [InlineData("busy", 503)]
+    [InlineData("invariant", 503)]
     public async Task Status_normalizes_identity_failures(string failure, int expectedStatus)
     {
         var identity = new Mock<IIdentityAdminService>();
@@ -68,6 +70,8 @@ public class AdminUsersControllerTests
         {
             "conflict" => new IdentityConflictException(),
             "configuration" => new IdentityConfigurationException(),
+            "busy" => new IdentityMutationLockUnavailableException(),
+            "invariant" => new IdentityInvariantViolationException(),
             _ => new IdentityUpstreamUnavailableException()
         };
         identity.Setup(x => x.SetEnabledAsync("user-id", false, It.IsAny<CancellationToken>())).ThrowsAsync(exception);
@@ -76,6 +80,38 @@ public class AdminUsersControllerTests
         var result = await controller.Status("user-id", new(false), default);
 
         result.Should().BeAssignableTo<ObjectResult>().Which.StatusCode.Should().Be(expectedStatus);
+    }
+
+    [Theory]
+    [InlineData("busy")]
+    [InlineData("invariant")]
+    public async Task Roles_maps_distributed_invariant_failures_to_service_unavailable(string failure)
+    {
+        var identity = new Mock<IIdentityAdminService>();
+        var exception = failure == "busy"
+            ? (Exception)new IdentityMutationLockUnavailableException()
+            : new IdentityInvariantViolationException();
+        identity.Setup(x => x.SetSystemAdminAsync("user-id", false, It.IsAny<CancellationToken>())).ThrowsAsync(exception);
+        var controller = new AdminUsersController(identity.Object, new Mock<IWorkspaceUserSummaryService>().Object,
+            NullLogger<AdminUsersController>.Instance);
+
+        var result = await controller.Roles("user-id", new(false), default);
+
+        result.Should().BeAssignableTo<ObjectResult>().Which.StatusCode.Should().Be(503);
+    }
+
+    [Fact]
+    public async Task Status_maps_break_glass_protection_to_conflict()
+    {
+        var identity = new Mock<IIdentityAdminService>();
+        identity.Setup(x => x.SetEnabledAsync("break-glass", false, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new IdentityProtectedException());
+        var controller = new AdminUsersController(identity.Object, new Mock<IWorkspaceUserSummaryService>().Object,
+            NullLogger<AdminUsersController>.Instance);
+
+        var result = await controller.Status("break-glass", new(false), default);
+
+        result.Should().BeAssignableTo<ConflictObjectResult>();
     }
 
     private static AuditDbContext Context()

@@ -2,9 +2,11 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -198,7 +200,11 @@ public class KeycloakAuthServiceTests
         }
 
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
-        return new KeycloakAuthService(factory.Object, configuration);
+        var mutationLock = new Mock<ISystemAdminMutationLock>();
+        mutationLock.Setup(x => x.ExecuteAsync(It.IsAny<Func<CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+            .Returns((Func<CancellationToken, Task> action, CancellationToken cancellationToken) => action(cancellationToken));
+        return new KeycloakAuthService(factory.Object, configuration, mutationLock.Object,
+            NullLogger<KeycloakAuthService>.Instance);
     }
 
     private static HttpResponseMessage JsonResponse(HttpStatusCode status, object value) => new(status)

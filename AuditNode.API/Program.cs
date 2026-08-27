@@ -117,6 +117,7 @@ builder.Services.AddOptions<KeycloakRuntimeOptions>()
 
 builder.Services.AddHttpClient(KeycloakAuthService.HttpClientName);
 builder.Services.AddTransient<IKeycloakHttpClientFactory, KeycloakHttpClientFactoryAdapter>();
+builder.Services.AddScoped<ISystemAdminMutationLock, PostgresSystemAdminMutationLock>();
 builder.Services.AddScoped<IIdentityAuthService, KeycloakAuthService>();
 builder.Services.AddScoped<IIdentityAdminService, KeycloakAuthService>();
 

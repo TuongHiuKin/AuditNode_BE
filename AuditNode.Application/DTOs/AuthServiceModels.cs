@@ -25,3 +25,19 @@ public sealed class IdentityUpstreamUnavailableException : Exception
 {
     public IdentityUpstreamUnavailableException() : base("Identity service is unavailable.") { }
 }
+
+public sealed class IdentityMutationLockUnavailableException : Exception
+{
+    public IdentityMutationLockUnavailableException() : base("Identity administration is busy.") { }
+    public IdentityMutationLockUnavailableException(Exception innerException) : base("Identity administration is busy.", innerException) { }
+}
+
+public sealed class IdentityInvariantViolationException : Exception
+{
+    public IdentityInvariantViolationException() : base("The enabled SystemAdmin invariant could not be verified.") { }
+}
+
+public sealed class IdentityProtectedException : Exception
+{
+    public IdentityProtectedException() : base("The protected identity cannot be modified through AuditNode.") { }
+}

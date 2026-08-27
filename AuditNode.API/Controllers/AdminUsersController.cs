@@ -26,15 +26,20 @@ public sealed class AdminUsersController(IIdentityAdminService identities, IWork
     public async Task<IActionResult> Status(string id, [FromBody] UpdateIdentityStatus request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
+        using var auditScope = BeginMutationScope(id, request.Enabled ? "enable_identity" : "disable_identity");
         try
         {
             await identities.SetEnabledAsync(id, request.Enabled, cancellationToken);
-            logger.LogInformation("Identity status changed. TargetUserId={TargetUserId} Enabled={Enabled}", id, request.Enabled);
+            logger.LogInformation("Identity administration mutation completed. Enabled={Enabled}", request.Enabled);
             return NoContent();
         }
-        catch (IdentityConflictException) { return Conflict(new { error = "The last SystemAdmin cannot be disabled." }); }
-        catch (IdentityConfigurationException) { return StatusCode(500, new { error = "Identity administration is not configured correctly." }); }
-        catch (IdentityUpstreamUnavailableException) { return StatusCode(503, new { error = "Identity administration is unavailable." }); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { logger.LogWarning("Identity administration request canceled; destructive mutations complete safety verification before cancellation propagates."); throw; }
+        catch (IdentityConflictException exception) { logger.LogWarning(exception, "Identity administration mutation rejected by invariant."); return Conflict(new { error = "The last SystemAdmin cannot be disabled." }); }
+        catch (IdentityProtectedException exception) { logger.LogWarning(exception, "Protected identity mutation rejected."); return Conflict(new { error = "The emergency SystemAdmin cannot be modified through AuditNode." }); }
+        catch (IdentityMutationLockUnavailableException exception) { return MutationUnavailable(exception, "Identity administration is busy. Retry later."); }
+        catch (IdentityInvariantViolationException exception) { logger.LogCritical(exception, "Identity administration mutation required recovery."); return StatusCode(503, new { error = "Identity administration could not verify the SystemAdmin safety invariant." }); }
+        catch (IdentityConfigurationException exception) { logger.LogError(exception, "Identity administration configuration failure."); return StatusCode(500, new { error = "Identity administration is not configured correctly." }); }
+        catch (IdentityUpstreamUnavailableException exception) { logger.LogWarning(exception, "Identity administration upstream unavailable."); return StatusCode(503, new { error = "Identity administration is unavailable." }); }
     }
 
     [HttpPost]
@@ -56,15 +61,36 @@ public sealed class AdminUsersController(IIdentityAdminService identities, IWork
     public async Task<IActionResult> Roles(string id, [FromBody] UpdateSystemAdminRole request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(id)) return BadRequest();
+        using var auditScope = BeginMutationScope(id, request.SystemAdmin ? "grant_system_admin" : "revoke_system_admin");
         try
         {
             await identities.SetSystemAdminAsync(id, request.SystemAdmin, cancellationToken);
-            logger.LogInformation("System role changed. TargetUserId={TargetUserId} SystemAdmin={SystemAdmin}", id, request.SystemAdmin);
+            logger.LogInformation("Identity administration mutation completed. SystemAdmin={SystemAdmin}", request.SystemAdmin);
             return NoContent();
         }
-        catch (IdentityConflictException) { return Conflict(new { error = "The last SystemAdmin cannot be revoked." }); }
-        catch (IdentityConfigurationException) { return StatusCode(500, new { error = "Identity administration is not configured correctly." }); }
-        catch (IdentityUpstreamUnavailableException) { return StatusCode(503, new { error = "Identity administration is unavailable." }); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { logger.LogWarning("Identity administration request canceled; destructive mutations complete safety verification before cancellation propagates."); throw; }
+        catch (IdentityConflictException exception) { logger.LogWarning(exception, "Identity administration mutation rejected by invariant."); return Conflict(new { error = "The last SystemAdmin cannot be revoked." }); }
+        catch (IdentityProtectedException exception) { logger.LogWarning(exception, "Protected identity mutation rejected."); return Conflict(new { error = "The emergency SystemAdmin cannot be modified through AuditNode." }); }
+        catch (IdentityMutationLockUnavailableException exception) { return MutationUnavailable(exception, "Identity administration is busy. Retry later."); }
+        catch (IdentityInvariantViolationException exception) { logger.LogCritical(exception, "Identity administration mutation required recovery."); return StatusCode(503, new { error = "Identity administration could not verify the SystemAdmin safety invariant." }); }
+        catch (IdentityConfigurationException exception) { logger.LogError(exception, "Identity administration configuration failure."); return StatusCode(500, new { error = "Identity administration is not configured correctly." }); }
+        catch (IdentityUpstreamUnavailableException exception) { logger.LogWarning(exception, "Identity administration upstream unavailable."); return StatusCode(503, new { error = "Identity administration is unavailable." }); }
+    }
+
+    private IDisposable? BeginMutationScope(string targetUserId, string action) => logger.BeginScope(
+        new Dictionary<string, object?>
+        {
+            ["ActorUserId"] = ControllerContext.HttpContext?.User.FindFirst("sub")?.Value ?? "unknown",
+            ["TargetUserId"] = targetUserId,
+            ["Action"] = action,
+            ["CorrelationId"] = ControllerContext.HttpContext?.TraceIdentifier ?? "unavailable"
+        });
+
+    private IActionResult MutationUnavailable(Exception exception, string error)
+    {
+        logger.LogWarning(exception, "Identity administration distributed lock unavailable.");
+        if (ControllerContext.HttpContext is not null) Response.Headers.RetryAfter = "5";
+        return StatusCode(503, new { error });
     }
 }
 

@@ -6,21 +6,30 @@ using System.Text.Json;
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace AuditNode.Infrastructure.Services;
 
 public sealed class KeycloakAuthService : IIdentityAuthService, IIdentityAdminService
 {
-    private static readonly SemaphoreSlim AdminMutationLock = new(1, 1);
     public const string HttpClientName = "Keycloak";
+    private static readonly TimeSpan PostMutationVerificationTimeout = TimeSpan.FromSeconds(10);
 
     private readonly IKeycloakHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly ISystemAdminMutationLock _systemAdminMutationLock;
+    private readonly ILogger<KeycloakAuthService> _logger;
 
-    public KeycloakAuthService(IKeycloakHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public KeycloakAuthService(
+        IKeycloakHttpClientFactory httpClientFactory,
+        IConfiguration configuration,
+        ISystemAdminMutationLock systemAdminMutationLock,
+        ILogger<KeycloakAuthService> logger)
     {
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _systemAdminMutationLock = systemAdminMutationLock;
+        _logger = logger;
     }
 
     public async Task<IdentityTokenSet> LoginAsync(
@@ -175,18 +184,42 @@ public sealed class KeycloakAuthService : IIdentityAuthService, IIdentityAdminSe
 
     public async Task SetEnabledAsync(string userId, bool enabled, CancellationToken cancellationToken = default)
     {
-        await AdminMutationLock.WaitAsync(cancellationToken);
-        try
+        EnsureIdentityIsMutable(userId);
+        if (enabled)
         {
-        var token = await GetAdminTokenAsync(cancellationToken);
-        if (!enabled) await EnsureNotLastSystemAdminAsync(userId, token, cancellationToken);
-        using var request = new HttpRequestMessage(HttpMethod.Put, $"{UsersEndpoint()}/{Uri.EscapeDataString(userId)}")
-        { Content = new StringContent(JsonSerializer.Serialize(new { enabled }), Encoding.UTF8, "application/json") };
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode) throw response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
+            var token = await GetAdminTokenAsync(cancellationToken);
+            await SetUserEnabledCoreAsync(userId, true, token, cancellationToken);
+            return;
         }
-        finally { AdminMutationLock.Release(); }
+
+        await _systemAdminMutationLock.ExecuteAsync(async lockToken =>
+        {
+            var token = await GetAdminTokenAsync(lockToken);
+            var targetWasEnabled = await GetUserEnabledAsync(userId, token, lockToken);
+            if (!targetWasEnabled) return;
+            var before = await GetSystemAdminsAsync(token, lockToken);
+            EnsureCanRemoveEnabledAdmin(userId, before);
+            var mutationDispatched = false;
+            try
+            {
+                mutationDispatched = true;
+                await SetUserEnabledCoreAsync(userId, false, token, lockToken);
+            }
+            catch (OperationCanceledException) when (mutationDispatched && lockToken.IsCancellationRequested)
+            {
+                await VerifyDisableOrRecoverAsync(userId, token);
+                throw;
+            }
+            catch (Exception exception) when (mutationDispatched && IsUncertainMutationFailure(exception))
+            {
+                await VerifyDisableOrRecoverAsync(userId, token);
+                _logger.LogWarning(exception,
+                    "Identity mutation transport failed but desired state and invariant were verified. TargetUserId={TargetUserId} Action={Action} MutationOutcome={MutationOutcome}",
+                    userId, "disable", "AppliedAndVerifiedAfterTransportFailure");
+                throw;
+            }
+            await VerifyDisableOrRecoverAsync(userId, token);
+        }, cancellationToken);
     }
 
     public Task CreateUserAsync(CreateIdentityAdminUserDto request, CancellationToken cancellationToken = default) =>
@@ -194,57 +227,234 @@ public sealed class KeycloakAuthService : IIdentityAuthService, IIdentityAdminSe
 
     public async Task SetSystemAdminAsync(string userId, bool enabled, CancellationToken cancellationToken = default)
     {
-        await AdminMutationLock.WaitAsync(cancellationToken);
-        try
+        EnsureIdentityIsMutable(userId);
+        if (enabled)
         {
-        var token = await GetAdminTokenAsync(cancellationToken);
-        var roleUrl = $"{RealmAdminEndpoint()}/roles/{Uri.EscapeDataString("SystemAdmin")}";
-        using var roleRequest = new HttpRequestMessage(HttpMethod.Get, roleUrl);
-        roleRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var roleResponse = await SendAsync(roleRequest, cancellationToken);
-        if (!roleResponse.IsSuccessStatusCode) throw roleResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
-        var roleJson = await roleResponse.Content.ReadAsStringAsync(cancellationToken);
+            var token = await GetAdminTokenAsync(cancellationToken);
+            var roleJson = await GetSystemAdminRoleJsonAsync(token, cancellationToken);
+            await SetSystemAdminRoleCoreAsync(userId, true, roleJson, token, cancellationToken);
+            return;
+        }
 
-        if (!enabled) await EnsureNotLastSystemAdminAsync(userId, token, cancellationToken);
+        await _systemAdminMutationLock.ExecuteAsync(async lockToken =>
+        {
+            var token = await GetAdminTokenAsync(lockToken);
+            var roleJson = await GetSystemAdminRoleJsonAsync(token, lockToken);
+            var before = await GetSystemAdminsAsync(token, lockToken);
+            var targetWasAdmin = before.Any(x => x.Id == userId);
+            if (!targetWasAdmin) return;
+            EnsureCanRemoveEnabledAdmin(userId, before);
+            var mutationDispatched = false;
+            try
+            {
+                mutationDispatched = true;
+                await SetSystemAdminRoleCoreAsync(userId, false, roleJson, token, lockToken);
+            }
+            catch (OperationCanceledException) when (mutationDispatched && lockToken.IsCancellationRequested)
+            {
+                await VerifyRoleRevokeOrRecoverAsync(userId, roleJson, token);
+                throw;
+            }
+            catch (Exception exception) when (mutationDispatched && IsUncertainMutationFailure(exception))
+            {
+                await VerifyRoleRevokeOrRecoverAsync(userId, roleJson, token);
+                _logger.LogWarning(exception,
+                    "Identity mutation transport failed but desired state and invariant were verified. TargetUserId={TargetUserId} Action={Action} MutationOutcome={MutationOutcome}",
+                    userId, "revoke_system_admin", "AppliedAndVerifiedAfterTransportFailure");
+                throw;
+            }
+            await VerifyRoleRevokeOrRecoverAsync(userId, roleJson, token);
+        }, cancellationToken);
+    }
 
+    private static void EnsureCanRemoveEnabledAdmin(string userId, IReadOnlyList<SystemAdminState> admins)
+    {
+        if (admins.Any(x => x.Id == userId && x.Enabled) && admins.Count(x => x.Enabled) <= 1)
+            throw new IdentityConflictException();
+    }
+
+    private void EnsureIdentityIsMutable(string userId)
+    {
+        var protectedUserId = _configuration["Keycloak:BreakGlassUserId"];
+        if (!string.IsNullOrWhiteSpace(protectedUserId) &&
+            string.Equals(protectedUserId, userId, StringComparison.Ordinal))
+            throw new IdentityProtectedException();
+    }
+
+    private static bool IsUncertainMutationFailure(Exception exception) =>
+        exception is IdentityUpstreamUnavailableException or IdentityConfigurationException;
+
+    private async Task<string> GetSystemAdminRoleJsonAsync(string token, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"{RealmAdminEndpoint()}/roles/{Uri.EscapeDataString("SystemAdmin")}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound
+                ? new IdentityConfigurationException()
+                : new IdentityUpstreamUnavailableException();
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    private async Task SetUserEnabledCoreAsync(string userId, bool enabled, string token, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"{UsersEndpoint()}/{Uri.EscapeDataString(userId)}")
+        { Content = new StringContent(JsonSerializer.Serialize(new { enabled }), Encoding.UTF8, "application/json") };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                ? new IdentityConfigurationException()
+                : new IdentityUpstreamUnavailableException();
+    }
+
+    private async Task SetSystemAdminRoleCoreAsync(string userId, bool enabled, string roleJson, string token, CancellationToken cancellationToken)
+    {
         using var mapping = new HttpRequestMessage(enabled ? HttpMethod.Post : HttpMethod.Delete,
             $"{UsersEndpoint()}/{Uri.EscapeDataString(userId)}/role-mappings/realm")
         { Content = new StringContent($"[{roleJson}]", Encoding.UTF8, "application/json") };
         mapping.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var mappingResponse = await SendAsync(mapping, cancellationToken);
-        if (!mappingResponse.IsSuccessStatusCode) throw mappingResponse.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound ? new IdentityConfigurationException() : new IdentityUpstreamUnavailableException();
-        }
-        finally { AdminMutationLock.Release(); }
+        using var response = await SendAsync(mapping, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden or HttpStatusCode.NotFound
+                ? new IdentityConfigurationException()
+                : new IdentityUpstreamUnavailableException();
     }
 
-    private async Task EnsureNotLastSystemAdminAsync(string userId, string token, CancellationToken cancellationToken)
+    private async Task VerifyDisableOrRecoverAsync(string userId, string token)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{RealmAdminEndpoint()}/roles/SystemAdmin/users?first=0&max=2");
+        using var verification = new CancellationTokenSource(PostMutationVerificationTimeout);
+        try
+        {
+            var enabled = await GetUserEnabledAsync(userId, token, verification.Token);
+            var admins = await GetSystemAdminsAsync(token, verification.Token);
+            if (!enabled && admins.Any(x => x.Enabled)) return;
+        }
+        catch (Exception exception) when (exception is not IdentityConfigurationException)
+        {
+            _logger.LogCritical(exception,
+                "SystemAdmin invariant verification failed after disabling identity. TargetUserId={TargetUserId} Action={Action}",
+                userId, "disable");
+        }
+
+        await RecoverEnabledStateAsync(userId, token, "disable");
+    }
+
+    private async Task VerifyRoleRevokeOrRecoverAsync(string userId, string roleJson, string token)
+    {
+        using var verification = new CancellationTokenSource(PostMutationVerificationTimeout);
+        try
+        {
+            var admins = await GetSystemAdminsAsync(token, verification.Token);
+            if (admins.All(x => x.Id != userId) && admins.Any(x => x.Enabled)) return;
+        }
+        catch (Exception exception) when (exception is not IdentityConfigurationException)
+        {
+            _logger.LogCritical(exception,
+                "SystemAdmin invariant verification failed after revoking role. TargetUserId={TargetUserId} Action={Action}",
+                userId, "revoke_system_admin");
+        }
+
+        await RecoverSystemAdminRoleAsync(userId, roleJson, token);
+    }
+
+    private async Task RecoverEnabledStateAsync(string userId, string token, string action)
+    {
+        using var recovery = new CancellationTokenSource(PostMutationVerificationTimeout);
+        try
+        {
+            await SetUserEnabledCoreAsync(userId, true, token, recovery.Token);
+            var admins = await GetSystemAdminsAsync(token, recovery.Token);
+            if (admins.Any(x => x.Enabled))
+                _logger.LogError("SystemAdmin invariant recovery restored identity. TargetUserId={TargetUserId} Action={Action}", userId, action);
+            else
+                _logger.LogCritical("SystemAdmin invariant recovery left no enabled administrator. TargetUserId={TargetUserId} Action={Action}", userId, action);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogCritical(exception, "SystemAdmin invariant recovery failed. TargetUserId={TargetUserId} Action={Action}", userId, action);
+        }
+        throw new IdentityInvariantViolationException();
+    }
+
+    private async Task RecoverSystemAdminRoleAsync(string userId, string roleJson, string token)
+    {
+        using var recovery = new CancellationTokenSource(PostMutationVerificationTimeout);
+        try
+        {
+            await SetSystemAdminRoleCoreAsync(userId, true, roleJson, token, recovery.Token);
+            var admins = await GetSystemAdminsAsync(token, recovery.Token);
+            var roleRestored = admins.Any(x => x.Id == userId);
+            var enabledAdminExists = admins.Any(x => x.Enabled);
+            if (roleRestored && enabledAdminExists)
+                _logger.LogError("SystemAdmin invariant recovery restored prior role and an enabled administrator exists. TargetUserId={TargetUserId} Action={Action} RoleRestored={RoleRestored} EnabledAdminExists={EnabledAdminExists}", userId, "revoke_system_admin", roleRestored, enabledAdminExists);
+            else
+                _logger.LogCritical("SystemAdmin invariant recovery did not restore a safe state. TargetUserId={TargetUserId} Action={Action} RoleRestored={RoleRestored} EnabledAdminExists={EnabledAdminExists}", userId, "revoke_system_admin", roleRestored, enabledAdminExists);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogCritical(exception, "SystemAdmin invariant recovery failed. TargetUserId={TargetUserId} Action={Action}", userId, "revoke_system_admin");
+        }
+        throw new IdentityInvariantViolationException();
+    }
+
+    private async Task<bool> GetUserEnabledAsync(string userId, string token, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{UsersEndpoint()}/{Uri.EscapeDataString(userId)}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode) throw new IdentityUpstreamUnavailableException();
         try
         {
-            using var users = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-            if (users.RootElement.ValueKind != JsonValueKind.Array) throw new IdentityUpstreamUnavailableException();
-            if (users.RootElement.GetArrayLength() <= 1 && users.RootElement.EnumerateArray().Any(x => x.GetProperty("id").GetString() == userId)) throw new IdentityConflictException();
+            using var user = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            return user.RootElement.TryGetProperty("enabled", out var enabled) && enabled.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? enabled.GetBoolean()
+                : throw new IdentityUpstreamUnavailableException();
         }
         catch (JsonException) { throw new IdentityUpstreamUnavailableException(); }
+    }
+
+    private async Task<IReadOnlyList<SystemAdminState>> GetSystemAdminsAsync(string token, CancellationToken cancellationToken)
+    {
+        const int pageSize = 100;
+        const int maximumPages = 100;
+        var admins = new List<SystemAdminState>();
+        for (var page = 0; page < maximumPages; page++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get,
+                $"{RealmAdminEndpoint()}/roles/SystemAdmin/users?first={page * pageSize}&max={pageSize}");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            using var response = await SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode) throw new IdentityUpstreamUnavailableException();
+            try
+            {
+                using var users = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+                if (users.RootElement.ValueKind != JsonValueKind.Array) throw new IdentityUpstreamUnavailableException();
+                var count = 0;
+                foreach (var user in users.RootElement.EnumerateArray())
+                {
+                    var id = user.TryGetProperty("id", out var idProperty) ? idProperty.GetString() : null;
+                    if (string.IsNullOrWhiteSpace(id) || !user.TryGetProperty("enabled", out var enabled) ||
+                        enabled.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                        throw new IdentityUpstreamUnavailableException();
+                    admins.Add(new SystemAdminState(id, enabled.GetBoolean()));
+                    count++;
+                }
+                if (count < pageSize) return admins;
+            }
+            catch (JsonException) { throw new IdentityUpstreamUnavailableException(); }
+        }
+        throw new IdentityUpstreamUnavailableException();
     }
 
     private async Task<HashSet<string>> GetSystemAdminIdsAsync(string token, CancellationToken cancellationToken)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"{RealmAdminEndpoint()}/roles/SystemAdmin/users?first=0&max=1000");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await SendAsync(request, cancellationToken);
-        if (!response.IsSuccessStatusCode) throw new IdentityUpstreamUnavailableException();
-        try
-        {
-            using var users = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
-            return users.RootElement.EnumerateArray().Select(x => x.GetProperty("id").GetString()).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToHashSet(StringComparer.Ordinal);
-        }
-        catch (JsonException) { throw new IdentityUpstreamUnavailableException(); }
+        var admins = await GetSystemAdminsAsync(token, cancellationToken);
+        return admins.Select(x => x.Id).ToHashSet(StringComparer.Ordinal);
     }
+
+    private sealed record SystemAdminState(string Id, bool Enabled);
 
     public async Task<IdentityAdminUserDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
     {
