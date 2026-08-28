@@ -4,6 +4,7 @@ public class TopologyNode
 {
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
+    public string? OwnerUserId { get; set; }
     public Workspace? Workspace { get; set; }
     
     public string NodeType { get; set; } = string.Empty; // 'server', 'application', 'group'

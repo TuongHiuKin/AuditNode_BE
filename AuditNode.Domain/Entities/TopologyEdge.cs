@@ -4,6 +4,7 @@ public class TopologyEdge
 {
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
+    public string? OwnerUserId { get; set; }
     public Workspace? Workspace { get; set; }
     public Guid SourceNodeId { get; set; }
     public TopologyNode? SourceNode { get; set; }

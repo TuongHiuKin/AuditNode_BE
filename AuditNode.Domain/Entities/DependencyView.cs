@@ -14,4 +14,5 @@ public class DependencyView
     public string DestServerHostname { get; set; } = string.Empty;
     public string? Environment { get; set; }
     public Guid? DatacenterId { get; set; }
+    public string? OwnerUserId { get; set; }
 }

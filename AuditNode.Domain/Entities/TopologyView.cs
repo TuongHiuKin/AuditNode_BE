@@ -13,4 +13,5 @@ public class TopologyView
     public string Protocol { get; set; } = string.Empty;
     public string Environment { get; set; } = string.Empty;
     public Guid DatacenterId { get; set; }
+    public string? OwnerUserId { get; set; }
 }

@@ -3,6 +3,7 @@ namespace AuditNode.Domain.Entities;
 public class Application
 {
     public Guid WorkspaceId { get; set; }
+    public string? OwnerUserId { get; set; }
     public Workspace? Workspace { get; set; }
     public Guid Id { get; set; }
     public string AppCode { get; set; } = string.Empty;

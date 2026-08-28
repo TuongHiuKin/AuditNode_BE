@@ -3,6 +3,7 @@ using System;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AuditNode.Infrastructure.Migrations
 {
     [DbContext(typeof(AuditDbContext))]
-    partial class AuditDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260828165140_GlobalCatalogOwnershipFoundation")]
+    partial class GlobalCatalogOwnershipFoundation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -232,11 +235,6 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("environment");
 
-                    b.Property<string>("OwnerUserId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("owner_user_id");
-
                     b.Property<string>("SourceAppCode")
                         .IsRequired()
                         .HasColumnType("text")
@@ -409,8 +407,6 @@ namespace AuditNode.Infrastructure.Migrations
                             t.HasCheckConstraint("ck_label_grants_permission", "permission IN ('viewer', 'editor')");
 
                             t.HasCheckConstraint("ck_label_grants_subject", "(grantee_user_id IS NOT NULL AND token_hash IS NULL) OR (grantee_user_id IS NULL AND token_hash IS NOT NULL)");
-
-                            t.HasCheckConstraint("ck_label_grants_token_expiry", "token_hash IS NULL OR expires_at IS NOT NULL");
                         });
                 });
 
@@ -710,11 +706,6 @@ namespace AuditNode.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("environment");
-
-                    b.Property<string>("OwnerUserId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("owner_user_id");
 
                     b.Property<int>("PortNumber")
                         .HasColumnType("integer")

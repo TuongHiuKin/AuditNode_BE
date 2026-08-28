@@ -3,6 +3,7 @@ namespace AuditNode.Domain.Entities;
 public class Server
 {
     public Guid WorkspaceId { get; set; }
+    public string? OwnerUserId { get; set; }
     public Workspace? Workspace { get; set; }
     public Guid Id { get; set; }
     public Guid DatacenterId { get; set; }

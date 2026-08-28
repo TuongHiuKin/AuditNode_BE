@@ -17,6 +17,8 @@
   <ItemGroup>
     <EmbeddedResource Include="Sql\20260826_rbac_scope_preflight.sql" />
     <EmbeddedResource Include="Sql\20260826_rbac_scope_backfill.sql" />
+    <EmbeddedResource Include="Sql\20260828_global_catalog_owner_views.sql" />
+    <EmbeddedResource Include="Sql\20260828_global_catalog_owner_views_rollback.sql" />
   </ItemGroup>
 
   <PropertyGroup>

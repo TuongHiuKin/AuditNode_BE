@@ -30,6 +30,8 @@ public class AuditDbContext : DbContext
     public DbSet<Label> Labels { get; set; }
     public DbSet<ServerLabel> ServerLabels { get; set; }
     public DbSet<ApplicationLabel> ApplicationLabels { get; set; }
+    public DbSet<LabelGrant> LabelGrants { get; set; }
+    public DbSet<OwnerCatalogState> OwnerCatalogStates { get; set; }
     public Guid? CurrentWorkspaceId => _tenantProvider.WorkspaceId;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -44,6 +46,7 @@ public class AuditDbContext : DbContext
             entity.HasAlternateKey(e => new { e.WorkspaceId, e.Id });
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.NodeType).HasColumnName("node_type").IsRequired();
             entity.Property(e => e.Label).HasColumnName("label").IsRequired();
             entity.Property(e => e.X).HasColumnName("x");
@@ -65,6 +68,7 @@ public class AuditDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(e => e.WorkspaceId);
+            entity.HasIndex(e => e.OwnerUserId);
 
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
@@ -139,6 +143,7 @@ public class AuditDbContext : DbContext
             entity.HasAlternateKey(e => new { e.WorkspaceId, e.Id });
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.Name).HasColumnName("name").IsRequired();
             entity.Property(e => e.Location).HasColumnName("location").IsRequired();
             entity.HasOne(e => e.Workspace)
@@ -146,6 +151,7 @@ public class AuditDbContext : DbContext
                 .HasForeignKey(e => e.WorkspaceId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => e.WorkspaceId);
+            entity.HasIndex(e => e.OwnerUserId);
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
@@ -155,6 +161,7 @@ public class AuditDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.SourceNodeId).HasColumnName("source_node_id").IsRequired();
             entity.Property(e => e.TargetNodeId).HasColumnName("target_node_id").IsRequired();
             entity.Property(e => e.SourceHandle).HasColumnName("source_handle").IsRequired();
@@ -186,6 +193,7 @@ public class AuditDbContext : DbContext
                 e.SourceHandle,
                 e.TargetHandle
             }).IsUnique();
+            entity.HasIndex(e => e.OwnerUserId);
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
@@ -197,6 +205,7 @@ public class AuditDbContext : DbContext
             entity.HasAlternateKey(e => new { e.WorkspaceId, e.Id });
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id").IsRequired();
             entity.Property(e => e.IpAddress).HasColumnName("ip_address").IsRequired();
             entity.Property(e => e.Hostname).HasColumnName("hostname").IsRequired();
@@ -205,6 +214,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Status).HasColumnName("status").IsRequired();
 
             entity.HasIndex(e => new { e.WorkspaceId, e.IpAddress }).IsUnique();
+            entity.HasIndex(e => e.OwnerUserId);
 
             entity.HasOne(e => e.Workspace)
                 .WithMany()
@@ -235,6 +245,7 @@ public class AuditDbContext : DbContext
                         join.ToTable("server_labels");
                         join.HasKey(link => new { link.WorkspaceId, link.ServerId, link.LabelId });
                         join.Property(link => link.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+                        join.Property(link => link.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
                         join.Property(link => link.ServerId).HasColumnName("server_id").IsRequired();
                         join.Property(link => link.LabelId).HasColumnName("label_id").IsRequired();
                         join.HasOne(link => link.Workspace)
@@ -242,6 +253,7 @@ public class AuditDbContext : DbContext
                             .HasForeignKey(link => link.WorkspaceId)
                             .OnDelete(DeleteBehavior.Restrict);
                         join.HasIndex(link => new { link.WorkspaceId, link.LabelId });
+                        join.HasIndex(link => new { link.OwnerUserId, link.LabelId });
                         join.HasQueryFilter(link => link.WorkspaceId == _tenantProvider.WorkspaceId);
                     });
 
@@ -251,19 +263,33 @@ public class AuditDbContext : DbContext
         // Label
         modelBuilder.Entity<Label>(entity =>
         {
-            entity.ToTable("labels");
+            entity.ToTable("labels", table =>
+            {
+                table.HasCheckConstraint("ck_labels_kind", "kind IN ('owner', 'business')");
+                table.HasCheckConstraint("ck_labels_owner_protected", "kind <> 'owner' OR is_protected");
+            });
             entity.HasKey(e => e.Id);
             entity.HasAlternateKey(e => new { e.WorkspaceId, e.Id });
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.Key).HasColumnName("key").IsRequired();
             entity.Property(e => e.Value).HasColumnName("value").IsRequired();
+            entity.Property(e => e.Kind).HasColumnName("kind").HasMaxLength(20).HasDefaultValue(LabelKinds.Business).IsRequired();
+            entity.Property(e => e.IsProtected).HasColumnName("is_protected").HasDefaultValue(false).IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
 
             entity.HasOne(e => e.Workspace)
                 .WithMany()
                 .HasForeignKey(e => e.WorkspaceId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => new { e.WorkspaceId, e.Key, e.Value });
+            entity.HasIndex(e => new { e.OwnerUserId, e.Key, e.Value }).IsUnique();
+            entity.HasIndex(e => e.OwnerUserId)
+                .IsUnique()
+                .HasFilter("kind = 'owner' AND owner_user_id IS NOT NULL");
+            entity.HasIndex(e => new { e.OwnerUserId, e.Kind });
 
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
@@ -273,6 +299,7 @@ public class AuditDbContext : DbContext
             entity.ToTable("application_labels");
             entity.HasKey(e => new { e.WorkspaceId, e.ApplicationId, e.LabelId });
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.ApplicationId).HasColumnName("application_id").IsRequired();
             entity.Property(e => e.LabelId).HasColumnName("label_id").IsRequired();
 
@@ -292,7 +319,63 @@ public class AuditDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasIndex(e => new { e.WorkspaceId, e.LabelId });
+            entity.HasIndex(e => new { e.OwnerUserId, e.LabelId });
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
+        });
+
+        modelBuilder.Entity<LabelGrant>(entity =>
+        {
+            entity.ToTable("label_grants", table =>
+            {
+                table.HasCheckConstraint(
+                    "ck_label_grants_subject",
+                    "(grantee_user_id IS NOT NULL AND token_hash IS NULL) OR (grantee_user_id IS NULL AND token_hash IS NOT NULL)");
+                table.HasCheckConstraint("ck_label_grants_permission", "permission IN ('viewer', 'editor')");
+                table.HasCheckConstraint(
+                    "ck_label_grants_anonymous_viewer",
+                    "token_hash IS NULL OR permission = 'viewer'");
+                table.HasCheckConstraint(
+                    "ck_label_grants_token_expiry",
+                    "token_hash IS NULL OR expires_at IS NOT NULL");
+            });
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.LabelId).HasColumnName("label_id").IsRequired();
+            entity.Property(e => e.GranteeUserId).HasColumnName("grantee_user_id").HasMaxLength(100);
+            entity.Property(e => e.Permission).HasColumnName("permission").HasMaxLength(20).IsRequired();
+            entity.Property(e => e.TokenHash).HasColumnName("token_hash").HasMaxLength(64);
+            entity.Property(e => e.ExpiresAt).HasColumnName("expires_at");
+            entity.Property(e => e.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(e => e.Version).HasColumnName("version").IsConcurrencyToken().IsRequired();
+            entity.Property(e => e.CreatedByUserId).HasColumnName("created_by_user_id").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+
+            entity.HasOne(e => e.Label)
+                .WithMany(e => e.Grants)
+                .HasForeignKey(e => e.LabelId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Preserve the current Workspace boundary until the Phase 7 cutover. LabelGrant
+            // has no WorkspaceId by design, so its transitional filter follows the Label.
+            entity.HasQueryFilter(e => e.Label != null && e.Label.WorkspaceId == _tenantProvider.WorkspaceId);
+
+            entity.HasIndex(e => e.TokenHash).IsUnique();
+            entity.HasIndex(e => new { e.LabelId, e.GranteeUserId })
+                .IsUnique()
+                .HasFilter("revoked_at IS NULL AND grantee_user_id IS NOT NULL");
+            entity.HasIndex(e => new { e.GranteeUserId, e.RevokedAt, e.ExpiresAt, e.LabelId });
+            entity.HasIndex(e => new { e.OwnerUserId, e.LabelId, e.RevokedAt });
+        });
+
+        modelBuilder.Entity<OwnerCatalogState>(entity =>
+        {
+            entity.ToTable("owner_catalog_states");
+            entity.HasKey(e => e.OwnerUserId);
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
+            entity.Property(e => e.TopologyVersion).HasColumnName("topology_version").IsConcurrencyToken().IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
         });
 
         // Application
@@ -303,6 +386,7 @@ public class AuditDbContext : DbContext
             entity.HasAlternateKey(e => new { e.WorkspaceId, e.Id });
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.AppCode).HasColumnName("app_code").IsRequired();
             entity.Property(e => e.AppName).HasColumnName("app_name").IsRequired();
             entity.Property(e => e.OwnerTeam)
@@ -314,6 +398,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.TechStack).HasColumnName("tech_stack");
 
             entity.HasIndex(e => new { e.WorkspaceId, e.AppCode }).IsUnique();
+            entity.HasIndex(e => e.OwnerUserId);
 
             entity.HasOne(e => e.Workspace)
                 .WithMany()
@@ -331,12 +416,14 @@ public class AuditDbContext : DbContext
             entity.HasAlternateKey(e => new { e.WorkspaceId, e.Id });
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.ServerId).HasColumnName("server_id").IsRequired();
             entity.Property(e => e.AppId).HasColumnName("app_id").IsRequired();
             entity.Property(e => e.PortNumber).HasColumnName("port_number").IsRequired();
             entity.Property(e => e.Protocol).HasColumnName("protocol").IsRequired();
 
             entity.HasIndex(e => new { e.WorkspaceId, e.ServerId, e.PortNumber }).IsUnique();
+            entity.HasIndex(e => e.OwnerUserId);
             entity.HasOne(e => e.Workspace)
                 .WithMany()
                 .HasForeignKey(e => e.WorkspaceId)
@@ -364,6 +451,7 @@ public class AuditDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.WorkspaceId).HasColumnName("workspace_id").IsRequired().ValueGeneratedNever();
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.Property(e => e.SourceAppId).HasColumnName("source_app_id").IsRequired();
             entity.Property(e => e.DestAppId).HasColumnName("dest_app_id").IsRequired();
             entity.Property(e => e.DestPortId).HasColumnName("dest_port_id").IsRequired();
@@ -371,6 +459,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
 
             entity.HasIndex(e => e.WorkspaceId);
+            entity.HasIndex(e => e.OwnerUserId);
             entity.HasIndex(e => new { e.WorkspaceId, e.SourceAppId, e.DestAppId, e.DestPortId })
                 .IsUnique();
             entity.HasOne(e => e.Workspace)
@@ -414,6 +503,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.Protocol).HasColumnName("protocol");
             entity.Property(e => e.Environment).HasColumnName("environment");
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id");
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
@@ -431,6 +521,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.ConnectionType).HasColumnName("connection_type");
             entity.Property(e => e.Environment).HasColumnName("environment");
             entity.Property(e => e.DatacenterId).HasColumnName("datacenter_id");
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100);
             entity.HasQueryFilter(e => e.WorkspaceId == _tenantProvider.WorkspaceId);
         });
 
