@@ -12,10 +12,12 @@ namespace AuditNode.API.Controllers;
 public class TopologyController : ControllerBase
 {
     private readonly ITopologyRepository _topologyRepository;
+    private readonly ITopologyCommandService _topologyCommandService;
 
-    public TopologyController(ITopologyRepository topologyRepository)
+    public TopologyController(ITopologyRepository topologyRepository, ITopologyCommandService topologyCommandService)
     {
         _topologyRepository = topologyRepository;
+        _topologyCommandService = topologyCommandService;
     }
 
     [HttpGet("tree")]
@@ -85,10 +87,10 @@ public class TopologyController : ControllerBase
     [HttpPost("state")]
     [HttpPut("state")]
     [WorkspaceMutation(ownerOrAdminOnly: true)]
-    public async Task<IActionResult> SaveState([FromBody] TopologyStateDto state)
+    public async Task<IActionResult> SaveState([FromBody] SaveTopologyStateDto state)
     {
-        if (state?.Nodes is null || state.Edges is null)
-            return BadRequest(Problem(400, "A complete topology state is required."));
+        if (state?.Version is null || state.Nodes is null || state.Edges is null || state.Dependencies is null)
+            return BadRequest(Problem(400, "Version, nodes, edges, and dependencies are required."));
 
         try
         {
@@ -100,12 +102,43 @@ public class TopologyController : ControllerBase
                 TopologyStateStatus.InvalidParent => BadRequest(Problem(400, "Topology parent relationships are invalid.")),
                 TopologyStateStatus.InvalidReference => BadRequest(Problem(400, "Topology references are invalid for the current workspace.")),
                 TopologyStateStatus.InvalidEdge => BadRequest(Problem(400, "Topology edges are invalid.")),
+                TopologyStateStatus.InvalidDependency => BadRequest(Problem(400, "Topology dependencies are invalid.")),
+                TopologyStateStatus.Forbidden => StatusCode(403, Problem(403, "Topology replacement is forbidden.")),
+                TopologyStateStatus.Conflict => Conflict(Problem(409, "The topology changed. Refresh and retry.")),
                 _ => BadRequest(Problem(400, "Topology state is invalid."))
             };
         }
         catch (Exception)
         {
             return Failure("Topology state could not be saved.");
+        }
+    }
+
+    [HttpPost("commands")]
+    [WorkspaceGraphMutation]
+    public async Task<IActionResult> ExecuteCommands([FromBody] TopologyCommandBatchDto batch, CancellationToken cancellationToken)
+    {
+        if (batch is null || batch.Operations is null)
+            return BadRequest(Problem(400, "A topology command batch is required."));
+
+        try
+        {
+            var result = await _topologyCommandService.ExecuteAsync(batch, cancellationToken);
+            return result.Status switch
+            {
+                TopologyCommandStatus.Success => Ok(new { version = result.Version }),
+                TopologyCommandStatus.Conflict => Conflict(Problem(409, result.Error ?? "The topology changed. Refresh and retry.")),
+                TopologyCommandStatus.Forbidden => StatusCode(403, Problem(403, "A topology resource is outside the granted scope.")),
+                _ => BadRequest(Problem(400, result.Error ?? "The topology command batch is invalid."))
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Failure("Topology commands could not be applied.");
         }
     }
 

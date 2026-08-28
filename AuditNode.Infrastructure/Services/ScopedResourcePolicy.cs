@@ -30,7 +30,12 @@ public sealed class ScopedResourcePolicy(AuditDbContext context, IWorkspaceAcces
         var roots = access.Scope.Frames.Select(x => x.Id).ToHashSet();
         var nodes = await context.TopologyNodes.IgnoreQueryFilters().Where(x => x.WorkspaceId == workspaceId).Select(x => new ScopedNode(x.Id, x.ParentNodeId, x.ReferenceId, x.NodeType)).ToListAsync(cancellationToken);
         var byId = nodes.ToDictionary(x => x.Id);
-        return nodes.Where(x => x.ReferenceId.HasValue && string.Equals(x.NodeType, resourceType, StringComparison.OrdinalIgnoreCase) && IsDescendant(x.Id, roots, byId)).Select(x => x.ReferenceId!.Value).ToHashSet();
+        var references = nodes.Where(x => x.ReferenceId.HasValue && string.Equals(x.NodeType, resourceType, StringComparison.OrdinalIgnoreCase) && IsDescendant(x.Id, roots, byId))
+            .Select(x => x.ReferenceId!.Value).ToHashSet();
+        if (resourceType != "application" || references.Count == 0) return references;
+        return (await context.PortMappings.IgnoreQueryFilters()
+            .Where(mapping => mapping.WorkspaceId == workspaceId && references.Contains(mapping.Id))
+            .Select(mapping => mapping.AppId).Distinct().ToListAsync(cancellationToken)).ToHashSet();
     }
     public async Task<bool> CanReadAsync(Guid workspaceId, string userId, string resourceType, Guid resourceId, CancellationToken cancellationToken = default) =>
         await IsAllowedAsync(workspaceId, userId, resourceType, resourceId, false, cancellationToken);
@@ -69,7 +74,12 @@ public sealed class ScopedResourcePolicy(AuditDbContext context, IWorkspaceAcces
         var roots = access.Scope.Frames.Select(x => x.Id).ToHashSet();
         var nodes = await context.TopologyNodes.IgnoreQueryFilters().Where(x => x.WorkspaceId == workspaceId).Select(x => new ScopedNode(x.Id, x.ParentNodeId, x.ReferenceId, x.NodeType)).ToListAsync(cancellationToken);
         var byId = nodes.ToDictionary(x => x.Id);
-        return nodes.Where(x => x.ReferenceId == resourceId && string.Equals(x.NodeType, resourceType, StringComparison.OrdinalIgnoreCase))
+        var resourceReferences = resourceType == "application"
+            ? (await context.PortMappings.IgnoreQueryFilters()
+                .Where(mapping => mapping.WorkspaceId == workspaceId && mapping.AppId == resourceId)
+                .Select(mapping => mapping.Id).ToListAsync(cancellationToken)).ToHashSet()
+            : new HashSet<Guid> { resourceId };
+        return nodes.Where(x => x.ReferenceId.HasValue && resourceReferences.Contains(x.ReferenceId.Value) && string.Equals(x.NodeType, resourceType, StringComparison.OrdinalIgnoreCase))
             .Any(node => IsDescendant(node.Id, roots, byId));
     }
 

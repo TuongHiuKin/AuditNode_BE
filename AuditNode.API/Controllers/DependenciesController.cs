@@ -22,8 +22,8 @@ public class DependenciesController : ControllerBase
     [HttpPut("sync")]
     public async Task<IActionResult> SyncDependencies([FromBody] SyncDependenciesDto dto)
     {
-        if (dto?.Dependencies is null)
-            return BadRequest(Problem(400, "A dependency collection is required."));
+        if (dto?.Version is null || dto.Dependencies is null)
+            return BadRequest(Problem(400, "A version and dependency collection are required."));
 
         try
         {
@@ -35,6 +35,8 @@ public class DependenciesController : ControllerBase
                 DependencySyncStatus.Duplicate => Conflict(Problem(409, "Duplicate dependencies are not allowed.")),
                 DependencySyncStatus.SelfLoop => BadRequest(Problem(400, "An application cannot depend on itself.")),
                 DependencySyncStatus.DestinationMismatch => BadRequest(Problem(400, "The destination deployment does not belong to the destination application.")),
+                DependencySyncStatus.Forbidden => StatusCode(403, Problem(403, "Dependency synchronization is forbidden.")),
+                DependencySyncStatus.Conflict => Conflict(Problem(409, "The topology changed. Refresh and retry.")),
                 _ => BadRequest(Problem(400, "Dependency data is invalid."))
             };
         }

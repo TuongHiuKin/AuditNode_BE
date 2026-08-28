@@ -15,7 +15,7 @@ public class DependenciesControllerTests
     [Fact]
     public async Task Successful_sync_returns_no_content()
     {
-        var dto = new SyncDependenciesDto();
+        var dto = new SyncDependenciesDto { Version = 0, Dependencies = [] };
         _service.Setup(x => x.SyncDependenciesAsync(dto)).ReturnsAsync(DependencySyncStatus.Success);
 
         var result = await Controller().SyncDependencies(dto);
@@ -26,7 +26,7 @@ public class DependenciesControllerTests
     [Fact]
     public async Task Duplicate_sync_returns_conflict()
     {
-        var dto = new SyncDependenciesDto();
+        var dto = new SyncDependenciesDto { Version = 0, Dependencies = [] };
         _service.Setup(x => x.SyncDependenciesAsync(dto)).ReturnsAsync(DependencySyncStatus.Duplicate);
 
         var result = await Controller().SyncDependencies(dto);
@@ -38,7 +38,7 @@ public class DependenciesControllerTests
     public async Task Unexpected_exception_returns_safe_500()
     {
         const string secret = "connection string";
-        var dto = new SyncDependenciesDto();
+        var dto = new SyncDependenciesDto { Version = 0, Dependencies = [] };
         _service.Setup(x => x.SyncDependenciesAsync(dto)).ThrowsAsync(new Exception(secret));
 
         var result = await Controller().SyncDependencies(dto);

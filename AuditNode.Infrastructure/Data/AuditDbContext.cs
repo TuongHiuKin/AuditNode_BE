@@ -81,6 +81,7 @@ public class AuditDbContext : DbContext
             entity.Property(e => e.IsPersonal).HasColumnName("is_personal").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            entity.Property(e => e.TopologyVersion).HasColumnName("topology_version").IsConcurrencyToken().IsRequired();
             entity.HasIndex(e => e.OwnerUserId)
                 .IsUnique()
                 .HasFilter("is_personal = true");

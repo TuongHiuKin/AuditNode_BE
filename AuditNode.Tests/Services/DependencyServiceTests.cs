@@ -25,6 +25,7 @@ public class DependencyServiceTests
 
         var first = await service.SyncDependenciesAsync(dto);
         var firstEntity = await context.AppDependencies.SingleAsync();
+        dto.Version = 1;
         var second = await service.SyncDependenciesAsync(dto);
 
         first.Should().Be(DependencySyncStatus.Success);
@@ -59,6 +60,7 @@ public class DependencyServiceTests
 
         var status = await Service(context).SyncDependenciesAsync(new SyncDependenciesDto
         {
+            Version = 0,
             Dependencies = [item, new DependencyItemDto
             {
                 SourceAppId = item.SourceAppId, DestAppId = item.DestAppId,
@@ -103,15 +105,31 @@ public class DependencyServiceTests
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var tenant = new Mock<ITenantProvider>();
-        tenant.SetupGet(x => x.WorkspaceId).Returns(Guid.NewGuid());
-        return new AuditDbContext(options, tenant.Object);
+        var workspaceId = Guid.NewGuid();
+        tenant.SetupGet(x => x.WorkspaceId).Returns(workspaceId);
+        var context = new AuditDbContext(options, tenant.Object);
+        context.Workspaces.Add(new Workspace { Id = workspaceId, Name = "Dependency test", OwnerUserId = "owner" });
+        context.SaveChanges();
+        return context;
     }
 
-    private static DependencyService Service(AuditDbContext context) =>
-        new(context, NullLogger<DependencyService>.Instance);
+    private static DependencyService Service(AuditDbContext context)
+    {
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(item => item.WorkspaceId).Returns(context.CurrentWorkspaceId);
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(item => item.UserId).Returns("owner");
+        return new DependencyService(
+            context,
+            NullLogger<DependencyService>.Instance,
+            new WorkspaceAccessService(context),
+            user.Object,
+            tenant.Object);
+    }
 
     private static SyncDependenciesDto Dto(Guid source, Guid destination, Guid destinationPort) => new()
     {
+        Version = 0,
         Dependencies = [new DependencyItemDto
         {
             SourceAppId = source, DestAppId = destination, DestinationPortMappingId = destinationPort

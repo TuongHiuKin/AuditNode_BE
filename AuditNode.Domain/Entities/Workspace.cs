@@ -9,6 +9,7 @@ public class Workspace
     public bool IsPersonal { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public long TopologyVersion { get; set; }
 
     public ICollection<WorkspaceMember> Members { get; set; } = new List<WorkspaceMember>();
 }

@@ -8,5 +8,5 @@ public interface ITopologyRepository
     Task<DependencyMapDto> GetDependencyMapAsync(string? environment = null, Guid? datacenterId = null, List<string>? labels = null);
     Task<IEnumerable<ApplicationStatusDto>> GetApplicationStatusAsync();
     Task<TopologyStateDto> GetTopologyStateAsync();
-    Task<TopologyStateStatus> SaveTopologyStateAsync(TopologyStateDto state);
+    Task<TopologyStateStatus> SaveTopologyStateAsync(SaveTopologyStateDto state);
 }

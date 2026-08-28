@@ -1,6 +1,7 @@
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
+using AuditNode.Infrastructure.Services;
 using AuditNode.Application.Interfaces;
 using AuditNode.Application.DTOs;
 using FluentAssertions;
@@ -23,7 +24,7 @@ public class TopologyRepositoryTests
         user.SetupGet(x => x.UserId).Returns("test-user");
         var tenant = new Mock<ITenantProvider>();
         tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
-        return new TopologyRepository(context, policy.Object, user.Object, tenant.Object);
+        return new TopologyRepository(context, policy.Object, user.Object, tenant.Object, new WorkspaceAccessService(context));
     }
     private AuditDbContext GetDbContext()
     {
@@ -32,8 +33,12 @@ public class TopologyRepositoryTests
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
-        return new AuditDbContext(options, mockTenantProvider.Object);
+        var workspaceId = Guid.NewGuid();
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(workspaceId);
+        var context = new AuditDbContext(options, mockTenantProvider.Object);
+        context.Workspaces.Add(new Workspace { Id = workspaceId, Name = "Test", OwnerUserId = "test-user" });
+        context.SaveChanges();
+        return context;
     }
 
     [Fact]
@@ -91,6 +96,7 @@ public class TopologyRepositoryTests
         var newNodeId = Guid.NewGuid();
         var state = new SaveTopologyStateDto
         {
+            Version = 0,
             Nodes = new List<TopologyNodeDto>
             {
                 new TopologyNodeDto 
@@ -113,7 +119,9 @@ public class TopologyRepositoryTests
                     Width = 200,
                     Height = 200
                 }
-            }
+            },
+            Edges = [],
+            Dependencies = []
         };
 
         // Act
@@ -265,7 +273,7 @@ public class TopologyRepositoryTests
         var tenant = new Mock<ITenantProvider>();
         tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
 
-        var map = await new TopologyRepository(context, policy.Object, user.Object, tenant.Object).GetDependencyMapAsync();
+        var map = await new TopologyRepository(context, policy.Object, user.Object, tenant.Object, new WorkspaceAccessService(context)).GetDependencyMapAsync();
 
         var connection = map.Connections.Should().ContainSingle().Which;
         connection.SourceAppId.Should().Be(visibleApp.Id);
@@ -286,8 +294,9 @@ public class TopologyRepositoryTests
         var frameId = Guid.NewGuid();
         var firstNodeId = Guid.NewGuid();
         var secondNodeId = Guid.NewGuid();
-        var state = new TopologyStateDto
+        var state = new SaveTopologyStateDto
         {
+            Version = 0,
             Nodes =
             [
                 new TopologyNodeDto { Id = frameId, NodeType = "frame", Label = "Frame", X = 1, Y = 2, Width = 500, Height = 300 },
@@ -297,7 +306,8 @@ public class TopologyRepositoryTests
             Edges =
             [
                 new TopologyEdgeDto { Id = Guid.NewGuid(), SourceNodeId = firstNodeId, TargetNodeId = secondNodeId, EdgeType = "smoothstep" }
-            ]
+            ],
+            Dependencies = []
         };
         var repository = Repository(context);
 
@@ -305,7 +315,169 @@ public class TopologyRepositoryTests
         var reloaded = await repository.GetTopologyStateAsync();
 
         status.Should().Be(TopologyStateStatus.Success);
-        reloaded.Should().BeEquivalentTo(state);
+        reloaded.Version.Should().Be(1);
+        reloaded.Nodes.Should().BeEquivalentTo(state.Nodes);
+        reloaded.Edges.Should().BeEquivalentTo(state.Edges);
+    }
+
+    [Fact]
+    public async Task Canonical_state_reconciles_dependencies_in_the_same_revision()
+    {
+        using var context = GetDbContext();
+        var sourceApp = new AppEntity { Id = Guid.NewGuid(), AppCode = "SRC", AppName = "Source" };
+        var targetApp = new AppEntity { Id = Guid.NewGuid(), AppCode = "DST", AppName = "Target" };
+        var sourceMapping = new PortMapping { Id = Guid.NewGuid(), AppId = sourceApp.Id, ServerId = Guid.NewGuid(), PortNumber = 7001 };
+        var targetMapping = new PortMapping { Id = Guid.NewGuid(), AppId = targetApp.Id, ServerId = Guid.NewGuid(), PortNumber = 7002 };
+        var dependency = new AppDependency
+        {
+            Id = Guid.NewGuid(), SourceAppId = sourceApp.Id, DestAppId = targetApp.Id,
+            DestPortId = targetMapping.Id, ConnectionType = "Manual"
+        };
+        context.AddRange(sourceApp, targetApp, sourceMapping, targetMapping, dependency);
+        await context.SaveChangesAsync();
+        var sourceNodeId = Guid.NewGuid();
+        var targetNodeId = Guid.NewGuid();
+
+        var status = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
+        {
+            Version = 0,
+            Nodes =
+            [
+                new TopologyNodeDto { Id = sourceNodeId, NodeType = "application", ReferenceId = sourceMapping.Id },
+                new TopologyNodeDto { Id = targetNodeId, NodeType = "application", ReferenceId = targetMapping.Id }
+            ],
+            Edges =
+            [
+                new TopologyEdgeDto
+                {
+                    Id = Guid.NewGuid(), SourceNodeId = sourceNodeId, TargetNodeId = targetNodeId,
+                    ReferenceId = dependency.Id
+                }
+            ],
+            Dependencies =
+            [
+                new DependencyItemDto
+                {
+                    SourceAppId = sourceApp.Id, DestAppId = targetApp.Id,
+                    DestinationPortMappingId = targetMapping.Id
+                }
+            ]
+        });
+
+        status.Should().Be(TopologyStateStatus.Success);
+        context.AppDependencies.Should().ContainSingle().Which.Id.Should().Be(dependency.Id);
+        (await context.Workspaces.SingleAsync()).TopologyVersion.Should().Be(1);
+
+        var savedState = await Repository(context).GetTopologyStateAsync();
+        var sharedReference = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
+        {
+            Version = 1,
+            Nodes = savedState.Nodes,
+            Edges =
+            [
+                savedState.Edges.Single(),
+                new TopologyEdgeDto
+                {
+                    Id = Guid.NewGuid(), SourceNodeId = sourceNodeId, TargetNodeId = targetNodeId,
+                    SourceHandle = "second", ReferenceId = dependency.Id
+                }
+            ],
+            Dependencies =
+            [
+                new DependencyItemDto
+                {
+                    SourceAppId = sourceApp.Id, DestAppId = targetApp.Id,
+                    DestinationPortMappingId = targetMapping.Id
+                }
+            ]
+        });
+        sharedReference.Should().Be(TopologyStateStatus.InvalidReference);
+        context.TopologyEdges.Should().ContainSingle();
+        (await context.Workspaces.SingleAsync()).TopologyVersion.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Canonical_state_links_a_new_application_edge_to_its_created_dependency()
+    {
+        using var context = GetDbContext();
+        var sourceApp = new AppEntity { Id = Guid.NewGuid(), AppCode = "NEW-SRC", AppName = "Source" };
+        var targetApp = new AppEntity { Id = Guid.NewGuid(), AppCode = "NEW-DST", AppName = "Target" };
+        var sourceMapping = new PortMapping { Id = Guid.NewGuid(), AppId = sourceApp.Id, ServerId = Guid.NewGuid(), PortNumber = 7101 };
+        var targetMapping = new PortMapping { Id = Guid.NewGuid(), AppId = targetApp.Id, ServerId = Guid.NewGuid(), PortNumber = 7102 };
+        context.AddRange(sourceApp, targetApp, sourceMapping, targetMapping);
+        await context.SaveChangesAsync();
+        var sourceNodeId = Guid.NewGuid();
+        var targetNodeId = Guid.NewGuid();
+        var edgeId = Guid.NewGuid();
+
+        var status = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
+        {
+            Version = 0,
+            Nodes =
+            [
+                new TopologyNodeDto { Id = sourceNodeId, NodeType = "application", ReferenceId = sourceMapping.Id },
+                new TopologyNodeDto { Id = targetNodeId, NodeType = "application", ReferenceId = targetMapping.Id }
+            ],
+            Edges = [new TopologyEdgeDto { Id = edgeId, SourceNodeId = sourceNodeId, TargetNodeId = targetNodeId }],
+            Dependencies =
+            [
+                new DependencyItemDto
+                {
+                    SourceAppId = sourceApp.Id,
+                    DestAppId = targetApp.Id,
+                    DestinationPortMappingId = targetMapping.Id
+                }
+            ]
+        });
+
+        status.Should().Be(TopologyStateStatus.Success);
+        var dependency = await context.AppDependencies.SingleAsync();
+        (await context.TopologyEdges.SingleAsync(item => item.Id == edgeId)).ReferenceId.Should().Be(dependency.Id);
+        (await Repository(context).GetTopologyStateAsync()).Edges.Single(item => item.Id == edgeId)
+            .ReferenceId.Should().Be(dependency.Id);
+    }
+
+    [Fact]
+    public async Task Omitted_dependencies_are_rejected_without_mutating_legacy_data()
+    {
+        using var context = GetDbContext();
+        var dependency = new AppDependency
+        {
+            Id = Guid.NewGuid(), SourceAppId = Guid.NewGuid(), DestAppId = Guid.NewGuid(),
+            DestPortId = Guid.NewGuid(), ConnectionType = "Legacy"
+        };
+        context.AppDependencies.Add(dependency);
+        await context.SaveChangesAsync();
+
+        var status = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
+        {
+            Version = 0,
+            Nodes = [],
+            Edges = [],
+            Dependencies = null
+        });
+
+        status.Should().Be(TopologyStateStatus.InvalidRequest);
+        context.AppDependencies.Should().ContainSingle(item => item.Id == dependency.Id);
+        (await context.Workspaces.SingleAsync()).TopologyVersion.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Null_collection_items_are_rejected_without_incrementing_the_revision()
+    {
+        using var context = GetDbContext();
+        var repository = Repository(context);
+        var states = new[]
+        {
+            new SaveTopologyStateDto { Version = 0, Nodes = [null!], Edges = [], Dependencies = [] },
+            new SaveTopologyStateDto { Version = 0, Nodes = [], Edges = [null!], Dependencies = [] },
+            new SaveTopologyStateDto { Version = 0, Nodes = [], Edges = [], Dependencies = [null!] }
+        };
+
+        foreach (var state in states)
+            (await repository.SaveTopologyStateAsync(state)).Should().Be(TopologyStateStatus.InvalidRequest);
+
+        (await context.Workspaces.SingleAsync()).TopologyVersion.Should().Be(0);
     }
 
     [Fact]
@@ -315,13 +487,16 @@ public class TopologyRepositoryTests
         var duplicate = Guid.NewGuid();
         var repository = Repository(context);
 
-        var status = await repository.SaveTopologyStateAsync(new TopologyStateDto
+        var status = await repository.SaveTopologyStateAsync(new SaveTopologyStateDto
         {
+            Version = 0,
             Nodes =
             [
                 new TopologyNodeDto { Id = duplicate, NodeType = "group" },
                 new TopologyNodeDto { Id = duplicate, NodeType = "group" }
-            ]
+            ],
+            Edges = [],
+            Dependencies = []
         });
 
         status.Should().Be(TopologyStateStatus.DuplicateId);
@@ -333,13 +508,16 @@ public class TopologyRepositoryTests
     {
         using var context = GetDbContext();
         var parent = Guid.NewGuid();
-        var status = await Repository(context).SaveTopologyStateAsync(new TopologyStateDto
+        var status = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
         {
+            Version = 0,
             Nodes =
             [
                 new TopologyNodeDto { Id = parent, NodeType = "application", ReferenceId = Guid.NewGuid() },
                 new TopologyNodeDto { Id = Guid.NewGuid(), NodeType = "group", ParentNodeId = parent }
-            ]
+            ],
+            Edges = [],
+            Dependencies = []
         });
 
         status.Should().Be(TopologyStateStatus.InvalidParent);
@@ -366,7 +544,7 @@ public class TopologyRepositoryTests
         user.SetupGet(x => x.UserId).Returns("viewer");
         var tenant = new Mock<ITenantProvider>();
         tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
-        var repository = new TopologyRepository(context, policy.Object, user.Object, tenant.Object);
+        var repository = new TopologyRepository(context, policy.Object, user.Object, tenant.Object, new WorkspaceAccessService(context));
 
         var state = await repository.GetTopologyStateAsync();
 

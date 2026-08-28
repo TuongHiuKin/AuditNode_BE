@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace AuditNode.Application.DTOs;
 
 public class TopologyNodeDto
@@ -28,11 +30,57 @@ public class TopologyEdgeDto
 
 public class TopologyStateDto
 {
+    public long Version { get; set; }
     public List<TopologyNodeDto> Nodes { get; set; } = new();
     public List<TopologyEdgeDto> Edges { get; set; } = new();
 }
 
-public class SaveTopologyStateDto : TopologyStateDto;
+public sealed class SaveTopologyStateDto
+{
+    [Required]
+    public long? Version { get; set; }
+
+    [Required]
+    public List<TopologyNodeDto>? Nodes { get; set; }
+
+    [Required]
+    public List<TopologyEdgeDto>? Edges { get; set; }
+
+    [Required]
+    public List<DependencyItemDto>? Dependencies { get; set; }
+}
+
+public sealed record TopologyCommandBatchDto(
+    [property: Required] long? Version,
+    [property: Required] IReadOnlyList<TopologyCommandDto?> Operations);
+
+public sealed record TopologyCommandDto
+{
+    public string Type { get; init; } = string.Empty;
+    public Guid? NodeId { get; init; }
+    public Guid? ParentId { get; init; }
+    public Guid? EdgeId { get; init; }
+    public Guid? SourceNodeId { get; init; }
+    public Guid? TargetNodeId { get; init; }
+    public double? X { get; init; }
+    public double? Y { get; init; }
+    public double? Width { get; init; }
+    public double? Height { get; init; }
+    public string? SourceHandle { get; init; }
+    public string? TargetHandle { get; init; }
+    public string? EdgeType { get; init; }
+    public string? Label { get; init; }
+}
+
+public enum TopologyCommandStatus
+{
+    Success,
+    InvalidRequest,
+    Forbidden,
+    Conflict
+}
+
+public sealed record TopologyCommandResult(TopologyCommandStatus Status, long Version, string? Error = null);
 
 public enum TopologyStateStatus
 {
@@ -41,5 +89,8 @@ public enum TopologyStateStatus
     DuplicateId,
     InvalidParent,
     InvalidReference,
-    InvalidEdge
+    InvalidEdge,
+    InvalidDependency,
+    Forbidden,
+    Conflict
 }

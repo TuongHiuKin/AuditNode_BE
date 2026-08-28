@@ -151,6 +151,7 @@ builder.Services.AddScoped<IWorkspaceShareOptionsService, WorkspaceShareOptionsS
 builder.Services.AddScoped<IScopedResourcePolicy, ScopedResourcePolicy>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
+builder.Services.AddScoped<ITopologyCommandService, TopologyCommandService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
 builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Services.InfrastructureService>();

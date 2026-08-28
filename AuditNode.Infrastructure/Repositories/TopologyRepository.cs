@@ -3,6 +3,8 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Data;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -15,18 +17,32 @@ public class TopologyRepository : ITopologyRepository
     private readonly IScopedResourcePolicy _policy;
     private readonly ICurrentUserService _currentUser;
     private readonly ITenantProvider _tenant;
+    private readonly IWorkspaceAccessService _access;
 
-    public TopologyRepository(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
+    public TopologyRepository(
+        AuditDbContext context,
+        IScopedResourcePolicy policy,
+        ICurrentUserService currentUser,
+        ITenantProvider tenant,
+        IWorkspaceAccessService access)
     {
         _context = context;
         _policy = policy;
         _currentUser = currentUser;
         _tenant = tenant;
+        _access = access;
     }
 
     public async Task<TopologyStateDto> GetTopologyStateAsync()
     {
         if (!_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)) return new();
+        await using var transaction = _context.Database.IsRelational()
+            ? await _context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead)
+            : null;
+        var topologyVersion = await _context.Workspaces.AsNoTracking()
+            .Where(workspace => workspace.Id == _tenant.WorkspaceId.Value)
+            .Select(workspace => workspace.TopologyVersion)
+            .SingleOrDefaultAsync();
         var allowedServers = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "server");
         var allowedApps = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "application");
         var frameRoots = await _policy.GetGrantedFrameIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!);
@@ -110,7 +126,9 @@ public class TopologyRepository : ITopologyRepository
             edges.Add(edge);
         }
         nodes = nodes.DistinctBy(x => x.Id).ToList();
-        return new TopologyStateDto { Nodes = nodes, Edges = edges };
+        var result = new TopologyStateDto { Version = topologyVersion, Nodes = nodes, Edges = edges };
+        if (transaction is not null) await transaction.CommitAsync();
+        return result;
     }
 
     private static TopologyNodeDto Restricted(Guid id) => new() { Id = id, NodeType = "restricted", Label = "External Resource (Restricted)", IsRestricted = true };
@@ -120,15 +138,44 @@ public class TopologyRepository : ITopologyRepository
         return new Guid(hash.AsSpan(0, 16));
     }
 
-    public async Task<TopologyStateStatus> SaveTopologyStateAsync(TopologyStateDto state)
+    public async Task<TopologyStateStatus> SaveTopologyStateAsync(SaveTopologyStateDto state)
     {
-        var validation = await ValidateStateAsync(state);
-        if (validation != TopologyStateStatus.Success)
-            return validation;
-
-        using var transaction = await _context.Database.BeginTransactionAsync();
+        if (state?.Version is null || state.Nodes is null || state.Edges is null || state.Dependencies is null ||
+            state.Nodes.Any(item => item is null) || state.Edges.Any(item => item is null) ||
+            state.Dependencies.Any(item => item is null))
+            return TopologyStateStatus.InvalidRequest;
+        await using var transaction = _context.Database.IsRelational()
+            ? await _context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted)
+            : null;
         try
         {
+            if (!_context.CurrentWorkspaceId.HasValue || _context.CurrentWorkspaceId == Guid.Empty ||
+                string.IsNullOrWhiteSpace(_currentUser.UserId))
+                return TopologyStateStatus.Forbidden;
+            var workspaceId = _context.CurrentWorkspaceId.Value;
+            var workspace = _context.Database.IsRelational()
+                ? await _context.Workspaces.FromSqlInterpolated($"SELECT * FROM workspaces WHERE id = {workspaceId} FOR UPDATE").SingleOrDefaultAsync()
+                : await _context.Workspaces.SingleOrDefaultAsync(item => item.Id == workspaceId);
+            if (workspace is null) return TopologyStateStatus.Forbidden;
+            if (workspace.OwnerUserId != _currentUser.UserId)
+            {
+                if (_context.Database.IsRelational())
+                {
+                    _ = await _context.WorkspaceMembers.FromSqlInterpolated(
+                            $"SELECT * FROM workspace_members WHERE workspace_id = {workspaceId} AND user_id = {_currentUser.UserId!} FOR UPDATE")
+                        .SingleOrDefaultAsync();
+                }
+                var access = await _access.ResolveAsync(workspaceId, _currentUser.UserId!);
+                if (access?.EffectiveRole != WorkspaceRoles.Admin)
+                    return TopologyStateStatus.Forbidden;
+            }
+            if (workspace.TopologyVersion != state.Version.Value)
+                return TopologyStateStatus.Conflict;
+
+            var validation = await ValidateStateAsync(state);
+            if (validation != TopologyStateStatus.Success)
+                return validation;
+
             var existingNodes = await _context.TopologyNodes.ToDictionaryAsync(n => n.Id);
             foreach (var nodeDto in state.Nodes)
             {
@@ -166,6 +213,7 @@ public class TopologyRepository : ITopologyRepository
             var nodesToDelete = existingNodes.Values.Where(n => !incomingIds.Contains(n.Id));
 
             var existingEdges = await _context.TopologyEdges.ToDictionaryAsync(edge => edge.Id);
+            var persistedEdges = new Dictionary<Guid, TopologyEdge>();
             foreach (var edgeDto in state.Edges)
             {
                 if (!existingEdges.TryGetValue(edgeDto.Id, out var edge))
@@ -181,24 +229,121 @@ public class TopologyRepository : ITopologyRepository
                 edge.EdgeType = edgeDto.EdgeType;
                 edge.Label = edgeDto.Label;
                 edge.ReferenceId = edgeDto.ReferenceId;
+                persistedEdges.Add(edge.Id, edge);
             }
 
             var incomingEdgeIds = state.Edges.Select(edge => edge.Id).ToHashSet();
             _context.TopologyEdges.RemoveRange(existingEdges.Values.Where(edge => !incomingEdgeIds.Contains(edge.Id)));
             _context.TopologyNodes.RemoveRange(nodesToDelete);
 
+            var dependencyValidation = await ValidateAndApplyDependenciesAsync(state, persistedEdges);
+            if (dependencyValidation != TopologyStateStatus.Success)
+                return dependencyValidation;
+
+            workspace.TopologyVersion++;
+
             await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
+            if (transaction is not null) await transaction.CommitAsync();
             return TopologyStateStatus.Success;
         }
         catch (Exception)
         {
-            await transaction.RollbackAsync();
+            if (transaction is not null) await transaction.RollbackAsync();
             throw;
         }
     }
 
-    private async Task<TopologyStateStatus> ValidateStateAsync(TopologyStateDto? state)
+    private async Task<TopologyStateStatus> ValidateAndApplyDependenciesAsync(
+        SaveTopologyStateDto state,
+        IReadOnlyDictionary<Guid, TopologyEdge> persistedEdges)
+    {
+        var payload = state.Dependencies;
+        if (payload is null || payload.Any(item =>
+                item.SourceAppId == Guid.Empty || item.DestAppId == Guid.Empty ||
+                item.DestinationPortMappingId == Guid.Empty || item.SourceAppId == item.DestAppId))
+            return TopologyStateStatus.InvalidDependency;
+        var keys = payload.Select(DependencyKey).ToArray();
+        if (keys.Distinct(StringComparer.Ordinal).Count() != keys.Length)
+            return TopologyStateStatus.InvalidDependency;
+
+        var workspaceId = _context.CurrentWorkspaceId!.Value;
+        var appIds = payload.SelectMany(item => new[] { item.SourceAppId, item.DestAppId }).Distinct().ToArray();
+        var validAppCount = await _context.Applications.IgnoreQueryFilters()
+            .CountAsync(item => item.WorkspaceId == workspaceId && appIds.Contains(item.Id));
+        if (validAppCount != appIds.Length) return TopologyStateStatus.InvalidDependency;
+        var destinationPortIds = payload.Select(item => item.DestinationPortMappingId).Distinct().ToArray();
+        var destinationPorts = await _context.PortMappings.IgnoreQueryFilters()
+            .Where(item => item.WorkspaceId == workspaceId && destinationPortIds.Contains(item.Id))
+            .Select(item => new { item.Id, item.AppId })
+            .ToDictionaryAsync(item => item.Id, item => item.AppId);
+        if (destinationPorts.Count != destinationPortIds.Length ||
+            payload.Any(item => destinationPorts[item.DestinationPortMappingId] != item.DestAppId))
+            return TopologyStateStatus.InvalidDependency;
+
+        var existing = await _context.AppDependencies.IgnoreQueryFilters()
+            .Where(item => item.WorkspaceId == workspaceId).ToListAsync();
+        var desiredKeys = keys.ToHashSet(StringComparer.Ordinal);
+        var referencedIds = state.Edges!.Where(edge => edge.ReferenceId.HasValue)
+            .Select(edge => edge.ReferenceId!.Value).ToHashSet();
+        if (existing.Where(item => referencedIds.Contains(item.Id)).Any(item => !desiredKeys.Contains(DependencyKey(item))))
+            return TopologyStateStatus.InvalidDependency;
+        var canonicalExisting = existing.GroupBy(DependencyKey).ToDictionary(
+            group => group.Key,
+            group => group.OrderByDescending(item => referencedIds.Contains(item.Id)).First());
+        _context.AppDependencies.RemoveRange(existing.Where(item =>
+            !desiredKeys.Contains(DependencyKey(item)) || canonicalExisting[DependencyKey(item)].Id != item.Id));
+        var additions = payload
+            .Where(item => !canonicalExisting.ContainsKey(DependencyKey(item)))
+            .Select(item => new AppDependency
+            {
+                Id = Guid.NewGuid(),
+                SourceAppId = item.SourceAppId,
+                DestAppId = item.DestAppId,
+                DestPortId = item.DestinationPortMappingId,
+                ConnectionType = "Manual",
+                CreatedAt = DateTime.UtcNow
+            }).ToList();
+        await _context.AppDependencies.AddRangeAsync(additions);
+
+        var canonicalByKey = canonicalExisting.Values.Concat(additions)
+            .ToDictionary(DependencyKey, StringComparer.Ordinal);
+        var nodeById = state.Nodes!.ToDictionary(item => item.Id);
+        var deploymentIds = nodeById.Values
+            .Where(item => item.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase) && item.ReferenceId.HasValue)
+            .Select(item => item.ReferenceId!.Value).Distinct().ToArray();
+        var deploymentApps = await _context.PortMappings.IgnoreQueryFilters()
+            .Where(item => item.WorkspaceId == workspaceId && deploymentIds.Contains(item.Id))
+            .Select(item => new { item.Id, item.AppId })
+            .ToDictionaryAsync(item => item.Id, item => item.AppId);
+        var assignedDependencyIds = new HashSet<Guid>();
+        foreach (var edge in state.Edges!)
+        {
+            var source = nodeById[edge.SourceNodeId];
+            var target = nodeById[edge.TargetNodeId];
+            if (!source.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase) ||
+                !target.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (!source.ReferenceId.HasValue || !target.ReferenceId.HasValue ||
+                !deploymentApps.TryGetValue(source.ReferenceId.Value, out var sourceAppId) ||
+                !deploymentApps.TryGetValue(target.ReferenceId.Value, out var targetAppId))
+                return TopologyStateStatus.InvalidDependency;
+            var key = $"{sourceAppId:N}|{targetAppId:N}|{target.ReferenceId.Value:N}";
+            if (!canonicalByKey.TryGetValue(key, out var dependency))
+                return TopologyStateStatus.InvalidDependency;
+            if (!assignedDependencyIds.Add(dependency.Id))
+                return TopologyStateStatus.InvalidReference;
+            persistedEdges[edge.Id].ReferenceId = dependency.Id;
+        }
+        return TopologyStateStatus.Success;
+    }
+
+    private static string DependencyKey(DependencyItemDto item) =>
+        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestinationPortMappingId:N}";
+
+    private static string DependencyKey(AppDependency item) =>
+        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestPortId:N}";
+
+    private async Task<TopologyStateStatus> ValidateStateAsync(SaveTopologyStateDto? state)
     {
         if (state?.Nodes is null || state.Edges is null ||
             !_context.CurrentWorkspaceId.HasValue || _context.CurrentWorkspaceId == Guid.Empty)
@@ -260,8 +405,8 @@ public class TopologyRepository : ITopologyRepository
             .Select(server => server.Id).ToListAsync();
         var mappings = await _context.PortMappings
             .Where(mapping => deploymentReferences.Contains(mapping.Id))
-            .Select(mapping => new { mapping.Id, mapping.ServerId })
-            .ToDictionaryAsync(mapping => mapping.Id, mapping => mapping.ServerId);
+            .Select(mapping => new { mapping.Id, mapping.ServerId, mapping.AppId })
+            .ToDictionaryAsync(mapping => mapping.Id);
         if (serverIds.Count != serverReferences.Length || mappings.Count != deploymentReferences.Length)
             return TopologyStateStatus.InvalidReference;
 
@@ -272,7 +417,7 @@ public class TopologyRepository : ITopologyRepository
             var parent = byId[applicationNode.ParentNodeId!.Value];
             if (parent.NodeType.Equals("server", StringComparison.OrdinalIgnoreCase) &&
                 (!parent.ReferenceId.HasValue ||
-                 mappings[applicationNode.ReferenceId!.Value] != parent.ReferenceId.Value))
+                 mappings[applicationNode.ReferenceId!.Value].ServerId != parent.ReferenceId.Value))
                 return TopologyStateStatus.InvalidParent;
         }
 
@@ -293,11 +438,35 @@ public class TopologyRepository : ITopologyRepository
 
         if (dependencyReferences.Count > 0)
         {
+            if (dependencyReferences.Distinct().Count() != dependencyReferences.Count)
+                return TopologyStateStatus.InvalidReference;
             var found = await _context.AppDependencies
                 .Where(dependency => dependencyReferences.Contains(dependency.Id))
-                .Select(dependency => dependency.Id).Distinct().CountAsync();
-            if (found != dependencyReferences.Distinct().Count())
+                .Select(dependency => new
+                {
+                    dependency.Id,
+                    dependency.SourceAppId,
+                    dependency.DestAppId,
+                    dependency.DestPortId
+                }).ToDictionaryAsync(dependency => dependency.Id);
+            if (found.Count != dependencyReferences.Count)
                 return TopologyStateStatus.InvalidReference;
+            foreach (var edge in state.Edges.Where(edge => edge.ReferenceId.HasValue))
+            {
+                var source = byId[edge.SourceNodeId];
+                var target = byId[edge.TargetNodeId];
+                if (!source.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase) ||
+                    !target.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase) ||
+                    !source.ReferenceId.HasValue || !target.ReferenceId.HasValue ||
+                    !mappings.TryGetValue(source.ReferenceId.Value, out var sourceMapping) ||
+                    !mappings.TryGetValue(target.ReferenceId.Value, out var targetMapping))
+                    return TopologyStateStatus.InvalidReference;
+                var dependency = found[edge.ReferenceId!.Value];
+                if (dependency.SourceAppId != sourceMapping.AppId ||
+                    dependency.DestAppId != targetMapping.AppId ||
+                    dependency.DestPortId != targetMapping.Id)
+                    return TopologyStateStatus.InvalidReference;
+            }
         }
 
         return TopologyStateStatus.Success;
