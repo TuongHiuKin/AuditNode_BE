@@ -19,11 +19,17 @@ public class WorkspaceMiddleware
         ITenantProvider tenantProvider,
         IWorkspaceService workspaceService)
     {
-        // Skip workspace validation for non-API paths or specific endpoints like auth and workspace selection
+        var skipsWorkspaceValidation = context.GetEndpoint()?.Metadata
+            .GetMetadata<SkipWorkspaceValidationAttribute>() is not null;
+
+        // Skip workspace validation for non-API paths and endpoints with their own security
+        // boundary. Label grants/share links use owner_user_id and centralized label policy;
+        // anonymous share resolution must never require a legacy Workspace header.
         if (!context.Request.Path.StartsWithSegments("/api") || 
             context.Request.Path.StartsWithSegments("/api/v1/auth") ||
             context.Request.Path.StartsWithSegments("/api/v1/admin") ||
-            context.Request.Path.StartsWithSegments("/api/v1/workspaces"))
+            context.Request.Path.StartsWithSegments("/api/v1/workspaces") ||
+            skipsWorkspaceValidation)
         {
             await _next(context);
             return;

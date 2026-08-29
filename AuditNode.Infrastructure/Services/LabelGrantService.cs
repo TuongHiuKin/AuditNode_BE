@@ -21,13 +21,20 @@ public sealed class LabelGrantService(
         CancellationToken cancellationToken = default)
     {
         var actorUserId = currentUser.UserId;
-        if (!await IsOwnerAsync(labelId, actorUserId, cancellationToken)) return null;
+        if (string.IsNullOrWhiteSpace(actorUserId)) return null;
+        var labelKind = await context.Labels.IgnoreQueryFilters().AsNoTracking()
+            .Where(label => label.Id == labelId &&
+                            label.OwnerUserId != null &&
+                            label.OwnerUserId == actorUserId)
+            .Select(label => label.Kind)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (labelKind is null) return null;
 
         var grants = await context.LabelGrants.IgnoreQueryFilters().AsNoTracking()
             .Where(grant => grant.LabelId == labelId && grant.GranteeUserId != null)
             .OrderBy(grant => grant.CreatedAt)
             .ToListAsync(cancellationToken);
-        return grants.Select(ToDto).ToList();
+        return grants.Select(grant => ToDto(grant, labelKind)).ToList();
     }
 
     public async Task<LabelGrantMutationResult> CreateAsync(
@@ -107,7 +114,7 @@ public sealed class LabelGrantService(
         logger.LogInformation(
             "Label user grant created. LabelId={LabelId} GrantId={GrantId} ReplacedExpiredGrantId={ReplacedExpiredGrantId} ActorUserId={ActorUserId} GranteeUserId={GranteeUserId} Permission={Permission}",
             labelId, grant.Id, replacedExpiredGrantId, actorUserId, request.GranteeUserId, request.Permission);
-        return Success(grant);
+        return Success(grant, label.Kind);
     }
 
     public async Task<LabelGrantMutationResult> UpdateAsync(
@@ -157,7 +164,7 @@ public sealed class LabelGrantService(
         logger.LogInformation(
             "Label user grant updated. LabelId={LabelId} GrantId={GrantId} ActorUserId={ActorUserId} Permission={Permission}",
             labelId, grant.Id, actorUserId, grant.Permission);
-        return Success(grant);
+        return Success(grant, label!.Kind);
     }
 
     public async Task<LabelGrantMutationResult> RevokeAsync(
@@ -186,7 +193,7 @@ public sealed class LabelGrantService(
         logger.LogInformation(
             "Label user grant revoked. LabelId={LabelId} GrantId={GrantId} ActorUserId={ActorUserId}",
             labelId, grant.Id, actorUserId);
-        return Success(grant);
+        return Success(grant, label!.Kind);
     }
 
     private bool ValidExpiry(DateTimeOffset? expiresAt) =>
@@ -273,22 +280,28 @@ public sealed class LabelGrantService(
                          grant.RevokedAt == null,
                 cancellationToken);
 
-    private static LabelGrantDto ToDto(LabelGrant grant) => new(
+    private static LabelGrantDto ToDto(LabelGrant grant, string labelKind)
+    {
+        var sharesAllOwnerResources = labelKind == LabelKinds.Owner;
+        return new(
         grant.Id,
         grant.LabelId,
         grant.GranteeUserId!,
         grant.Permission,
         ToOffset(grant.ExpiresAt),
         ToOffset(grant.RevokedAt),
-        grant.Version);
+        grant.Version,
+        sharesAllOwnerResources,
+        sharesAllOwnerResources ? LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources : null);
+    }
 
     private static DateTimeOffset? ToOffset(DateTime? value) =>
         value.HasValue
             ? new DateTimeOffset(DateTime.SpecifyKind(value.Value, DateTimeKind.Utc))
             : null;
 
-    private static LabelGrantMutationResult Success(LabelGrant grant) =>
-        new(LabelGrantMutationStatus.Success, ToDto(grant));
+    private static LabelGrantMutationResult Success(LabelGrant grant, string labelKind) =>
+        new(LabelGrantMutationStatus.Success, ToDto(grant, labelKind));
 
     private static LabelGrantMutationResult Denied() => new(LabelGrantMutationStatus.Denied);
     private static LabelGrantMutationResult Invalid() => new(LabelGrantMutationStatus.Invalid);

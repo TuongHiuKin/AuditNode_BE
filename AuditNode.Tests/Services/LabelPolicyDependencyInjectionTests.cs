@@ -25,6 +25,7 @@ public sealed class LabelPolicyDependencyInjectionTests
         services.AddScoped<ILabelAccessService, LabelAccessService>();
         services.AddScoped<ILabelGrantService, LabelGrantService>();
         services.AddScoped<IShareTokenService, ShareTokenService>();
+        services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -36,5 +37,7 @@ public sealed class LabelPolicyDependencyInjectionTests
         scope.ServiceProvider.GetRequiredService<ILabelAccessService>().Should().BeOfType<LabelAccessService>();
         scope.ServiceProvider.GetRequiredService<ILabelGrantService>().Should().BeOfType<LabelGrantService>();
         scope.ServiceProvider.GetRequiredService<IShareTokenService>().Should().BeOfType<ShareTokenService>();
+        scope.ServiceProvider.GetRequiredService<ILabelShareOptionsService>()
+            .Should().BeOfType<LabelShareOptionsService>();
     }
 }

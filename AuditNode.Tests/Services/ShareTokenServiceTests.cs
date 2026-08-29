@@ -7,6 +7,7 @@ using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -116,7 +117,45 @@ public sealed class ShareTokenServiceTests
         (await Service(context, null).ResolveAsync(created.RawToken!)).Should().NotBeNull();
     }
 
-    private static ShareTokenService Service(AuditDbContext context, string? currentUserId)
+    [Fact]
+    public async Task Owner_label_link_creation_exposes_all_owner_resources_warning_metadata()
+    {
+        await using var context = Context();
+        var label = BusinessLabel("owner");
+        label.Kind = LabelKinds.Owner;
+        label.IsProtected = true;
+        context.Labels.Add(label);
+        await context.SaveChangesAsync();
+
+        var result = await Service(context, "owner").CreateAsync(label.Id, Now.AddHours(1));
+
+        result.SharesAllOwnerResources.Should().BeTrue();
+        result.WarningCode.Should().Be(LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources);
+        var resolution = await Service(context, null).ResolveAsync(result.RawToken!);
+        resolution!.SharesAllOwnerResources.Should().BeTrue();
+        resolution.WarningCode.Should().Be(LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources);
+    }
+
+    [Fact]
+    public async Task Creation_security_log_never_contains_the_raw_token()
+    {
+        await using var context = Context();
+        var label = BusinessLabel("owner");
+        context.Labels.Add(label);
+        await context.SaveChangesAsync();
+        var logger = new CapturingLogger<ShareTokenService>();
+
+        var result = await Service(context, "owner", logger)
+            .CreateAsync(label.Id, Now.AddHours(1));
+
+        logger.Messages.Should().NotContain(message =>
+            message.Contains(result.RawToken!, StringComparison.Ordinal));
+    }
+
+    private static ShareTokenService Service(
+        AuditDbContext context,
+        string? currentUserId,
+        ILogger<ShareTokenService>? logger = null)
     {
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(service => service.UserId).Returns(currentUserId);
@@ -124,7 +163,7 @@ public sealed class ShareTokenServiceTests
             context,
             currentUser.Object,
             new FixedTimeProvider(Now),
-            NullLogger<ShareTokenService>.Instance);
+            logger ?? NullLogger<ShareTokenService>.Instance);
     }
 
     private static AuditDbContext Context()
@@ -141,4 +180,21 @@ public sealed class ShareTokenServiceTests
         Id = Guid.NewGuid(), WorkspaceId = Guid.NewGuid(), OwnerUserId = owner,
         Key = "share", Value = Guid.NewGuid().ToString("N"), Kind = LabelKinds.Business
     };
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Messages { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Messages.Add(formatter(state, exception));
+    }
 }

@@ -17,7 +17,9 @@ public sealed record LabelGrantDto(
     string Permission,
     DateTimeOffset? ExpiresAt,
     DateTimeOffset? RevokedAt,
-    long Version);
+    long Version,
+    bool SharesAllOwnerResources = false,
+    string? WarningCode = null);
 
 public enum LabelGrantMutationStatus
 {

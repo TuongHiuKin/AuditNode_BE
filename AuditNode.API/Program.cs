@@ -109,6 +109,28 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("share-link-create", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst("sub")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("share-link-resolve", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 builder.Services.AddOptions<KeycloakRuntimeOptions>()
@@ -159,6 +181,7 @@ builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Serv
 builder.Services.AddScoped<ILabelAccessService, LabelAccessService>();
 builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();
 builder.Services.AddScoped<IShareTokenService, ShareTokenService>();
+builder.Services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();
 
 // Register FluentValidation
 builder.Services.AddFluentValidationAutoValidation();

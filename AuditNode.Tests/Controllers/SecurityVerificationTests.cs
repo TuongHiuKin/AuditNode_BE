@@ -78,15 +78,28 @@ public class SecurityVerificationTests
     }
 
     [Fact]
-    public void All_Controllers_In_API_Namespace_Should_Be_Tested()
+    public void Controller_security_is_policy_based_with_an_explicit_anonymous_action_allowlist()
     {
-        // Arrange
-        var assembly = typeof(ApplicationsController).Assembly;
-        var controllerTypes = assembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(ControllerBase)) && !t.IsAbstract)
+        var allowedAnonymousActions = new HashSet<string>(StringComparer.Ordinal)
+        {
+            $"{nameof(AuthController)}.{nameof(AuthController.Login)}",
+            $"{nameof(AuthController)}.{nameof(AuthController.Register)}",
+            $"{nameof(AuthController)}.{nameof(AuthController.Refresh)}",
+            $"{nameof(AuthController)}.{nameof(AuthController.Logout)}",
+            $"{nameof(ShareLinksController)}.{nameof(ShareLinksController.Resolve)}"
+        };
+        var controllerTypes = typeof(ApplicationsController).Assembly.GetTypes()
+            .Where(type => type.IsSubclassOf(typeof(ControllerBase)) && !type.IsAbstract)
             .ToList();
 
-        // Act & Assert
-        controllerTypes.Should().HaveCount(14, "We expect exactly 14 controllers to be protected");
+        controllerTypes.All(type => type.GetCustomAttribute<AuthorizeAttribute>() != null)
+            .Should().BeTrue("every API controller is protected by default");
+
+        var anonymousActions = controllerTypes
+            .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                .Where(method => method.GetCustomAttribute<AllowAnonymousAttribute>() is not null)
+                .Select(method => $"{type.Name}.{method.Name}"))
+            .ToHashSet(StringComparer.Ordinal);
+        anonymousActions.Should().BeEquivalentTo(allowedAnonymousActions);
     }
 }

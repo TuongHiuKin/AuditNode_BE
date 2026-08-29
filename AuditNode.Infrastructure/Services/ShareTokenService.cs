@@ -66,7 +66,11 @@ public sealed class ShareTokenService(
             grant.Id,
             rawToken,
             expiresAt,
-            grant.Version);
+            grant.Version,
+            label.Kind == LabelKinds.Owner,
+            label.Kind == LabelKinds.Owner
+                ? LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources
+                : null);
     }
 
     public async Task<ShareTokenResolutionDto?> ResolveAsync(
@@ -89,7 +93,8 @@ public sealed class ShareTokenService(
                 item.TokenHash,
                 item.ExpiresAt,
                 item.RevokedAt,
-                LabelOwnerUserId = item.Label == null ? null : item.Label.OwnerUserId
+                LabelOwnerUserId = item.Label == null ? null : item.Label.OwnerUserId,
+                LabelKind = item.Label == null ? null : item.Label.Kind
             })
             .SingleOrDefaultAsync(cancellationToken);
 
@@ -108,10 +113,15 @@ public sealed class ShareTokenService(
             !string.Equals(grant.OwnerUserId, grant.LabelOwnerUserId, StringComparison.Ordinal))
             return null;
 
+        var sharesAllOwnerResources = grant.LabelKind == LabelKinds.Owner;
         return new ShareTokenResolutionDto(
             grant.LabelId,
             grant.OwnerUserId,
-            LabelGrantPermissions.Viewer);
+            LabelGrantPermissions.Viewer,
+            sharesAllOwnerResources,
+            sharesAllOwnerResources
+                ? LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources
+                : null);
     }
 
     public async Task<ShareTokenMutationResult> RevokeAsync(

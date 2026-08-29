@@ -150,6 +150,24 @@ public sealed class LabelGrantServiceTests
         stored.Version.Should().Be(1);
     }
 
+    [Fact]
+    public async Task Owner_label_grant_exposes_all_owner_resources_warning_metadata()
+    {
+        await using var context = Context();
+        var label = BusinessLabel("owner");
+        label.Kind = LabelKinds.Owner;
+        label.IsProtected = true;
+        context.Labels.Add(label);
+        await context.SaveChangesAsync();
+
+        var result = await Service(context, "owner", EnabledIdentity("viewer").Object).CreateAsync(
+            label.Id,
+            new CreateLabelGrantDto("viewer", LabelGrantPermissions.Viewer, null));
+
+        result.Grant!.SharesAllOwnerResources.Should().BeTrue();
+        result.Grant.WarningCode.Should().Be(LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources);
+    }
+
     private static LabelGrantService Service(
         AuditDbContext context,
         string currentUserId,
