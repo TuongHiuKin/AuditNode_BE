@@ -24,6 +24,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -155,6 +156,9 @@ builder.Services.AddScoped<ITopologyCommandService, TopologyCommandService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
 builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Services.InfrastructureService>();
+builder.Services.AddScoped<ILabelAccessService, LabelAccessService>();
+builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();
+builder.Services.AddScoped<IShareTokenService, ShareTokenService>();
 
 // Register FluentValidation
 builder.Services.AddFluentValidationAutoValidation();
