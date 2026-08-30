@@ -17,6 +17,7 @@ using System.Threading.RateLimiting;
 using AuditNode.API.Services;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +26,7 @@ builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddDataProtection();
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -131,6 +133,16 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("share-link-browse", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 builder.Services.AddOptions<KeycloakRuntimeOptions>()
@@ -161,6 +173,9 @@ builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
+builder.Services.AddScoped<IGlobalCatalogRepository, GlobalCatalogRepository>();
+builder.Services.AddSingleton<ICatalogCursorProtector, DataProtectionCatalogCursorProtector>();
+builder.Services.AddSingleton<ICatalogCursorCodec, CatalogCursorCodec>();
 builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
 
 // Register Services
@@ -177,6 +192,8 @@ builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services
 builder.Services.AddScoped<ITopologyCommandService, TopologyCommandService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
+builder.Services.AddScoped<ILabelCatalogService, LabelCatalogService>();
+builder.Services.AddScoped<IShareCatalogService, ShareCatalogService>();
 builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Services.InfrastructureService>();
 builder.Services.AddScoped<ILabelAccessService, LabelAccessService>();
 builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();

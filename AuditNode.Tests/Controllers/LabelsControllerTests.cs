@@ -1,61 +1,47 @@
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
-using AuditNode.Domain.Entities;
-using AuditNode.Infrastructure.Data;
+using AuditNode.Application.Interfaces;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Xunit;
-using AuditNode.Application.Interfaces;
 using Moq;
+using Xunit;
 
 namespace AuditNode.Tests.Controllers;
 
-public class LabelsControllerTests
+public sealed class LabelsControllerTests
 {
-    private DbContextOptions<AuditDbContext> CreateNewContextOptions()
+    [Fact]
+    public async Task Get_labels_defaults_to_mine_cursor_page()
     {
-        return new DbContextOptionsBuilder<AuditDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
+        var service = new Mock<ILabelCatalogService>();
+        var page = new CursorPageDto<CatalogLabelDto>(
+            [new CatalogLabelDto { Id = Guid.NewGuid(), Key = "env", Value = "prod", OwnerUserId = "me" }],
+            null,
+            false);
+        service.Setup(value => value.GetLabelsAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(page);
+
+        var result = await new LabelsController(service.Object).GetLabels();
+
+        result.Result.Should().BeOfType<OkObjectResult>()
+            .Which.Value.Should().BeSameAs(page);
     }
 
     [Fact]
-    public async Task GetLabels_ReturnsDistinctLabels()
+    public async Task Get_labels_requests_shared_only_when_explicit()
     {
-        // Arrange
-        var options = CreateNewContextOptions();
-        var mockTenantProvider = new Mock<ITenantProvider>();
-        var workspaceId = Guid.NewGuid();
-        mockTenantProvider.Setup(t => t.WorkspaceId).Returns(workspaceId);
+        var service = new Mock<ILabelCatalogService>();
+        service.Setup(value => value.GetLabelsAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared && query.Limit == 10),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<CatalogLabelDto>([], null, false));
 
-        using (var context = new AuditDbContext(options, mockTenantProvider.Object))
-        {
-            context.Labels.Add(new Label { Id = Guid.NewGuid(), Key = "env", Value = "prod", WorkspaceId = workspaceId });
-            context.Labels.Add(new Label { Id = Guid.NewGuid(), Key = "env", Value = "prod", WorkspaceId = workspaceId }); // Duplicate
-            context.Labels.Add(new Label { Id = Guid.NewGuid(), Key = "tier", Value = "frontend", WorkspaceId = workspaceId });
-            await context.SaveChangesAsync();
-        }
+        await new LabelsController(service.Object).GetLabels("shared", 10);
 
-        using (var context = new AuditDbContext(options, mockTenantProvider.Object))
-        {
-            var policy = new Mock<IScopedResourcePolicy>();
-            policy.Setup(x => x.GetReadableIdsAsync(workspaceId, "test-user", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
-            var currentUser = new Mock<ICurrentUserService>();
-            currentUser.SetupGet(x => x.UserId).Returns("test-user");
-            var controller = new LabelsController(context, policy.Object, currentUser.Object, mockTenantProvider.Object);
-
-            // Act
-            var result = await controller.GetLabels();
-
-            // Assert
-            var okResult = result.Result.Should().BeOfType<OkObjectResult>().Subject;
-            var labels = okResult.Value.Should().BeAssignableTo<IEnumerable<LabelDto>>().Subject;
-            
-            labels.Should().HaveCount(2); // Should remove duplicates
-            labels.Should().Contain(l => l.Key == "env" && l.Value == "prod");
-            labels.Should().Contain(l => l.Key == "tier" && l.Value == "frontend");
-        }
+        service.Verify(value => value.GetLabelsAsync(
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared),
+            It.IsAny<CancellationToken>()), Times.Once);
     }
 }
-

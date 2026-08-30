@@ -13,14 +13,33 @@ public class ApplicationService : IApplicationService
     private readonly ITenantProvider _tenantProvider;
     private readonly IScopedResourcePolicy _scopePolicy;
     private readonly ICurrentUserService _currentUser;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly TimeProvider _timeProvider;
 
-    public ApplicationService(IApplicationRepository repository, ITenantProvider tenantProvider, IScopedResourcePolicy scopePolicy, ICurrentUserService currentUser)
+    public ApplicationService(IApplicationRepository repository, ITenantProvider tenantProvider, IScopedResourcePolicy scopePolicy, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
     {
         _repository = repository;
         _tenantProvider = tenantProvider;
         _scopePolicy = scopePolicy;
         _currentUser = currentUser;
+        _catalog = catalog;
+        _timeProvider = timeProvider;
     }
+
+    public Task<CursorPageDto<ApplicationResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult(new CursorPageDto<ApplicationResponseDto>([], null, false))
+            : _catalog.GetApplicationsAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, labelKey, labelValue, cancellationToken);
+
+    public Task<ApplicationResponseDto?> GetCatalogDetailAsync(Guid id, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<ApplicationResponseDto?>(null)
+            : _catalog.GetApplicationAsync(_currentUser.UserId!, id, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+
+    public Task<IReadOnlyList<ApplicationResponseDto>> ExportCatalogAsync(IReadOnlyCollection<Guid> ids, CatalogView view, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<IReadOnlyList<ApplicationResponseDto>>([])
+            : _catalog.ExportApplicationsAsync(_currentUser.UserId!, view, ids, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
 
     public async Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string? labelKey = null, string? labelValue = null) =>
         HasWorkspace() ? await _repository.GetScopedAsync(await ReadableIdsAsync("application"), await ReadableIdsAsync("server"), labelKey: labelKey, labelValue: labelValue) : [];
@@ -63,6 +82,7 @@ public class ApplicationService : IApplicationService
             deployment = new PortMapping
             {
                 Id = Guid.NewGuid(),
+                OwnerUserId = _currentUser.UserId,
                 ServerId = createDto.Deployment.ServerId,
                 PortNumber = createDto.Deployment.PortNumber,
                 Protocol = createDto.Deployment.Protocol.Trim().ToUpperInvariant()
@@ -72,6 +92,7 @@ public class ApplicationService : IApplicationService
         var application = new AppEntity
         {
             Id = Guid.NewGuid(),
+            OwnerUserId = _currentUser.UserId,
             AppCode = appCode,
             AppName = createDto.AppName,
             OwnerTeam = createDto.OwnerTeam,
@@ -229,6 +250,9 @@ public class ApplicationService : IApplicationService
         Labels = application.ApplicationLabels
             .Where(link => link.Label is not null)
             .Select(link => new LabelDto { Key = link.Label!.Key, Value = link.Label.Value })
-            .ToList()
+            .ToList(),
+        OwnerUserId = application.OwnerUserId ?? string.Empty,
+        EffectivePermission = LabelEffectivePermission.Owner,
+        Capabilities = CatalogCapabilities.Owner
     };
 }

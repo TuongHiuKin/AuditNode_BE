@@ -24,7 +24,7 @@ public class InfrastructureServiceTests
         user.SetupGet(x => x.UserId).Returns("test-user");
         var tenant = new Mock<ITenantProvider>();
         tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
-        return new InfrastructureService(context, NullLogger<InfrastructureService>.Instance, policy.Object, user.Object, tenant.Object);
+        return new InfrastructureService(context, NullLogger<InfrastructureService>.Instance, policy.Object, user.Object, tenant.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
     }
     private AuditDbContext GetDbContext()
     {

@@ -14,15 +14,29 @@ public class InfrastructureService : IInfrastructureService
     private readonly IScopedResourcePolicy _policy;
     private readonly ICurrentUserService _currentUser;
     private readonly ITenantProvider _tenant;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly TimeProvider _timeProvider;
 
-    public InfrastructureService(AuditDbContext context, ILogger<InfrastructureService> logger, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
+    public InfrastructureService(AuditDbContext context, ILogger<InfrastructureService> logger, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
     {
         _context = context;
         _logger = logger;
         _policy = policy;
         _currentUser = currentUser;
         _tenant = tenant;
+        _catalog = catalog;
+        _timeProvider = timeProvider;
     }
+
+    public Task<int?> GetDependenciesCountCatalogAsync(Guid appId, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<int?>(null)
+            : _catalog.GetDependencyCountAsync(_currentUser.UserId!, appId, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+
+    public Task<IReadOnlyList<DeployedAppDto>?> GetDeployedAppsByServerCatalogAsync(Guid serverId, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<IReadOnlyList<DeployedAppDto>?>(null)
+            : _catalog.GetDeployedApplicationsAsync(_currentUser.UserId!, serverId, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
 
     public async Task<int> GetDependenciesCountAsync(Guid appId)
     {

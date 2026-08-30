@@ -54,7 +54,8 @@ public sealed class ShareTokenServiceTests
         var invalid = await Service(context, null).ResolveAsync("invalid-token");
         var empty = await Service(context, null).ResolveAsync(string.Empty);
 
-        valid.Should().Be(new ShareTokenResolutionDto(label.Id, "owner", LabelGrantPermissions.Viewer));
+        valid.Should().Be(new ShareTokenResolutionDto(
+            label.Id, "owner", LabelGrantPermissions.Viewer, GrantId: created.GrantId!.Value));
         invalid.Should().BeNull();
         empty.Should().BeNull();
     }

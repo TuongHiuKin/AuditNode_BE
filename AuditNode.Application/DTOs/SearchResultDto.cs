@@ -7,4 +7,8 @@ public class SearchResultDto
     public string Title { get; set; } = string.Empty;
     public string Subtitle { get; set; } = string.Empty;
     public string MatchReason { get; set; } = string.Empty;
+    public string OwnerUserId { get; set; } = string.Empty;
+    public LabelEffectivePermission EffectivePermission { get; set; }
+    public IReadOnlyList<Guid> SharedLabelIds { get; set; } = [];
+    public LabelAccessCapabilities Capabilities { get; set; } = CatalogCapabilities.None;
 }

@@ -158,6 +158,7 @@ public class ServerRepository : IServerRepository
             var normalizedKey = value.Key.ToUpperInvariant();
             var normalizedValue = value.Value.ToUpperInvariant();
             var label = await _dbContext.Labels.FirstOrDefaultAsync(existing =>
+                existing.OwnerUserId == server.OwnerUserId &&
                 existing.Key.ToUpper() == normalizedKey && existing.Value.ToUpper() == normalizedValue);
             if (label is null)
             {
@@ -165,6 +166,7 @@ public class ServerRepository : IServerRepository
                 {
                     Id = Guid.NewGuid(),
                     WorkspaceId = server.WorkspaceId,
+                    OwnerUserId = server.OwnerUserId,
                     Key = value.Key,
                     Value = value.Value
                 };
@@ -177,6 +179,7 @@ public class ServerRepository : IServerRepository
                 _dbContext.ServerLabels.Add(new ServerLabel
                 {
                     WorkspaceId = server.WorkspaceId,
+                    OwnerUserId = server.OwnerUserId,
                     ServerId = server.Id,
                     LabelId = label.Id,
                     Server = server,

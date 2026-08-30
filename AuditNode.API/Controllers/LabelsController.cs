@@ -1,50 +1,35 @@
 using AuditNode.Application.DTOs;
+using AuditNode.API.Middleware;
+using AuditNode.Application.Exceptions;
 using AuditNode.Application.Interfaces;
-using AuditNode.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
+[Route("api/v1/labels")]
 [Route("api/v1/inventory/labels")]
-public class LabelsController : ControllerBase
+public sealed class LabelsController(ILabelCatalogService labels) : ControllerBase
 {
-    private readonly AuditDbContext _context;
-    private readonly IScopedResourcePolicy _policy;
-    private readonly ICurrentUserService _currentUser;
-    private readonly ITenantProvider _tenant;
-
-    public LabelsController(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
-    {
-        _context = context;
-        _policy = policy;
-        _currentUser = currentUser;
-        _tenant = tenant;
-    }
-
+    [SkipWorkspaceValidation]
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<LabelDto>>> GetLabels()
+    [ProducesResponseType(typeof(CursorPageDto<CatalogLabelDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CursorPageDto<CatalogLabelDto>>> GetLabels(
+        [FromQuery] string? view = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] string? cursor = null,
+        CancellationToken cancellationToken = default)
     {
-        if (!_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)) return Forbid();
-        var servers = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "server");
-        var applications = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "application");
-        var query = _context.Labels.AsQueryable();
-        if (servers is not null || applications is not null)
-            query = query.Where(label =>
-                (servers != null && label.ServerLabels.Any(link => servers.Contains(link.ServerId))) ||
-                (applications != null && label.ApplicationLabels.Any(link => applications.Contains(link.ApplicationId))));
-        var labels = await query
-            .Select(l => new LabelDto
-            {
-                Key = l.Key,
-                Value = l.Value
-            })
-            .Distinct()
-            .ToListAsync();
-
-        return Ok(labels);
+        try
+        {
+            return Ok(await labels.GetLabelsAsync(CatalogPageQuery.Parse(view, limit, cursor), cancellationToken));
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(new ProblemDetails { Status = 400, Title = exception.Message });
+        }
     }
 }

@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Mvc;
 using Moq;
 using Xunit;
+using AuditNode.Application.DTOs;
 
 namespace AuditNode.Tests.Controllers;
 
@@ -24,7 +25,7 @@ public class AnalyticsControllerTests
     {
         // Arrange
         var mockData = new List<TopologyView> { new TopologyView { ServerHostname = "srv1" } };
-        _mockRepo.Setup(r => r.GetTopologyAsync(null, null))
+        _mockRepo.Setup(r => r.GetTopologyCatalogAsync(CatalogView.Mine, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockData);
 
         // Act
@@ -40,7 +41,7 @@ public class AnalyticsControllerTests
     public async Task GetTopology_ShouldReturnSafe500_OnException()
     {
         // Arrange
-        _mockRepo.Setup(r => r.GetTopologyAsync(It.IsAny<string>(), It.IsAny<Guid?>()))
+        _mockRepo.Setup(r => r.GetTopologyCatalogAsync(It.IsAny<CatalogView>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Test error"));
 
         // Act
@@ -58,7 +59,7 @@ public class AnalyticsControllerTests
     {
         // Arrange
         var mockData = new List<DependencyView> { new DependencyView { SourceAppName = "App1" } };
-        _mockRepo.Setup(r => r.GetDependenciesAsync(null, null))
+        _mockRepo.Setup(r => r.GetDependenciesCatalogAsync(CatalogView.Mine, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockData);
 
         // Act
@@ -74,7 +75,7 @@ public class AnalyticsControllerTests
     public async Task GetDependencies_ShouldReturnSafe500_OnException()
     {
         // Arrange
-        _mockRepo.Setup(r => r.GetDependenciesAsync(It.IsAny<string>(), It.IsAny<Guid?>()))
+        _mockRepo.Setup(r => r.GetDependenciesCatalogAsync(It.IsAny<CatalogView>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Test error"));
 
         // Act

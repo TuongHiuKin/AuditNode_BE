@@ -2,6 +2,7 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using AuditNode.Application.DTOs;
 
 namespace AuditNode.Infrastructure.Repositories;
 
@@ -11,13 +12,33 @@ public class AnalyticsRepository : IAnalyticsRepository
     private readonly IScopedResourcePolicy _policy;
     private readonly ICurrentUserService _currentUser;
     private readonly ITenantProvider _tenant;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly TimeProvider _timeProvider;
 
-    public AnalyticsRepository(AuditDbContext dbContext, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
+    public AnalyticsRepository(AuditDbContext dbContext, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _policy = policy;
         _currentUser = currentUser;
         _tenant = tenant;
+        _catalog = catalog;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<IEnumerable<TopologyView>> GetTopologyCatalogAsync(
+        CatalogView view, string? environment = null, Guid? datacenterId = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUser.UserId)) return [];
+        return await _catalog.GetTopologyAnalyticsAsync(
+            _currentUser.UserId!, view, _timeProvider.GetUtcNow().UtcDateTime, environment, datacenterId, cancellationToken);
+    }
+
+    public async Task<IEnumerable<DependencyView>> GetDependenciesCatalogAsync(
+        CatalogView view, string? environment = null, Guid? datacenterId = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_currentUser.UserId)) return [];
+        return await _catalog.GetDependencyAnalyticsAsync(
+            _currentUser.UserId!, view, _timeProvider.GetUtcNow().UtcDateTime, environment, datacenterId, cancellationToken);
     }
 
     public async Task<IEnumerable<TopologyView>> GetTopologyAsync(string? environment = null, Guid? datacenterId = null)

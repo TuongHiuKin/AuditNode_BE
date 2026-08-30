@@ -65,9 +65,9 @@ public class ApplicationServiceTests
 
         result.Status.Should().Be(ApplicationOperationStatus.Success);
         _repository.Verify(x => x.CreateAsync(
-            It.Is<AppEntity>(app => app.AppCode == "APP01"),
+            It.Is<AppEntity>(app => app.AppCode == "APP01" && app.OwnerUserId == "test-user"),
             It.Is<IReadOnlyCollection<LabelDto>>(labels => labels.Count == 1),
-            It.Is<PortMapping>(mapping => mapping.Id != Guid.Empty && mapping.ServerId == dto.Deployment.ServerId &&
+            It.Is<PortMapping>(mapping => mapping.Id != Guid.Empty && mapping.ServerId == dto.Deployment.ServerId && mapping.OwnerUserId == "test-user" &&
                                           mapping.PortNumber == 443 && mapping.Protocol == "TCP")), Times.Once);
     }
 
@@ -112,7 +112,7 @@ public class ApplicationServiceTests
         policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(x => x.UserId).Returns("test-user");
-        return new(_repository.Object, _tenant.Object, policy.Object, user.Object);
+        return new(_repository.Object, _tenant.Object, policy.Object, user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
     }
 
     private static CreateApplicationDto ValidCreate() => new()

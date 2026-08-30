@@ -285,7 +285,9 @@ public class AuditDbContext : DbContext
                 .HasForeignKey(e => e.WorkspaceId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.HasIndex(e => new { e.WorkspaceId, e.Key, e.Value });
-            entity.HasIndex(e => new { e.OwnerUserId, e.Key, e.Value }).IsUnique();
+            // Transitional uniqueness while Workspace remains in the runtime/schema.
+            // Phase 7 replaces this with owner-only uniqueness after Workspace removal.
+            entity.HasIndex(e => new { e.WorkspaceId, e.OwnerUserId, e.Key, e.Value }).IsUnique();
             entity.HasIndex(e => e.OwnerUserId)
                 .IsUnique()
                 .HasFilter("kind = 'owner' AND owner_user_id IS NOT NULL");

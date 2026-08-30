@@ -86,7 +86,8 @@ public class SecurityVerificationTests
             $"{nameof(AuthController)}.{nameof(AuthController.Register)}",
             $"{nameof(AuthController)}.{nameof(AuthController.Refresh)}",
             $"{nameof(AuthController)}.{nameof(AuthController.Logout)}",
-            $"{nameof(ShareLinksController)}.{nameof(ShareLinksController.Resolve)}"
+            $"{nameof(ShareLinksController)}.{nameof(ShareLinksController.Resolve)}",
+            $"{nameof(ShareLinksController)}.{nameof(ShareLinksController.Browse)}"
         };
         var controllerTypes = typeof(ApplicationsController).Assembly.GetTypes()
             .Where(type => type.IsSubclassOf(typeof(ControllerBase)) && !type.IsAbstract)

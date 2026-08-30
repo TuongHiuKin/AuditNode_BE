@@ -11,6 +11,10 @@ public class ApplicationResponseDto
     public string TechStack { get; set; } = string.Empty;
     public List<ServerOnApplicationDto> Servers { get; set; } = new();
     public List<LabelDto> Labels { get; set; } = new();
+    public string OwnerUserId { get; set; } = string.Empty;
+    public LabelEffectivePermission EffectivePermission { get; set; }
+    public IReadOnlyList<Guid> SharedLabelIds { get; set; } = [];
+    public LabelAccessCapabilities Capabilities { get; set; } = CatalogCapabilities.None;
 }
 
 public class ServerOnApplicationDto

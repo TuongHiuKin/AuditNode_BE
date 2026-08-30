@@ -3,6 +3,8 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Middleware;
+using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
 
@@ -18,13 +20,24 @@ public class ServersController : ControllerBase
         _serverService = serverService;
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> GetServers()
+    [ProducesResponseType(typeof(CursorPageDto<ServerResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CursorPageDto<ServerResponseDto>>> GetServers(
+        [FromQuery] string? view = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] string? cursor = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await _serverService.GetServersAsync();
+            var result = await _serverService.GetCatalogPageAsync(CatalogPageQuery.Parse(view, limit, cursor), cancellationToken);
             return Ok(result);
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(Problem(400, exception.Message));
         }
         catch (Exception)
         {
@@ -32,15 +45,16 @@ public class ServersController : ControllerBase
         }
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<ServerResponseDto>> GetServer(Guid id)
+    public async Task<ActionResult<ServerResponseDto>> GetServer(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             return BadRequest(Problem(400, "A non-empty server identifier is required."));
 
         try
         {
-            var result = await _serverService.GetServerAsync(id);
+            var result = await _serverService.GetCatalogDetailAsync(id, cancellationToken);
             return result is null
                 ? NotFound(Problem(404, "Server was not found."))
                 : Ok(result);
@@ -131,8 +145,12 @@ public class ServersController : ControllerBase
         }
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet("export")]
-    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> ExportServers([FromQuery] List<Guid> ids)
+    public async Task<ActionResult<IEnumerable<ServerResponseDto>>> ExportServers(
+        [FromQuery] List<Guid> ids,
+        [FromQuery] string? view = null,
+        CancellationToken cancellationToken = default)
     {
         if (ids == null || ids.Count == 0 || ids.Any(id => id == Guid.Empty))
         {
@@ -145,8 +163,12 @@ public class ServersController : ControllerBase
 
         try
         {
-            var result = await _serverService.ExportServersAsync(ids);
+            var result = await _serverService.ExportCatalogAsync(ids, CatalogPageQuery.Parse(view, 25, null).View, cancellationToken);
             return Ok(result);
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(Problem(400, exception.Message));
         }
         catch (Exception)
         {

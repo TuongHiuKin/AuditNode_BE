@@ -3,6 +3,8 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Middleware;
+using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
 
@@ -18,14 +20,26 @@ public class ApplicationsController : ControllerBase
         _applicationService = applicationService;
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> GetApplications(
+    [ProducesResponseType(typeof(CursorPageDto<ApplicationResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CursorPageDto<ApplicationResponseDto>>> GetApplications(
         [FromQuery] string? labelKey = null,
-        [FromQuery] string? labelValue = null)
+        [FromQuery] string? labelValue = null,
+        [FromQuery] string? view = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] string? cursor = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            return Ok(await _applicationService.GetAllAsync(labelKey, labelValue));
+            var query = CatalogPageQuery.Parse(view, limit, cursor);
+            return Ok(await _applicationService.GetCatalogPageAsync(query, labelKey, labelValue, cancellationToken));
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(Problem(400, exception.Message));
         }
         catch (Exception)
         {
@@ -33,15 +47,23 @@ public class ApplicationsController : ControllerBase
         }
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet("export")]
-    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> ExportApplications([FromQuery] List<Guid> ids)
+    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> ExportApplications(
+        [FromQuery] List<Guid> ids,
+        [FromQuery] string? view = null,
+        CancellationToken cancellationToken = default)
     {
         if (ids is null || ids.Count == 0 || ids.Any(id => id == Guid.Empty))
             return BadRequest(Problem(400, "Non-empty application identifiers are required."));
 
         try
         {
-            return Ok(await _applicationService.GetByIdsAsync(ids));
+            return Ok(await _applicationService.ExportCatalogAsync(ids, CatalogPageQuery.Parse(view, 25, null).View, cancellationToken));
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(Problem(400, exception.Message));
         }
         catch (Exception)
         {
@@ -49,15 +71,16 @@ public class ApplicationsController : ControllerBase
         }
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<ApplicationResponseDto>> GetApplication(Guid id)
+    public async Task<ActionResult<ApplicationResponseDto>> GetApplication(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             return BadRequest(Problem(400, "A non-empty application identifier is required."));
 
         try
         {
-            var result = await _applicationService.GetByIdAsync(id);
+            var result = await _applicationService.GetCatalogDetailAsync(id, cancellationToken);
             return result is null
                 ? NotFound(Problem(404, "Application was not found."))
                 : Ok(result);

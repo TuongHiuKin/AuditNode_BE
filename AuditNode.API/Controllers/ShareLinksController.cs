@@ -11,7 +11,7 @@ namespace AuditNode.API.Controllers;
 [SkipWorkspaceValidation]
 [ApiController]
 [Route("api/v1")]
-public sealed class ShareLinksController(IShareTokenService shareTokens) : ControllerBase
+public sealed class ShareLinksController(IShareTokenService shareTokens, IShareCatalogService shareCatalog) : ControllerBase
 {
     [HttpPost("labels/{labelId:guid}/share-links")]
     [EnableRateLimiting("share-link-create")]
@@ -84,6 +84,28 @@ public sealed class ShareLinksController(IShareTokenService shareTokens) : Contr
     {
         var result = await shareTokens.ResolveAsync(request.Token, cancellationToken);
         return result is null ? NotFound(ResolveDeniedError()) : Ok(result);
+    }
+
+    [AllowAnonymous]
+    [HttpPost("share-links/browse")]
+    [EnableRateLimiting("share-link-browse")]
+    [ProducesResponseType(typeof(CursorPageDto<ShareCatalogItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    public async Task<ActionResult<CursorPageDto<ShareCatalogItemDto>>> Browse(
+        [FromBody] BrowseShareLinkDto request,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await shareCatalog.BrowseAsync(request, cancellationToken);
+            return result is null ? NotFound(ResolveDeniedError()) : Ok(result);
+        }
+        catch (AuditNode.Application.Exceptions.CatalogQueryValidationException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
     }
 
     private static object DeniedError() => new { error = "The label was not found or is unavailable." };

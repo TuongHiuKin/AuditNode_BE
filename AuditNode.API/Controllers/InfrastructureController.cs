@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Security;
+using AuditNode.API.Middleware;
 
 namespace AuditNode.API.Controllers;
 
@@ -18,14 +19,16 @@ public class InfrastructureController : ControllerBase
         _infrastructureService = infrastructureService;
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet("apps/{id:guid}/dependencies-count")]
-    public async Task<ActionResult<int>> GetDependenciesCount(Guid id)
+    public async Task<ActionResult<int>> GetDependenciesCount(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             return BadRequest(Problem(400, "A non-empty application identifier is required."));
         try
         {
-            return Ok(await _infrastructureService.GetDependenciesCountAsync(id));
+            var count = await _infrastructureService.GetDependenciesCountCatalogAsync(id, cancellationToken);
+            return count.HasValue ? Ok(count.Value) : NotFound(Problem(404, "Application was not found."));
         }
         catch (Exception)
         {
@@ -78,14 +81,18 @@ public class InfrastructureController : ControllerBase
         }
     }
 
+    [SkipWorkspaceValidation]
     [HttpGet("servers/{id:guid}/deployed-apps")]
-    public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id)
+    public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             return BadRequest(Problem(400, "A non-empty server identifier is required."));
         try
         {
-            return Ok(await _infrastructureService.GetDeployedAppsByServerAsync(id));
+            var applications = await _infrastructureService.GetDeployedAppsByServerCatalogAsync(id, cancellationToken);
+            return applications is null
+                ? NotFound(Problem(404, "Server was not found."))
+                : Ok(applications);
         }
         catch (Exception)
         {

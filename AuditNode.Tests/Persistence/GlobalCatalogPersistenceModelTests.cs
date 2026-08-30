@@ -71,7 +71,7 @@ public sealed class GlobalCatalogPersistenceModelTests
         label.GetIndexes().Should().Contain(index =>
             index.IsUnique &&
             index.Properties.Select(property => property.Name)
-                .SequenceEqual(new[] { nameof(Label.OwnerUserId), nameof(Label.Key), nameof(Label.Value) }));
+                .SequenceEqual(new[] { nameof(Label.WorkspaceId), nameof(Label.OwnerUserId), nameof(Label.Key), nameof(Label.Value) }));
         label.GetIndexes().Should().Contain(index =>
             index.IsUnique &&
             index.GetFilter() == "kind = 'owner' AND owner_user_id IS NOT NULL");

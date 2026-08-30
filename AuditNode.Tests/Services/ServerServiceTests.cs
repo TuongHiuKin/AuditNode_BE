@@ -70,8 +70,9 @@ public class ServerServiceTests
         result.Server.Should().NotBeNull();
         result.Server!.Id.Should().NotBe(Guid.Empty);
         result.Server.IpAddress.Should().Be(dto.IpAddress);
+        result.Server.OwnerUserId.Should().Be("test-user");
         _repository.Verify(x => x.CreateServerAsync(It.Is<Server>(s =>
-            s.Id != Guid.Empty && s.DatacenterId == dto.DatacenterId && s.IpAddress == dto.IpAddress), dto.Labels));
+            s.Id != Guid.Empty && s.DatacenterId == dto.DatacenterId && s.IpAddress == dto.IpAddress && s.OwnerUserId == "test-user"), dto.Labels));
     }
 
     [Fact]
@@ -157,7 +158,7 @@ public class ServerServiceTests
         policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(x => x.UserId).Returns("test-user");
-        return new(_repository.Object, _tenant.Object, policy.Object, user.Object);
+        return new(_repository.Object, _tenant.Object, policy.Object, user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
     }
 
     [Fact]
@@ -165,7 +166,7 @@ public class ServerServiceTests
     {
         var policy = new Mock<IScopedResourcePolicy>();
         var user = new Mock<ICurrentUserService>();
-        var service = new ServerService(_repository.Object, _tenant.Object, policy.Object, user.Object);
+        var service = new ServerService(_repository.Object, _tenant.Object, policy.Object, user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
 
         var result = await service.CreateServerAsync(ValidCreate());
 
@@ -183,7 +184,7 @@ public class ServerServiceTests
         policy.Setup(x => x.CanCreateAsync(It.IsAny<Guid>(), "auditor", "server", It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(x => x.UserId).Returns("auditor");
-        var service = new ServerService(_repository.Object, _tenant.Object, policy.Object, user.Object);
+        var service = new ServerService(_repository.Object, _tenant.Object, policy.Object, user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
         var dto = ValidUpdate();
         dto.Labels = [new LabelDto { Key = "env", Value = "production" }];
 

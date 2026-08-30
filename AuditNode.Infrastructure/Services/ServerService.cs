@@ -13,14 +13,33 @@ public class ServerService : IServerService
     private readonly ITenantProvider _tenantProvider;
     private readonly IScopedResourcePolicy _scopePolicy;
     private readonly ICurrentUserService _currentUser;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly TimeProvider _timeProvider;
 
-    public ServerService(IServerRepository repository, ITenantProvider tenantProvider, IScopedResourcePolicy scopePolicy, ICurrentUserService currentUser)
+    public ServerService(IServerRepository repository, ITenantProvider tenantProvider, IScopedResourcePolicy scopePolicy, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
     {
         _repository = repository;
         _tenantProvider = tenantProvider;
         _scopePolicy = scopePolicy;
         _currentUser = currentUser;
+        _catalog = catalog;
+        _timeProvider = timeProvider;
     }
+
+    public Task<CursorPageDto<ServerResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult(new CursorPageDto<ServerResponseDto>([], null, false))
+            : _catalog.GetServersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+
+    public Task<ServerResponseDto?> GetCatalogDetailAsync(Guid id, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<ServerResponseDto?>(null)
+            : _catalog.GetServerAsync(_currentUser.UserId!, id, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+
+    public Task<IReadOnlyList<ServerResponseDto>> ExportCatalogAsync(IReadOnlyCollection<Guid> ids, CatalogView view, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<IReadOnlyList<ServerResponseDto>>([])
+            : _catalog.ExportServersAsync(_currentUser.UserId!, view, ids, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
 
     public async Task<IEnumerable<ServerResponseDto>> GetServersAsync()
     {
@@ -58,6 +77,7 @@ public class ServerService : IServerService
         var server = new Server
         {
             Id = Guid.NewGuid(),
+            OwnerUserId = _currentUser.UserId,
             DatacenterId = dto.DatacenterId,
             IpAddress = normalizedIp,
             Hostname = dto.Hostname,
@@ -202,6 +222,9 @@ public class ServerService : IServerService
         {
             Key = label.Key,
             Value = label.Value
-        }).ToList()
+        }).ToList(),
+        OwnerUserId = server.OwnerUserId ?? string.Empty,
+        EffectivePermission = LabelEffectivePermission.Owner,
+        Capabilities = CatalogCapabilities.Owner
     };
 }

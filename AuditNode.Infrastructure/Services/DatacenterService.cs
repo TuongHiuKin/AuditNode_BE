@@ -12,14 +12,23 @@ public class DatacenterService : IDatacenterService
     private readonly IScopedResourcePolicy _policy;
     private readonly ICurrentUserService _currentUser;
     private readonly ITenantProvider _tenant;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly TimeProvider _timeProvider;
 
-    public DatacenterService(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
+    public DatacenterService(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
     {
         _context = context;
         _policy = policy;
         _currentUser = currentUser;
         _tenant = tenant;
+        _catalog = catalog;
+        _timeProvider = timeProvider;
     }
+
+    public Task<CursorPageDto<DatacenterDto>> GetCatalogPageAsync(CatalogPageQuery query, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult(new CursorPageDto<DatacenterDto>([], null, false))
+            : _catalog.GetDatacentersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
 
     public async Task<IEnumerable<DatacenterDto>> GetDatacentersAsync()
     {
@@ -41,6 +50,7 @@ public class DatacenterService : IDatacenterService
         var datacenter = new Datacenter
         {
             Id = Guid.NewGuid(),
+            OwnerUserId = _currentUser.UserId,
             Name = dto.Name,
             Location = dto.Location
         };
@@ -52,7 +62,10 @@ public class DatacenterService : IDatacenterService
         {
             Id = datacenter.Id,
             Name = datacenter.Name,
-            Location = datacenter.Location
+            Location = datacenter.Location,
+            OwnerUserId = datacenter.OwnerUserId ?? string.Empty,
+            EffectivePermission = LabelEffectivePermission.Owner,
+            Capabilities = CatalogCapabilities.Owner
         };
     }
 }

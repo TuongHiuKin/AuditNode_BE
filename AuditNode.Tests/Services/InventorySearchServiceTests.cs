@@ -27,17 +27,17 @@ public class InventorySearchServiceTests
         policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "test-user", It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
         var currentUser = new Mock<ICurrentUserService>();
         currentUser.SetupGet(x => x.UserId).Returns("test-user");
-        _service = new InventorySearchService(_context, policy.Object, currentUser.Object, mockTenantProvider.Object);
+        _service = new InventorySearchService(_context, policy.Object, currentUser.Object, mockTenantProvider.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
     }
 
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("a")]
-    public async Task SearchAsync_ShouldReturnEmpty_WhenKeywordIsShortOrNull(string keyword)
+    public async Task SearchAsync_ShouldReturnEmpty_WhenKeywordIsShortOrNull(string? keyword)
     {
         // Act
-        var result = await _service.SearchAsync(keyword);
+        var result = await _service.SearchAsync(keyword!);
 
         // Assert
         result.Should().BeEmpty();

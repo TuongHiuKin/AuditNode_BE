@@ -25,35 +25,38 @@ public class InventorySearchControllerTests
         // Arrange
         var keyword = "test";
         var mockResults = new List<SearchResultDto> { new SearchResultDto { Title = "Match 1" } };
-        _mockService.Setup(s => s.SearchAsync(keyword)).ReturnsAsync(mockResults);
+        _mockService.Setup(s => s.SearchAsync(keyword, It.IsAny<CatalogPageQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<SearchResultDto>(mockResults, null, false));
 
         // Act
         var result = await _controller.Search(keyword);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
-        okResult.Value.Should().BeEquivalentTo(mockResults);
+        okResult.Value.Should().BeEquivalentTo(new CursorPageDto<SearchResultDto>(mockResults, null, false));
     }
 
     [Fact]
     public async Task Search_ShouldReturnEmpty_WhenKeywordIsNull()
     {
         // Arrange
-        _mockService.Setup(s => s.SearchAsync(string.Empty)).ReturnsAsync(new List<SearchResultDto>());
+        _mockService.Setup(s => s.SearchAsync(string.Empty, It.IsAny<CatalogPageQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<SearchResultDto>([], null, false));
 
         // Act
         var result = await _controller.Search(null);
 
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
-        okResult.Value.As<IEnumerable<SearchResultDto>>().Should().BeEmpty();
+        okResult.Value.As<CursorPageDto<SearchResultDto>>().Items.Should().BeEmpty();
     }
 
     [Fact]
     public async Task Search_ShouldReturnSafe500WithCorrelationId_OnException()
     {
         // Arrange
-        _mockService.Setup(s => s.SearchAsync(It.IsAny<string>())).ThrowsAsync(new Exception("Search failed"));
+        _mockService.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<CatalogPageQuery>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("Search failed"));
 
         // Act
         _controller.ControllerContext = new ControllerContext

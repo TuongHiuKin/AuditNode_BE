@@ -39,10 +39,16 @@ public sealed class ShareLinksControllerTests
             new ResponseContract(StatusCodes.Status404NotFound, typeof(void)),
             new ResponseContract(StatusCodes.Status429TooManyRequests, typeof(void))
         ]);
+        ResponseContracts(nameof(ShareLinksController.Browse)).Should().BeEquivalentTo([
+            new ResponseContract(StatusCodes.Status200OK, typeof(CursorPageDto<ShareCatalogItemDto>)),
+            new ResponseContract(StatusCodes.Status400BadRequest, typeof(void)),
+            new ResponseContract(StatusCodes.Status404NotFound, typeof(void)),
+            new ResponseContract(StatusCodes.Status429TooManyRequests, typeof(void))
+        ]);
     }
 
     [Fact]
-    public void Only_resolve_is_anonymous_rate_limited_and_receives_token_from_body()
+    public void Public_share_actions_are_anonymous_rate_limited_and_receive_token_only_from_body()
     {
         typeof(ShareLinksController).Should().BeDecoratedWith<AuthorizeAttribute>();
         var resolve = typeof(ShareLinksController).GetMethod(nameof(ShareLinksController.Resolve))!;
@@ -52,6 +58,11 @@ public sealed class ShareLinksControllerTests
         var tokenParameter = resolve.GetParameters()
             .Single(parameter => parameter.ParameterType == typeof(ResolveShareLinkDto));
         tokenParameter.GetCustomAttribute<FromBodyAttribute>().Should().NotBeNull();
+        var browse = typeof(ShareLinksController).GetMethod(nameof(ShareLinksController.Browse))!;
+        browse.Should().BeDecoratedWith<AllowAnonymousAttribute>();
+        browse.GetCustomAttributes<EnableRateLimitingAttribute>().Single().PolicyName.Should().Be("share-link-browse");
+        browse.GetParameters().Single(parameter => parameter.ParameterType == typeof(BrowseShareLinkDto))
+            .GetCustomAttribute<FromBodyAttribute>().Should().NotBeNull();
 
         typeof(ShareLinksController).GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
             .Should().NotContain(method => method.Name.Contains("Claim", StringComparison.OrdinalIgnoreCase));
@@ -87,7 +98,7 @@ public sealed class ShareLinksControllerTests
                 DateTimeOffset.UtcNow.AddHours(1),
                 1));
 
-        var result = await new ShareLinksController(tokenService.Object).Create(
+        var result = await new ShareLinksController(tokenService.Object, Mock.Of<IShareCatalogService>()).Create(
             labelId, new CreateShareLinkDto(DateTimeOffset.UtcNow.AddHours(1)));
 
         var created = result.Result.Should().BeOfType<ObjectResult>().Subject;
@@ -109,7 +120,7 @@ public sealed class ShareLinksControllerTests
                 It.IsAny<Guid>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ShareTokenMutationResult(status));
 
-        var result = await new ShareLinksController(tokenService.Object).Create(
+        var result = await new ShareLinksController(tokenService.Object, Mock.Of<IShareCatalogService>()).Create(
             Guid.NewGuid(), new CreateShareLinkDto(DateTimeOffset.UtcNow.AddHours(1)));
 
         result.Result.Should().BeAssignableTo<ObjectResult>()
@@ -123,7 +134,7 @@ public sealed class ShareLinksControllerTests
         tokenService.Setup(service => service.ResolveAsync("opaque-token", It.IsAny<CancellationToken>()))
             .ReturnsAsync((ShareTokenResolutionDto?)null);
 
-        var result = await new ShareLinksController(tokenService.Object)
+        var result = await new ShareLinksController(tokenService.Object, Mock.Of<IShareCatalogService>())
             .Resolve(new ResolveShareLinkDto("opaque-token"));
 
         result.Result.Should().BeOfType<NotFoundObjectResult>();
@@ -137,12 +148,27 @@ public sealed class ShareLinksControllerTests
                 It.IsAny<Guid>(), It.IsAny<Guid>(), 1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ShareTokenMutationResult(ShareTokenMutationStatus.Conflict))
             .ReturnsAsync(new ShareTokenMutationResult(ShareTokenMutationStatus.Success));
-        var controller = new ShareLinksController(tokenService.Object);
+        var controller = new ShareLinksController(tokenService.Object, Mock.Of<IShareCatalogService>());
 
         (await controller.Revoke(Guid.NewGuid(), Guid.NewGuid(), 1))
             .Should().BeOfType<ConflictObjectResult>();
         (await controller.Revoke(Guid.NewGuid(), Guid.NewGuid(), 1))
             .Should().BeOfType<NoContentResult>();
+    }
+
+    [Fact]
+    public async Task Browse_returns_generic_not_found_for_invalid_token_and_never_accepts_token_in_url()
+    {
+        var catalog = new Mock<IShareCatalogService>();
+        catalog.Setup(service => service.BrowseAsync(It.IsAny<BrowseShareLinkDto>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((CursorPageDto<ShareCatalogItemDto>?)null);
+        var controller = new ShareLinksController(Mock.Of<IShareTokenService>(), catalog.Object);
+
+        var result = await controller.Browse(new BrowseShareLinkDto("opaque-token", "servers"));
+
+        result.Result.Should().BeOfType<NotFoundObjectResult>();
+        typeof(ShareLinksController).GetMethod(nameof(ShareLinksController.Browse))!
+            .GetCustomAttribute<HttpPostAttribute>()!.Template.Should().NotContain("token");
     }
 
     private static IReadOnlyList<ResponseContract> ResponseContracts(string actionName) =>

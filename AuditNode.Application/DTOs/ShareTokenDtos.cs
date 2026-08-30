@@ -5,7 +5,8 @@ public sealed record ShareTokenResolutionDto(
     string OwnerUserId,
     string Permission,
     bool SharesAllOwnerResources = false,
-    string? WarningCode = null);
+    string? WarningCode = null,
+    Guid GrantId = default);
 
 public enum ShareTokenMutationStatus
 {
@@ -27,6 +28,19 @@ public sealed record ShareTokenMutationResult(
 public sealed record CreateShareLinkDto(DateTimeOffset ExpiresAt);
 
 public sealed record ResolveShareLinkDto(string Token);
+
+public sealed record BrowseShareLinkDto(
+    string Token,
+    string ResourceType,
+    int? Limit = null,
+    string? Cursor = null);
+
+public sealed class ShareCatalogItemDto
+{
+    public string Type { get; set; } = string.Empty;
+    public ServerResponseDto? Server { get; set; }
+    public ApplicationResponseDto? Application { get; set; }
+}
 
 public sealed record CreateShareLinkResponseDto(
     Guid GrantId,

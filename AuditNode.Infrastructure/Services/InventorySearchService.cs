@@ -11,14 +11,23 @@ public class InventorySearchService : IInventorySearchService
     private readonly IScopedResourcePolicy _policy;
     private readonly ICurrentUserService _currentUser;
     private readonly ITenantProvider _tenant;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly TimeProvider _timeProvider;
 
-    public InventorySearchService(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant)
+    public InventorySearchService(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
     {
         _context = context;
         _policy = policy;
         _currentUser = currentUser;
         _tenant = tenant;
+        _catalog = catalog;
+        _timeProvider = timeProvider;
     }
+
+    public Task<CursorPageDto<SearchResultDto>> SearchAsync(string keyword, CatalogPageQuery query, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult(new CursorPageDto<SearchResultDto>([], null, false))
+            : _catalog.SearchAsync(_currentUser.UserId!, keyword, query, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
 
     public async Task<IEnumerable<SearchResultDto>> SearchAsync(string keyword)
     {
@@ -54,7 +63,7 @@ public class InventorySearchService : IInventorySearchService
                 Id = a.Id,
                 Type = "APP",
                 Title = a.AppName,
-                Subtitle = $"On Server: {(a.PortMappings.OrderBy(pm => pm.PortNumber).Select(pm => pm.Server.Hostname).FirstOrDefault() ?? "Unknown")} (Port: {(a.PortMappings.OrderBy(p => p.PortNumber).Select(p => p.PortNumber.ToString()).FirstOrDefault() ?? "N/A")})",
+                Subtitle = $"On Server: {(a.PortMappings.OrderBy(pm => pm.PortNumber).Select(pm => pm.Server != null ? pm.Server.Hostname : null).FirstOrDefault() ?? "Unknown")} (Port: {(a.PortMappings.OrderBy(p => p.PortNumber).Select(p => p.PortNumber.ToString()).FirstOrDefault() ?? "N/A")})",
                 MatchReason = a.AppName.ToLower().Contains(lowerKeyword) ? "Matched by App Name" : "Matched by App Code"
             })
             .Take(20);

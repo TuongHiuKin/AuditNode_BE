@@ -87,6 +87,7 @@ public sealed class ShareTokenService(
             .Where(item => item.TokenHash == suppliedHash)
             .Select(item => new
             {
+                item.Id,
                 item.LabelId,
                 item.OwnerUserId,
                 item.Permission,
@@ -121,7 +122,8 @@ public sealed class ShareTokenService(
             sharesAllOwnerResources,
             sharesAllOwnerResources
                 ? LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources
-                : null);
+                : null,
+            grant.Id);
     }
 
     public async Task<ShareTokenMutationResult> RevokeAsync(

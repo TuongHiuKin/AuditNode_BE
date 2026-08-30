@@ -6,11 +6,31 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
+using AuditNode.API.Middleware;
+using System.Reflection;
 
 namespace AuditNode.Tests.Controllers;
 
 public sealed class ApiResponseContractTests
 {
+    [Theory]
+    [InlineData(typeof(ServersController), nameof(ServersController.GetServers), typeof(CursorPageDto<ServerResponseDto>))]
+    [InlineData(typeof(ApplicationsController), nameof(ApplicationsController.GetApplications), typeof(CursorPageDto<ApplicationResponseDto>))]
+    [InlineData(typeof(DatacentersController), nameof(DatacentersController.GetDatacenters), typeof(CursorPageDto<DatacenterDto>))]
+    [InlineData(typeof(InventorySearchController), nameof(InventorySearchController.Search), typeof(CursorPageDto<SearchResultDto>))]
+    [InlineData(typeof(LabelsController), nameof(LabelsController.GetLabels), typeof(CursorPageDto<CatalogLabelDto>))]
+    public void Global_catalog_reads_publish_cursor_page_and_validation_metadata(
+        Type controllerType,
+        string action,
+        Type responseType)
+    {
+        var method = controllerType.GetMethod(action)!;
+        method.GetCustomAttribute<SkipWorkspaceValidationAttribute>().Should().NotBeNull();
+        var metadata = method.GetCustomAttributes<ProducesResponseTypeAttribute>().ToList();
+        metadata.Should().Contain(attribute => attribute.StatusCode == StatusCodes.Status200OK && attribute.Type == responseType);
+        metadata.Should().Contain(attribute => attribute.StatusCode == StatusCodes.Status400BadRequest && attribute.Type == typeof(ProblemDetails));
+    }
+
     [Theory]
     [InlineData(nameof(LabelGrantsController), nameof(LabelGrantsController.Create), typeof(LabelGrantDto))]
     [InlineData(nameof(ShareLinksController), nameof(ShareLinksController.Create), typeof(CreateShareLinkResponseDto))]

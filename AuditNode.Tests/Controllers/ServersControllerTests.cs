@@ -13,6 +13,35 @@ public class ServersControllerTests
     private readonly Mock<IServerService> _service = new();
 
     [Fact]
+    public async Task List_defaults_to_mine_and_does_not_request_shared()
+    {
+        _service.Setup(service => service.GetCatalogPageAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25 && query.Cursor == null),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<ServerResponseDto>([], null, false));
+
+        var result = await Controller().GetServers();
+
+        ResultOf(result).Should().BeOfType<OkObjectResult>();
+        _service.Verify(service => service.GetCatalogPageAsync(
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine), It.IsAny<CancellationToken>()), Times.Once);
+        _service.Verify(service => service.GetCatalogPageAsync(
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("all", 25)]
+    [InlineData("mine", 0)]
+    [InlineData("shared", 101)]
+    public async Task List_rejects_invalid_view_or_limit(string view, int limit)
+    {
+        var result = await Controller().GetServers(view, limit);
+
+        ResultOf(result).Should().BeOfType<BadRequestObjectResult>();
+        _service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Get_by_id_returns_bad_request_for_empty_id()
     {
         var result = await Controller().GetServer(Guid.Empty);
@@ -25,7 +54,7 @@ public class ServersControllerTests
     public async Task Get_by_id_returns_not_found_when_server_is_not_visible_to_tenant()
     {
         var id = Guid.NewGuid();
-        _service.Setup(x => x.GetServerAsync(id)).ReturnsAsync((ServerResponseDto?)null);
+        _service.Setup(x => x.GetCatalogDetailAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((ServerResponseDto?)null);
 
         var result = await Controller().GetServer(id);
 
@@ -89,7 +118,7 @@ public class ServersControllerTests
     public async Task Unexpected_exception_returns_safe_500_without_exception_message()
     {
         const string secretMessage = "database host and password";
-        _service.Setup(x => x.GetServerAsync(It.IsAny<Guid>()))
+        _service.Setup(x => x.GetCatalogDetailAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException(secretMessage));
 
         var result = await Controller().GetServer(Guid.NewGuid());
