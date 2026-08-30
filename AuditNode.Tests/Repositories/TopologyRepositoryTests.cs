@@ -24,20 +24,24 @@ public class TopologyRepositoryTests
         user.SetupGet(x => x.UserId).Returns("test-user");
         var tenant = new Mock<ITenantProvider>();
         tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
-        return new TopologyRepository(context, policy.Object, user.Object, tenant.Object, new WorkspaceAccessService(context));
+        return new TopologyRepository(context, user.Object, tenant.Object,
+            new OwnerGraphAccessService(context, user.Object, TimeProvider.System));
     }
-    private AuditDbContext GetDbContext()
+    private AuditDbContext GetDbContext(Guid? workspaceId = null, string? databaseName = null)
     {
         var options = new DbContextOptionsBuilder<AuditDbContext>()
-            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(databaseName: databaseName ?? Guid.NewGuid().ToString())
             .ConfigureWarnings(x => x.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         var mockTenantProvider = new Mock<ITenantProvider>();
-        var workspaceId = Guid.NewGuid();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(workspaceId);
+        var selectedWorkspaceId = workspaceId ?? Guid.NewGuid();
+        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(selectedWorkspaceId);
         var context = new AuditDbContext(options, mockTenantProvider.Object);
-        context.Workspaces.Add(new Workspace { Id = workspaceId, Name = "Test", OwnerUserId = "test-user" });
-        context.SaveChanges();
+        if (!context.Workspaces.IgnoreQueryFilters().Any(item => item.Id == selectedWorkspaceId))
+        {
+            context.Workspaces.Add(new Workspace { Id = selectedWorkspaceId, Name = "Test", OwnerUserId = "test-user" });
+            context.SaveChanges();
+        }
         return context;
     }
 
@@ -240,6 +244,9 @@ public class TopologyRepositoryTests
             Id = Guid.NewGuid(), SourceAppId = Guid.NewGuid(), DestAppId = Guid.NewGuid(),
             DestPortId = Guid.NewGuid(), ConnectionType = "TCP"
         };
+        context.Applications.AddRange(
+            new AppEntity { Id = dependency.SourceAppId, AppCode = "SRC", AppName = "Source" },
+            new AppEntity { Id = dependency.DestAppId, AppCode = "DST", AppName = "Destination" });
         context.PortMappings.Add(new PortMapping
         {
             Id = dependency.DestPortId, AppId = dependency.DestAppId,
@@ -264,6 +271,20 @@ public class TopologyRepositoryTests
         var hiddenMapping = new PortMapping { Id = Guid.NewGuid(), AppId = hiddenApp.Id, ServerId = hiddenServer.Id, PortNumber = 9443 };
         var dependency = new AppDependency { Id = Guid.NewGuid(), SourceAppId = visibleApp.Id, DestAppId = hiddenApp.Id, DestPortId = hiddenMapping.Id, ConnectionType = "SensitiveProtocol" };
         context.AddRange(visibleServer, hiddenServer, visibleApp, hiddenApp, hiddenMapping, dependency);
+        var sharedLabel = new Label
+        {
+            Id = Guid.NewGuid(), WorkspaceId = context.CurrentWorkspaceId!.Value, OwnerUserId = "test-user",
+            Key = "share", Value = "visible", Kind = LabelKinds.Business
+        };
+        context.AddRange(
+            sharedLabel,
+            new ServerLabel { WorkspaceId = context.CurrentWorkspaceId.Value, OwnerUserId = "test-user", ServerId = visibleServer.Id, LabelId = sharedLabel.Id },
+            new ApplicationLabel { WorkspaceId = context.CurrentWorkspaceId.Value, OwnerUserId = "test-user", ApplicationId = visibleApp.Id, LabelId = sharedLabel.Id },
+            new LabelGrant
+            {
+                Id = Guid.NewGuid(), OwnerUserId = "test-user", LabelId = sharedLabel.Id, GranteeUserId = "viewer",
+                Permission = LabelGrantPermissions.Viewer, Version = 1, CreatedByUserId = "test-user"
+            });
         await context.SaveChangesAsync();
         var policy = new Mock<IScopedResourcePolicy>();
         policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "viewer", "server", It.IsAny<CancellationToken>())).ReturnsAsync(new HashSet<Guid> { visibleServer.Id });
@@ -273,7 +294,8 @@ public class TopologyRepositoryTests
         var tenant = new Mock<ITenantProvider>();
         tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
 
-        var map = await new TopologyRepository(context, policy.Object, user.Object, tenant.Object, new WorkspaceAccessService(context)).GetDependencyMapAsync();
+        var map = await new TopologyRepository(context, user.Object, tenant.Object,
+            new OwnerGraphAccessService(context, user.Object, TimeProvider.System)).GetDependencyMapAsync(ownerUserId: "test-user");
 
         var connection = map.Connections.Should().ContainSingle().Which;
         connection.SourceAppId.Should().Be(visibleApp.Id);
@@ -366,7 +388,7 @@ public class TopologyRepositoryTests
 
         status.Should().Be(TopologyStateStatus.Success);
         context.AppDependencies.Should().ContainSingle().Which.Id.Should().Be(dependency.Id);
-        (await context.Workspaces.SingleAsync()).TopologyVersion.Should().Be(1);
+        (await context.OwnerCatalogStates.SingleAsync()).TopologyVersion.Should().Be(1);
 
         var savedState = await Repository(context).GetTopologyStateAsync();
         var sharedReference = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
@@ -393,7 +415,7 @@ public class TopologyRepositoryTests
         });
         sharedReference.Should().Be(TopologyStateStatus.InvalidReference);
         context.TopologyEdges.Should().ContainSingle();
-        (await context.Workspaces.SingleAsync()).TopologyVersion.Should().Be(1);
+        (await context.OwnerCatalogStates.SingleAsync()).TopologyVersion.Should().Be(1);
     }
 
     [Fact]
@@ -504,6 +526,67 @@ public class TopologyRepositoryTests
     }
 
     [Fact]
+    public async Task Full_save_rejects_resource_references_from_another_transitional_workspace()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+        var selectedWorkspaceId = Guid.NewGuid();
+        using var context = GetDbContext(selectedWorkspaceId, databaseName);
+        var otherWorkspaceId = Guid.NewGuid();
+        var foreignServer = new Server
+        {
+            Id = Guid.NewGuid(), WorkspaceId = otherWorkspaceId, OwnerUserId = "test-user",
+            DatacenterId = Guid.NewGuid(), Hostname = "other", IpAddress = "10.99.0.1"
+        };
+        using (var otherContext = GetDbContext(otherWorkspaceId, databaseName))
+        {
+            otherContext.Servers.Add(foreignServer);
+            await otherContext.SaveChangesAsync();
+        }
+        context.ChangeTracker.Clear();
+
+        var status = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
+        {
+            Version = 0,
+            Nodes = [new TopologyNodeDto { Id = Guid.NewGuid(), NodeType = "server", ReferenceId = foreignServer.Id }],
+            Edges = [],
+            Dependencies = []
+        });
+
+        status.Should().Be(TopologyStateStatus.InvalidReference);
+        context.TopologyNodes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Full_save_rejects_new_edge_id_that_collides_with_an_existing_dependency()
+    {
+        using var context = GetDbContext();
+        var collision = Guid.NewGuid();
+        context.AppDependencies.Add(new AppDependency
+        {
+            Id = collision, OwnerUserId = "test-user", SourceAppId = Guid.NewGuid(),
+            DestAppId = Guid.NewGuid(), DestPortId = Guid.NewGuid()
+        });
+        await context.SaveChangesAsync();
+        var source = Guid.NewGuid();
+        var target = Guid.NewGuid();
+
+        var status = await Repository(context).SaveTopologyStateAsync(new SaveTopologyStateDto
+        {
+            Version = 0,
+            Nodes =
+            [
+                new TopologyNodeDto { Id = source, NodeType = "group" },
+                new TopologyNodeDto { Id = target, NodeType = "group" }
+            ],
+            Edges = [new TopologyEdgeDto { Id = collision, SourceNodeId = source, TargetNodeId = target }],
+            Dependencies = []
+        });
+
+        status.Should().Be(TopologyStateStatus.DuplicateId);
+        context.TopologyEdges.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task State_rejects_invalid_parent_type()
     {
         using var context = GetDbContext();
@@ -535,6 +618,22 @@ public class TopologyRepositoryTests
             new TopologyNode { Id = visibleNode, NodeType = "server", Label = "Visible host", ReferenceId = visibleResource },
             new TopologyNode { Id = hiddenNode, NodeType = "server", Label = "Secret host", ReferenceId = hiddenResource });
         context.TopologyEdges.Add(new TopologyEdge { Id = Guid.NewGuid(), SourceNodeId = visibleNode, TargetNodeId = hiddenNode, EdgeType = "smoothstep" });
+        context.Servers.AddRange(
+            new Server { Id = visibleResource, DatacenterId = Guid.NewGuid(), Hostname = "visible", IpAddress = "10.0.0.1" },
+            new Server { Id = hiddenResource, DatacenterId = Guid.NewGuid(), Hostname = "hidden", IpAddress = "10.0.0.2" });
+        var sharedLabel = new Label
+        {
+            Id = Guid.NewGuid(), WorkspaceId = context.CurrentWorkspaceId!.Value, OwnerUserId = "test-user",
+            Key = "share", Value = "visible", Kind = LabelKinds.Business
+        };
+        context.AddRange(
+            sharedLabel,
+            new ServerLabel { WorkspaceId = context.CurrentWorkspaceId.Value, OwnerUserId = "test-user", ServerId = visibleResource, LabelId = sharedLabel.Id },
+            new LabelGrant
+            {
+                Id = Guid.NewGuid(), OwnerUserId = "test-user", LabelId = sharedLabel.Id, GranteeUserId = "viewer",
+                Permission = LabelGrantPermissions.Viewer, Version = 1, CreatedByUserId = "test-user"
+            });
         await context.SaveChangesAsync();
         var policy = new Mock<IScopedResourcePolicy>();
         policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), "viewer", "server", It.IsAny<CancellationToken>())).ReturnsAsync(new HashSet<Guid> { visibleResource });
@@ -544,9 +643,10 @@ public class TopologyRepositoryTests
         user.SetupGet(x => x.UserId).Returns("viewer");
         var tenant = new Mock<ITenantProvider>();
         tenant.SetupGet(x => x.WorkspaceId).Returns(context.CurrentWorkspaceId);
-        var repository = new TopologyRepository(context, policy.Object, user.Object, tenant.Object, new WorkspaceAccessService(context));
+        var repository = new TopologyRepository(context, user.Object, tenant.Object,
+            new OwnerGraphAccessService(context, user.Object, TimeProvider.System));
 
-        var state = await repository.GetTopologyStateAsync();
+        var state = await repository.GetTopologyStateAsync("test-user");
 
         state.Nodes.Should().ContainSingle(x => x.Id == visibleNode && !x.IsRestricted);
         var restricted = state.Nodes.Should().ContainSingle(x => x.IsRestricted).Which;
@@ -558,5 +658,92 @@ public class TopologyRepositoryTests
         boundary.TargetHandle.Should().BeEmpty();
         boundary.EdgeType.Should().Be("restricted");
         boundary.Label.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Scoped_state_scrubs_ancestor_container_and_does_not_expand_edges_from_layout_context()
+    {
+        using var context = GetDbContext();
+        var visibleResource = Guid.NewGuid();
+        var frameId = Guid.NewGuid();
+        var visibleNodeId = Guid.NewGuid();
+        var hiddenNodeId = Guid.NewGuid();
+        context.TopologyNodes.AddRange(
+            new TopologyNode
+            {
+                Id = frameId, NodeType = "frame", Label = "Secret Production Boundary",
+                X = 900, Y = 700, Width = 800, Height = 600
+            },
+            new TopologyNode
+            {
+                Id = visibleNodeId, NodeType = "server", Label = "Visible host",
+                ParentNodeId = frameId, ReferenceId = visibleResource
+            },
+            new TopologyNode { Id = hiddenNodeId, NodeType = "server", Label = "Hidden host", ReferenceId = Guid.NewGuid() });
+        context.TopologyEdges.Add(new TopologyEdge
+        {
+            Id = Guid.NewGuid(), SourceNodeId = frameId, TargetNodeId = hiddenNodeId,
+            Label = "Secret container edge"
+        });
+        context.Servers.Add(new Server
+        {
+            Id = visibleResource, DatacenterId = Guid.NewGuid(), Hostname = "visible", IpAddress = "10.0.0.1"
+        });
+        var label = new Label
+        {
+            Id = Guid.NewGuid(), OwnerUserId = "test-user", Key = "share", Value = "visible", Kind = LabelKinds.Business
+        };
+        context.AddRange(label,
+            new ServerLabel { OwnerUserId = "test-user", ServerId = visibleResource, LabelId = label.Id },
+            new LabelGrant
+            {
+                Id = Guid.NewGuid(), OwnerUserId = "test-user", LabelId = label.Id, GranteeUserId = "viewer",
+                Permission = LabelGrantPermissions.Viewer, Version = 1, CreatedByUserId = "test-user"
+            });
+        await context.SaveChangesAsync();
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(item => item.UserId).Returns("viewer");
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(item => item.WorkspaceId).Returns(context.CurrentWorkspaceId);
+        var repository = new TopologyRepository(context, user.Object, tenant.Object,
+            new OwnerGraphAccessService(context, user.Object, TimeProvider.System));
+
+        var state = await repository.GetTopologyStateAsync("test-user");
+
+        var visible = state.Nodes.Should().ContainSingle(item => item.Id == visibleNodeId).Which;
+        var container = state.Nodes.Should().ContainSingle(item => item.IsRestricted && item.Label == "Restricted Container").Which;
+        container.Id.Should().NotBe(frameId);
+        container.ReferenceId.Should().BeNull();
+        container.X.Should().Be(0);
+        container.Y.Should().Be(0);
+        container.Width.Should().BeNull();
+        container.Height.Should().BeNull();
+        visible.ParentNodeId.Should().Be(container.Id);
+        state.Nodes.Should().NotContain(item => item.Label.Contains("Secret", StringComparison.Ordinal));
+        state.Edges.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Owner_selector_without_a_grant_is_non_disclosing()
+    {
+        using var context = GetDbContext();
+        context.TopologyNodes.Add(new TopologyNode
+        {
+            Id = Guid.NewGuid(), OwnerUserId = "test-user", NodeType = "group", Label = "secret"
+        });
+        await context.SaveChangesAsync();
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(item => item.UserId).Returns("outsider");
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(item => item.WorkspaceId).Returns(context.CurrentWorkspaceId);
+        var repository = new TopologyRepository(
+            context, user.Object, tenant.Object, new OwnerGraphAccessService(context, user.Object, TimeProvider.System));
+
+        var existingOwner = await repository.GetTopologyStateAsync("test-user");
+        var missingOwner = await repository.GetTopologyStateAsync("does-not-exist");
+
+        existingOwner.Should().BeEquivalentTo(missingOwner);
+        existingOwner.Nodes.Should().BeEmpty();
+        existingOwner.Edges.Should().BeEmpty();
     }
 }

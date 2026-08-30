@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Security;
+using AuditNode.API.Middleware;
 
 namespace AuditNode.API.Controllers;
 
@@ -21,11 +22,13 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("tree")]
+    [SkipWorkspaceValidation]
     public async Task<ActionResult<IEnumerable<TopologyTreeDto>>> GetTree(
         [FromQuery] Guid? datacenterId,
         [FromQuery] int skip = 0,
         [FromQuery] int? take = null,
-        [FromQuery] List<string>? labels = null)
+        [FromQuery] List<string>? labels = null,
+        [FromQuery] string? ownerUserId = null)
     {
         var pageSize = take ?? 100;
         if (skip < 0 || pageSize <= 0)
@@ -34,7 +37,7 @@ public class TopologyController : ControllerBase
 
         try
         {
-            return Ok(await _topologyRepository.GetTopologyTreeAsync(datacenterId, skip, pageSize, labels));
+            return Ok(await _topologyRepository.GetTopologyTreeAsync(datacenterId, skip, pageSize, labels, ownerUserId));
         }
         catch (Exception)
         {
@@ -43,14 +46,16 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("map")]
+    [SkipWorkspaceValidation]
     public async Task<ActionResult<DependencyMapDto>> GetDependencyMap(
         [FromQuery] string? environment,
         [FromQuery] Guid? datacenterId,
-        [FromQuery] List<string>? labels = null)
+        [FromQuery] List<string>? labels = null,
+        [FromQuery] string? ownerUserId = null)
     {
         try
         {
-            return Ok(await _topologyRepository.GetDependencyMapAsync(environment, datacenterId, labels));
+            return Ok(await _topologyRepository.GetDependencyMapAsync(environment, datacenterId, labels, ownerUserId));
         }
         catch (Exception)
         {
@@ -59,11 +64,12 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("status")]
-    public async Task<ActionResult<IEnumerable<ApplicationStatusDto>>> GetStatus()
+    [SkipWorkspaceValidation]
+    public async Task<ActionResult<IEnumerable<ApplicationStatusDto>>> GetStatus([FromQuery] string? ownerUserId = null)
     {
         try
         {
-            return Ok(await _topologyRepository.GetApplicationStatusAsync());
+            return Ok(await _topologyRepository.GetApplicationStatusAsync(ownerUserId));
         }
         catch (Exception)
         {
@@ -72,11 +78,12 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("state")]
-    public async Task<ActionResult<TopologyStateDto>> GetState()
+    [SkipWorkspaceValidation]
+    public async Task<ActionResult<TopologyStateDto>> GetState([FromQuery] string? ownerUserId = null)
     {
         try
         {
-            return Ok(await _topologyRepository.GetTopologyStateAsync());
+            return Ok(await _topologyRepository.GetTopologyStateAsync(ownerUserId));
         }
         catch (Exception)
         {
@@ -86,7 +93,7 @@ public class TopologyController : ControllerBase
 
     [HttpPost("state")]
     [HttpPut("state")]
-    [WorkspaceMutation(ownerOrAdminOnly: true)]
+    [SkipWorkspaceValidation]
     public async Task<IActionResult> SaveState([FromBody] SaveTopologyStateDto state)
     {
         if (state?.Version is null || state.Nodes is null || state.Edges is null || state.Dependencies is null)
@@ -100,7 +107,7 @@ public class TopologyController : ControllerBase
                 TopologyStateStatus.Success => NoContent(),
                 TopologyStateStatus.DuplicateId => Conflict(Problem(409, "Topology node and edge IDs must be unique.")),
                 TopologyStateStatus.InvalidParent => BadRequest(Problem(400, "Topology parent relationships are invalid.")),
-                TopologyStateStatus.InvalidReference => BadRequest(Problem(400, "Topology references are invalid for the current workspace.")),
+                TopologyStateStatus.InvalidReference => BadRequest(Problem(400, "Topology references are invalid for the owner catalog.")),
                 TopologyStateStatus.InvalidEdge => BadRequest(Problem(400, "Topology edges are invalid.")),
                 TopologyStateStatus.InvalidDependency => BadRequest(Problem(400, "Topology dependencies are invalid.")),
                 TopologyStateStatus.Forbidden => StatusCode(403, Problem(403, "Topology replacement is forbidden.")),
@@ -115,7 +122,7 @@ public class TopologyController : ControllerBase
     }
 
     [HttpPost("commands")]
-    [WorkspaceGraphMutation]
+    [SkipWorkspaceValidation]
     public async Task<IActionResult> ExecuteCommands([FromBody] TopologyCommandBatchDto batch, CancellationToken cancellationToken)
     {
         if (batch is null || batch.Operations is null)

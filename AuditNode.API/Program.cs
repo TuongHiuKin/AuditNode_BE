@@ -196,6 +196,7 @@ builder.Services.AddScoped<ILabelCatalogService, LabelCatalogService>();
 builder.Services.AddScoped<IShareCatalogService, ShareCatalogService>();
 builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Services.InfrastructureService>();
 builder.Services.AddScoped<ILabelAccessService, LabelAccessService>();
+builder.Services.AddScoped<IOwnerGraphAccessService, OwnerGraphAccessService>();
 builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();
 builder.Services.AddScoped<IShareTokenService, ShareTokenService>();
 builder.Services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();

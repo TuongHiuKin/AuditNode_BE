@@ -1,5 +1,6 @@
 using AuditNode.API.Controllers;
 using AuditNode.API.Security;
+using AuditNode.API.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -32,11 +33,9 @@ public class SecurityVerificationTests
 
     [Theory]
     [InlineData(typeof(DatacentersController), nameof(DatacentersController.CreateDatacenter))]
-    [InlineData(typeof(DependenciesController), nameof(DependenciesController.SyncDependencies))]
     [InlineData(typeof(InventoryImportController), nameof(InventoryImportController.ImportInventory))]
     [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.MigrateApp))]
     [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.PurgeApp))]
-    [InlineData(typeof(TopologyController), nameof(TopologyController.SaveState))]
     public void Sensitive_Mutations_Should_Require_WorkspaceAuthorization(Type controllerType, string methodName)
     {
         // Arrange
@@ -102,5 +101,17 @@ public class SecurityVerificationTests
                 .Select(method => $"{type.Name}.{method.Name}"))
             .ToHashSet(StringComparer.Ordinal);
         anonymousActions.Should().BeEquivalentTo(allowedAnonymousActions);
+    }
+
+    [Theory]
+    [InlineData(typeof(DependenciesController), nameof(DependenciesController.SyncDependencies))]
+    [InlineData(typeof(TopologyController), nameof(TopologyController.SaveState))]
+    [InlineData(typeof(TopologyController), nameof(TopologyController.ExecuteCommands))]
+    public void Owner_graph_mutations_bypass_only_legacy_workspace_middleware(Type controllerType, string methodName)
+    {
+        var method = controllerType.GetMethod(methodName)!;
+        method.Should().BeDecoratedWith<SkipWorkspaceValidationAttribute>();
+        method.Should().NotBeDecoratedWith<WorkspaceMutationAttribute>();
+        method.Should().NotBeDecoratedWith<WorkspaceGraphMutationAttribute>();
     }
 }

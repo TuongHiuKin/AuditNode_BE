@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Security;
+using AuditNode.API.Middleware;
 
 namespace AuditNode.API.Controllers;
 
@@ -18,7 +19,7 @@ public class DependenciesController : ControllerBase
         _dependencyService = dependencyService;
     }
 
-    [WorkspaceMutation(ownerOrAdminOnly: true)]
+    [SkipWorkspaceValidation]
     [HttpPut("sync")]
     public async Task<IActionResult> SyncDependencies([FromBody] SyncDependenciesDto dto)
     {
@@ -31,7 +32,7 @@ public class DependenciesController : ControllerBase
             return status switch
             {
                 DependencySyncStatus.Success => NoContent(),
-                DependencySyncStatus.NotFound => NotFound(Problem(404, "An application or deployment was not found in the current workspace.")),
+                DependencySyncStatus.NotFound => NotFound(Problem(404, "An application or deployment was not found in the selected owner catalog.")),
                 DependencySyncStatus.Duplicate => Conflict(Problem(409, "Duplicate dependencies are not allowed.")),
                 DependencySyncStatus.SelfLoop => BadRequest(Problem(400, "An application cannot depend on itself.")),
                 DependencySyncStatus.DestinationMismatch => BadRequest(Problem(400, "The destination deployment does not belong to the destination application.")),

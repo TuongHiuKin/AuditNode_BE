@@ -50,7 +50,7 @@ public sealed class TopologyCommandServiceTests
             new() { Type = "moveNode", NodeId = workload.Id, ParentId = hidden.Id, X = 25, Y = 40 }
         ]));
 
-        result.Status.Should().Be(TopologyCommandStatus.Forbidden);
+        result.Status.Should().Be(TopologyCommandStatus.Success);
         fixture.Context.ChangeTracker.Clear();
         (await fixture.Context.TopologyNodes.SingleAsync(item => item.Id == workload.Id)).ParentNodeId.Should().Be(granted.Id);
     }
@@ -71,7 +71,7 @@ public sealed class TopologyCommandServiceTests
             new() { Type = "createEdge", EdgeId = Guid.NewGuid(), SourceNodeId = workload.Id, TargetNodeId = hidden.Id }
         ]));
 
-        result.Status.Should().Be(TopologyCommandStatus.Forbidden);
+        result.Status.Should().Be(TopologyCommandStatus.InvalidRequest);
         fixture.Context.ChangeTracker.Clear();
         (await fixture.Context.TopologyNodes.SingleAsync(item => item.Id == workload.Id)).X.Should().Be(0);
         fixture.Context.TopologyEdges.Should().BeEmpty();
@@ -428,6 +428,139 @@ public sealed class TopologyCommandServiceTests
         fixture.Context.AppDependencies.Should().ContainSingle(item => item.Id == edgeId);
     }
 
+    [Fact]
+    public async Task CreateEdge_rejects_endpoints_from_different_owners()
+    {
+        await using var fixture = Fixture.ForAll();
+        var source = fixture.AddNode("application");
+        var target = fixture.AddNode("application");
+        target.OwnerUserId = "other-owner";
+        await fixture.SaveAsync();
+
+        var result = await fixture.Service.ExecuteAsync(new(0,
+        [
+            new() { Type = "createEdge", EdgeId = Guid.NewGuid(), SourceNodeId = source.Id, TargetNodeId = target.Id }
+        ]));
+
+        result.Status.Should().Be(TopologyCommandStatus.Forbidden);
+        fixture.Context.TopologyEdges.Should().BeEmpty();
+        fixture.Context.AppDependencies.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Business_label_editor_cannot_create_an_edge_when_only_one_endpoint_is_granted()
+    {
+        await using var fixture = Fixture.ForAll();
+        var visible = fixture.AddNode("application");
+        var hidden = fixture.AddNode("application");
+        fixture.GrantBusinessDeployments(visible.ReferenceId!.Value);
+        await fixture.SaveAsync();
+
+        var result = await fixture.Service.ExecuteAsync(new(0,
+        [
+            new()
+            {
+                Type = "createEdge", EdgeId = Guid.NewGuid(),
+                SourceNodeId = visible.Id, TargetNodeId = hidden.Id
+            }
+        ]));
+
+        result.Status.Should().Be(TopologyCommandStatus.Forbidden);
+        fixture.Context.TopologyEdges.Should().BeEmpty();
+        fixture.Context.AppDependencies.Should().BeEmpty();
+        (await fixture.Context.OwnerCatalogStates.SingleAsync()).TopologyVersion.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Create_edge_rejects_topology_node_whose_workspace_differs_from_its_deployment()
+    {
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(item => item.WorkspaceId).Returns((Guid?)null);
+        var options = new DbContextOptionsBuilder<AuditDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(item => item.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        await using var context = new AuditDbContext(options, tenant.Object);
+        var firstWorkspace = Guid.NewGuid();
+        var secondWorkspace = Guid.NewGuid();
+        var sourceApp = Guid.NewGuid();
+        var targetApp = Guid.NewGuid();
+        var sourceServer = Guid.NewGuid();
+        var targetServer = Guid.NewGuid();
+        var sourceMapping = Guid.NewGuid();
+        var targetMapping = Guid.NewGuid();
+        var sourceNode = new TopologyNode
+        {
+            Id = Guid.NewGuid(), WorkspaceId = secondWorkspace, OwnerUserId = "owner",
+            NodeType = "application", ReferenceId = sourceMapping
+        };
+        var targetNode = new TopologyNode
+        {
+            Id = Guid.NewGuid(), WorkspaceId = firstWorkspace, OwnerUserId = "owner",
+            NodeType = "application", ReferenceId = targetMapping
+        };
+        var ownerLabel = new Label
+        {
+            Id = Guid.NewGuid(), WorkspaceId = firstWorkspace, OwnerUserId = "owner",
+            Key = "Owner", Value = "owner", Kind = LabelKinds.Owner, IsProtected = true
+        };
+        context.AddRange(
+            new Workspace { Id = firstWorkspace, Name = "First", OwnerUserId = "owner" },
+            new Workspace { Id = secondWorkspace, Name = "Second", OwnerUserId = "owner" },
+            new AuditNode.Domain.Entities.Application { Id = sourceApp, WorkspaceId = firstWorkspace, OwnerUserId = "owner", AppCode = "SRC", AppName = "Source" },
+            new AuditNode.Domain.Entities.Application { Id = targetApp, WorkspaceId = firstWorkspace, OwnerUserId = "owner", AppCode = "DST", AppName = "Target" },
+            new Server { Id = sourceServer, WorkspaceId = firstWorkspace, OwnerUserId = "owner", DatacenterId = Guid.NewGuid(), Hostname = "source", IpAddress = "10.0.0.1" },
+            new Server { Id = targetServer, WorkspaceId = firstWorkspace, OwnerUserId = "owner", DatacenterId = Guid.NewGuid(), Hostname = "target", IpAddress = "10.0.0.2" },
+            new PortMapping { Id = sourceMapping, WorkspaceId = firstWorkspace, OwnerUserId = "owner", AppId = sourceApp, ServerId = sourceServer, PortNumber = 8001 },
+            new PortMapping { Id = targetMapping, WorkspaceId = firstWorkspace, OwnerUserId = "owner", AppId = targetApp, ServerId = targetServer, PortNumber = 8002 },
+            sourceNode, targetNode, ownerLabel,
+            new LabelGrant
+            {
+                Id = Guid.NewGuid(), OwnerUserId = "owner", LabelId = ownerLabel.Id, GranteeUserId = "auditor",
+                Permission = LabelGrantPermissions.Editor, Version = 1, CreatedByUserId = "owner"
+            },
+            new OwnerCatalogState { OwnerUserId = "owner" });
+        await context.SaveChangesAsync();
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(item => item.UserId).Returns("auditor");
+        var service = new TopologyCommandService(
+            context, new OwnerGraphAccessService(context, user.Object, TimeProvider.System), user.Object,
+            NullLogger<TopologyCommandService>.Instance);
+
+        var result = await service.ExecuteAsync(new(0,
+        [
+            new()
+            {
+                Type = "createEdge", EdgeId = Guid.NewGuid(),
+                SourceNodeId = sourceNode.Id, TargetNodeId = targetNode.Id
+            }
+        ]));
+
+        result.Status.Should().Be(TopologyCommandStatus.Forbidden);
+        context.TopologyEdges.Should().BeEmpty();
+        context.AppDependencies.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Revoked_editor_grant_fails_closed_on_the_next_command()
+    {
+        await using var fixture = Fixture.ForAll();
+        var workload = fixture.AddNode("server");
+        await fixture.SaveAsync();
+
+        var first = await fixture.Service.ExecuteAsync(new(0,
+            [new() { Type = "moveNode", NodeId = workload.Id, X = 1, Y = 1 }]));
+        var grant = await fixture.Context.LabelGrants.SingleAsync();
+        grant.RevokedAt = DateTime.UtcNow;
+        await fixture.Context.SaveChangesAsync();
+        var second = await fixture.Service.ExecuteAsync(new(1,
+            [new() { Type = "moveNode", NodeId = workload.Id, X = 2, Y = 2 }]));
+
+        first.Status.Should().Be(TopologyCommandStatus.Success);
+        second.Status.Should().Be(TopologyCommandStatus.Forbidden);
+        (await fixture.Context.OwnerCatalogStates.SingleAsync()).TopologyVersion.Should().Be(1);
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private const string Actor = "auditor";
@@ -456,9 +589,25 @@ public sealed class TopologyCommandServiceTests
                 OwnerUserId = "owner",
                 TopologyVersion = topologyVersion
             });
+            var ownerLabel = new Label
+            {
+                Id = Guid.NewGuid(), WorkspaceId = _workspaceId, OwnerUserId = "owner",
+                Key = "Owner", Value = "owner", Kind = LabelKinds.Owner, IsProtected = true
+            };
+            Context.Labels.Add(ownerLabel);
+            Context.LabelGrants.Add(new LabelGrant
+            {
+                Id = Guid.NewGuid(), OwnerUserId = "owner", LabelId = ownerLabel.Id,
+                GranteeUserId = Actor, Permission = LabelGrantPermissions.Editor,
+                Version = 1, CreatedByUserId = "owner"
+            });
+            Context.OwnerCatalogStates.Add(new OwnerCatalogState
+            {
+                OwnerUserId = "owner", TopologyVersion = topologyVersion
+            });
             ConfigureAccess();
             Service = new TopologyCommandService(
-                Context, _access.Object, _policy.Object, user.Object, tenant.Object,
+                Context, new OwnerGraphAccessService(Context, user.Object, TimeProvider.System), user.Object,
                 NullLogger<TopologyCommandService>.Instance);
         }
 
@@ -471,10 +620,41 @@ public sealed class TopologyCommandServiceTests
 
         public TopologyNode AddNode(string type, Guid? parentId = null, Guid? referenceId = null)
         {
+            if (type.Equals("server", StringComparison.OrdinalIgnoreCase) && !referenceId.HasValue)
+            {
+                referenceId = Guid.NewGuid();
+                Context.Servers.Add(new Server
+                {
+                    Id = referenceId.Value, WorkspaceId = _workspaceId, OwnerUserId = "owner",
+                    DatacenterId = Guid.NewGuid(), Hostname = "server", IpAddress = $"10.0.0.{Context.Servers.Local.Count + 1}",
+                    OsType = "Linux", Environment = "test", Status = "up"
+                });
+            }
+            if (type.Equals("application", StringComparison.OrdinalIgnoreCase) && !referenceId.HasValue)
+            {
+                var appId = Guid.NewGuid();
+                var serverId = Guid.NewGuid();
+                referenceId = Guid.NewGuid();
+                Context.Applications.Add(new AuditNode.Domain.Entities.Application
+                {
+                    Id = appId, WorkspaceId = _workspaceId, OwnerUserId = "owner", AppCode = $"APP-{appId:N}", AppName = "app"
+                });
+                Context.Servers.Add(new Server
+                {
+                    Id = serverId, WorkspaceId = _workspaceId, OwnerUserId = "owner", DatacenterId = Guid.NewGuid(),
+                    Hostname = "app-host", IpAddress = $"10.1.0.{Context.Servers.Local.Count + 1}", OsType = "Linux", Environment = "test", Status = "up"
+                });
+                Context.PortMappings.Add(new PortMapping
+                {
+                    Id = referenceId.Value, WorkspaceId = _workspaceId, OwnerUserId = "owner",
+                    AppId = appId, ServerId = serverId, PortNumber = 8000 + Context.PortMappings.Local.Count, Protocol = "TCP"
+                });
+            }
             var node = new TopologyNode
             {
                 Id = Guid.NewGuid(),
                 WorkspaceId = _workspaceId,
+                OwnerUserId = "owner",
                 NodeType = type,
                 Label = type,
                 ParentNodeId = parentId,
@@ -495,11 +675,86 @@ public sealed class TopologyCommandServiceTests
 
         public void AllowResources(IReadOnlySet<Guid> servers, IReadOnlySet<Guid> applications)
         {
+            foreach (var id in servers.Where(id => !Context.Servers.Local.Any(item => item.Id == id)))
+                Context.Servers.Add(new Server
+                {
+                    Id = id, WorkspaceId = _workspaceId, OwnerUserId = "owner", DatacenterId = Guid.NewGuid(),
+                    Hostname = "allowed", IpAddress = $"10.2.0.{Context.Servers.Local.Count + 1}", OsType = "Linux", Environment = "test", Status = "up"
+                });
+            foreach (var id in applications.Where(id => !Context.Applications.Local.Any(item => item.Id == id)))
+                Context.Applications.Add(new AuditNode.Domain.Entities.Application
+                {
+                    Id = id, WorkspaceId = _workspaceId, OwnerUserId = "owner", AppCode = $"APP-{id:N}", AppName = "allowed"
+                });
             _policy.Setup(item => item.GetReadableIdsAsync(_workspaceId, Actor, "server", It.IsAny<CancellationToken>())).ReturnsAsync(servers);
             _policy.Setup(item => item.GetReadableIdsAsync(_workspaceId, Actor, "application", It.IsAny<CancellationToken>())).ReturnsAsync(applications);
         }
 
-        public Task SaveAsync() => Context.SaveChangesAsync();
+        public void GrantBusinessDeployments(params Guid[] deploymentIds)
+        {
+            Context.LabelGrants.RemoveRange(Context.LabelGrants.Local);
+            Context.Labels.RemoveRange(Context.Labels.Local.Where(item => item.Kind == LabelKinds.Owner));
+            var label = new Label
+            {
+                Id = Guid.NewGuid(), WorkspaceId = _workspaceId, OwnerUserId = "owner",
+                Key = "scope", Value = "graph-editor", Kind = LabelKinds.Business
+            };
+            Context.Labels.Add(label);
+            Context.LabelGrants.Add(new LabelGrant
+            {
+                Id = Guid.NewGuid(), OwnerUserId = "owner", LabelId = label.Id, Label = label,
+                GranteeUserId = Actor, Permission = LabelGrantPermissions.Editor,
+                Version = 1, CreatedByUserId = "owner"
+            });
+            var mappings = Context.PortMappings.Local.Where(item => deploymentIds.Contains(item.Id)).ToList();
+            foreach (var mapping in mappings)
+            {
+                Context.ApplicationLabels.Add(new ApplicationLabel
+                {
+                    WorkspaceId = _workspaceId, OwnerUserId = "owner",
+                    ApplicationId = mapping.AppId, LabelId = label.Id, Label = label
+                });
+                Context.ServerLabels.Add(new ServerLabel
+                {
+                    WorkspaceId = _workspaceId, OwnerUserId = "owner",
+                    ServerId = mapping.ServerId, LabelId = label.Id, Label = label
+                });
+            }
+        }
+
+        public Task SaveAsync()
+        {
+            var mappings = Context.ChangeTracker.Entries<PortMapping>()
+                .Where(entry => entry.State == EntityState.Added).Select(entry => entry.Entity).ToList();
+            foreach (var mapping in mappings)
+            {
+                if (!Context.Applications.Local.Any(item => item.Id == mapping.AppId))
+                    Context.Applications.Add(new AuditNode.Domain.Entities.Application
+                    {
+                        Id = mapping.AppId, WorkspaceId = _workspaceId, OwnerUserId = "owner",
+                        AppCode = $"APP-{mapping.AppId:N}", AppName = "mapped"
+                    });
+                if (!Context.Servers.Local.Any(item => item.Id == mapping.ServerId))
+                    Context.Servers.Add(new Server
+                    {
+                        Id = mapping.ServerId, WorkspaceId = _workspaceId, OwnerUserId = "owner", DatacenterId = Guid.NewGuid(),
+                        Hostname = "mapped-host", IpAddress = $"10.3.0.{Context.Servers.Local.Count + 1}",
+                        OsType = "Linux", Environment = "test", Status = "up"
+                    });
+            }
+            foreach (var entry in Context.ChangeTracker.Entries().Where(entry => entry.State == EntityState.Added))
+            {
+                switch (entry.Entity)
+                {
+                    case TopologyEdge edge: edge.WorkspaceId = _workspaceId; edge.OwnerUserId = "owner"; break;
+                    case AppDependency dependency: dependency.WorkspaceId = _workspaceId; dependency.OwnerUserId = "owner"; break;
+                    case PortMapping mapping: mapping.WorkspaceId = _workspaceId; mapping.OwnerUserId = "owner"; break;
+                    case AuditNode.Domain.Entities.Application app: app.WorkspaceId = _workspaceId; app.OwnerUserId = "owner"; break;
+                    case Server server: server.WorkspaceId = _workspaceId; server.OwnerUserId = "owner"; break;
+                }
+            }
+            return Context.SaveChangesAsync();
+        }
 
         private void ConfigureAccess()
         {
