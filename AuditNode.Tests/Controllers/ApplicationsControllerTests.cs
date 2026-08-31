@@ -42,14 +42,14 @@ public class ApplicationsControllerTests
     {
         _service.Setup(x => x.GetCatalogPageAsync(
                 It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25),
-                "tier", "critical", It.IsAny<CancellationToken>()))
+                "tier", "critical", null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CursorPageDto<ApplicationResponseDto>([], null, false));
 
         await Controller().GetApplications("tier", "critical");
 
         _service.Verify(x => x.GetCatalogPageAsync(
             It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25),
-            "tier", "critical", It.IsAny<CancellationToken>()), Times.Once);
+            "tier", "critical", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

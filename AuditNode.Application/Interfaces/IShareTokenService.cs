@@ -4,6 +4,10 @@ namespace AuditNode.Application.Interfaces;
 
 public interface IShareTokenService
 {
+    Task<IReadOnlyList<ShareLinkMetadataDto>?> ListAsync(
+        Guid labelId,
+        CancellationToken cancellationToken = default);
+
     Task<ShareTokenMutationResult> CreateAsync(
         Guid labelId,
         DateTimeOffset expiresAt,

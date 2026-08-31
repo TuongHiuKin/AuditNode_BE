@@ -691,6 +691,25 @@ public class TopologyRepository : ITopologyRepository
             })
             .ToListAsync();
 
+        var sourceAppIds = connections.Select(connection => connection.SourceAppId).Distinct().ToArray();
+        var sourceDeploymentServers = await _context.PortMappings.IgnoreQueryFilters().AsNoTracking()
+            .Where(mapping => (mapping.OwnerUserId == scope.OwnerUserId || mapping.OwnerUserId == null && transitionalWorkspaceIds.Contains(mapping.WorkspaceId)) &&
+                              sourceAppIds.Contains(mapping.AppId) &&
+                              allowedServers.Contains(mapping.ServerId))
+            .Select(mapping => new { mapping.Id, mapping.AppId, mapping.ServerId })
+            .ToListAsync();
+        var selectedSourceServerByApp = sourceDeploymentServers
+            .GroupBy(mapping => mapping.AppId)
+            .ToDictionary(group => group.Key, group => group.OrderBy(mapping => mapping.Id).First().ServerId);
+        foreach (var connection in connections)
+        {
+            connection.CanEdit = scope.EditableApplicationIds.Contains(connection.SourceAppId) &&
+                                 scope.EditableApplicationIds.Contains(connection.TargetAppId) &&
+                                 scope.EditableServerIds.Contains(connection.DestinationServerId) &&
+                                 selectedSourceServerByApp.TryGetValue(connection.SourceAppId, out var sourceServerId) &&
+                                 scope.EditableServerIds.Contains(sourceServerId);
+        }
+
         var restrictedNodes = new Dictionary<Guid, RestrictedDependencyNodeDto>();
         if (scope.EffectivePermission != LabelEffectivePermission.Owner)
         {
@@ -716,6 +735,7 @@ public class TopologyRepository : ITopologyRepository
                 ServerId = s.Id,
                 Hostname = s.Hostname,
                 IpAddress = s.IpAddress,
+                CanEdit = scope.EditableServerIds.Contains(s.Id),
                 Labels = s.Labels.Select(l => new LabelDto
                 {
                     Key = l.Key,
@@ -729,7 +749,9 @@ public class TopologyRepository : ITopologyRepository
                     Name = pm.Application!.AppName,
                     PortMappingId = pm.Id,
                     Port = pm.PortNumber,
-                    Protocol = pm.Protocol
+                    Protocol = pm.Protocol,
+                    CanEdit = scope.EditableApplicationIds.Contains(pm.AppId) &&
+                              scope.EditableServerIds.Contains(pm.ServerId)
                 }).ToList()
             }).ToList(),
             Connections = connections,

@@ -27,6 +27,7 @@ public class ApplicationsController : ControllerBase
     public async Task<ActionResult<CursorPageDto<ApplicationResponseDto>>> GetApplications(
         [FromQuery] string? labelKey = null,
         [FromQuery] string? labelValue = null,
+        [FromQuery] string? ownerUserId = null,
         [FromQuery] string? view = null,
         [FromQuery] int? limit = null,
         [FromQuery] string? cursor = null,
@@ -35,7 +36,7 @@ public class ApplicationsController : ControllerBase
         try
         {
             var query = CatalogPageQuery.Parse(view, limit, cursor);
-            return Ok(await _applicationService.GetCatalogPageAsync(query, labelKey, labelValue, cancellationToken));
+            return Ok(await _applicationService.GetCatalogPageAsync(query, labelKey, labelValue, ownerUserId, cancellationToken));
         }
         catch (CatalogQueryValidationException exception)
         {

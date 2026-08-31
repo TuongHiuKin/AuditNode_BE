@@ -5,11 +5,11 @@ namespace AuditNode.Application.Interfaces;
 
 public interface IGlobalCatalogRepository
 {
-    Task<CursorPageDto<ServerResponseDto>> GetServersAsync(string userId, CatalogPageQuery query, DateTime utcNow, CancellationToken cancellationToken = default);
-    Task<CursorPageDto<ApplicationResponseDto>> GetApplicationsAsync(string userId, CatalogPageQuery query, DateTime utcNow, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default);
-    Task<CursorPageDto<DatacenterDto>> GetDatacentersAsync(string userId, CatalogPageQuery query, DateTime utcNow, CancellationToken cancellationToken = default);
-    Task<CursorPageDto<CatalogLabelDto>> GetLabelsAsync(string userId, CatalogPageQuery query, DateTime utcNow, CancellationToken cancellationToken = default);
-    Task<CursorPageDto<SearchResultDto>> SearchAsync(string userId, string keyword, CatalogPageQuery query, DateTime utcNow, CancellationToken cancellationToken = default);
+    Task<CursorPageDto<ServerResponseDto>> GetServersAsync(string userId, CatalogPageQuery query, DateTime utcNow, string? ownerUserId = null, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default);
+    Task<CursorPageDto<ApplicationResponseDto>> GetApplicationsAsync(string userId, CatalogPageQuery query, DateTime utcNow, string? labelKey = null, string? labelValue = null, string? ownerUserId = null, CancellationToken cancellationToken = default);
+    Task<CursorPageDto<DatacenterDto>> GetDatacentersAsync(string userId, CatalogPageQuery query, DateTime utcNow, string? ownerUserId = null, CancellationToken cancellationToken = default);
+    Task<CursorPageDto<CatalogLabelDto>> GetLabelsAsync(string userId, CatalogPageQuery query, DateTime utcNow, string? ownerUserId = null, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default);
+    Task<CursorPageDto<SearchResultDto>> SearchAsync(string userId, string keyword, CatalogPageQuery query, DateTime utcNow, string? ownerUserId = null, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ServerResponseDto>> ExportServersAsync(string userId, CatalogView view, IReadOnlyCollection<Guid> ids, DateTime utcNow, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ApplicationResponseDto>> ExportApplicationsAsync(string userId, CatalogView view, IReadOnlyCollection<Guid> ids, DateTime utcNow, CancellationToken cancellationToken = default);
     Task<ServerResponseDto?> GetServerAsync(string userId, Guid id, DateTime utcNow, CancellationToken cancellationToken = default);

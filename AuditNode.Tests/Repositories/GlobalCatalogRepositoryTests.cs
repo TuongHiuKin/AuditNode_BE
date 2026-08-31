@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Moq;
 using Xunit;
+using System.Text.Json;
 using AuditNode.API.Security;
 using Microsoft.AspNetCore.DataProtection;
 
@@ -18,6 +19,17 @@ namespace AuditNode.Tests.Repositories;
 public sealed class GlobalCatalogRepositoryTests
 {
     private static readonly DateTime Now = new(2026, 8, 29, 3, 0, 0, DateTimeKind.Utc);
+
+    [Theory]
+    [InlineData(LabelEffectivePermission.Viewer, "\"viewer\"")]
+    [InlineData(LabelEffectivePermission.Editor, "\"editor\"")]
+    [InlineData(LabelEffectivePermission.Owner, "\"owner\"")]
+    public void Effective_permission_serializes_as_the_lowercase_frontend_contract(
+        LabelEffectivePermission permission,
+        string expected)
+    {
+        JsonSerializer.Serialize(permission).Should().Be(expected);
+    }
 
     [Fact]
     public async Task Mine_returns_only_owned_resources_and_fails_closed_for_legacy_null_owner()
@@ -58,6 +70,53 @@ public sealed class GlobalCatalogRepositoryTests
         item.SharedLabelIds.Should().BeEquivalentTo([viewer.Id, editor.Id]);
         item.Capabilities.CanEditProperties.Should().BeTrue();
         item.Capabilities.CanChangeLabels.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Shared_server_filters_are_applied_after_authorization_and_isolate_same_label_across_owners()
+    {
+        await using var context = Context();
+        var first = Server("owner-a", "first");
+        var second = Server("owner-b", "second");
+        var firstLabel = BusinessLabel("owner-a", "prod");
+        firstLabel.Key = "env";
+        var secondLabel = BusinessLabel("owner-b", "prod");
+        secondLabel.Key = "env";
+        context.AddRange(first.Datacenter!, second.Datacenter!, first, second, firstLabel, secondLabel);
+        context.ServerLabels.AddRange(Link(first, firstLabel), Link(second, secondLabel));
+        context.LabelGrants.AddRange(
+            Grant(firstLabel, "reader", LabelGrantPermissions.Viewer),
+            Grant(secondLabel, "reader", LabelGrantPermissions.Viewer));
+        await context.SaveChangesAsync();
+
+        var page = await Repository(context).GetServersAsync(
+            "reader", Query(CatalogView.Shared), Now, "owner-b", "env", "prod");
+
+        page.Items.Should().ContainSingle().Which.Id.Should().Be(second.Id);
+    }
+
+    [Fact]
+    public async Task Cursor_is_rejected_when_owner_or_label_filter_changes()
+    {
+        await using var context = Context();
+        var first = Server("owner-a", "a");
+        var second = Server("owner-a", "b");
+        var label = BusinessLabel("owner-a", "prod");
+        label.Key = "env";
+        context.AddRange(first.Datacenter!, second.Datacenter!, first, second, label);
+        context.ServerLabels.AddRange(Link(first, label), Link(second, label));
+        await context.SaveChangesAsync();
+        var repository = Repository(context);
+
+        var firstPage = await repository.GetServersAsync(
+            "owner-a", Query(CatalogView.Mine, 1), Now, "owner-a", "env", "prod");
+
+        var changedOwner = () => repository.GetServersAsync(
+            "owner-a", Query(CatalogView.Mine, 1, firstPage.NextCursor), Now, "owner-b", "env", "prod");
+        var changedLabel = () => repository.GetServersAsync(
+            "owner-a", Query(CatalogView.Mine, 1, firstPage.NextCursor), Now, "owner-a", "env", "stage");
+        await changedOwner.Should().ThrowAsync<CatalogQueryValidationException>();
+        await changedLabel.Should().ThrowAsync<CatalogQueryValidationException>();
     }
 
     [Fact]
@@ -254,7 +313,7 @@ public sealed class GlobalCatalogRepositoryTests
         context.ServerLabels.Add(Link(visible, label));
         await context.SaveChangesAsync();
         var repository = Repository(context);
-        var scope = new ShareTokenResolutionDto(label.Id, "owner", LabelGrantPermissions.Viewer, GrantId: grant.Id);
+        var scope = new ShareTokenResolutionDto(label.Id, "owner", LabelGrantPermissions.Viewer, grant.Id);
 
         var page = await repository.BrowseShareAsync(scope, "servers", Query(CatalogView.Shared), Now);
 

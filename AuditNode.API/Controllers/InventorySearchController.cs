@@ -30,11 +30,20 @@ public class InventorySearchController : ControllerBase
         [FromQuery] int? limit = null,
         [FromQuery] string? cursor = null,
         [FromQuery(Name = "keyword")] string? legacyKeyword = null,
+        [FromQuery] string? ownerUserId = null,
+        [FromQuery] string? labelKey = null,
+        [FromQuery] string? labelValue = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var results = await _searchService.SearchAsync(q ?? legacyKeyword ?? string.Empty, CatalogPageQuery.Parse(view, limit, cursor), cancellationToken);
+            var results = await _searchService.SearchAsync(
+                q ?? legacyKeyword ?? string.Empty,
+                CatalogPageQuery.Parse(view, limit, cursor),
+                ownerUserId,
+                labelKey,
+                labelValue,
+                cancellationToken);
             return Ok(results);
         }
         catch (CatalogQueryValidationException exception)

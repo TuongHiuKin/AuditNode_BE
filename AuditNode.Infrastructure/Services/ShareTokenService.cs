@@ -19,6 +19,54 @@ public sealed class ShareTokenService(
 {
     private static readonly byte[] InvalidHash = new byte[SHA256.HashSizeInBytes];
 
+    public async Task<IReadOnlyList<ShareLinkMetadataDto>?> ListAsync(
+        Guid labelId,
+        CancellationToken cancellationToken = default)
+    {
+        var actorUserId = currentUser.UserId;
+        if (string.IsNullOrWhiteSpace(actorUserId)) return null;
+
+        var label = await context.Labels.IgnoreQueryFilters().AsNoTracking()
+            .Where(item => item.Id == labelId)
+            .Select(item => new { item.Id, item.OwnerUserId, item.Kind })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (label?.OwnerUserId is null ||
+            !string.Equals(label.OwnerUserId, actorUserId, StringComparison.Ordinal))
+            return null;
+
+        var sharesAllOwnerResources = label.Kind == LabelKinds.Owner;
+        var warningCode = sharesAllOwnerResources
+            ? LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources
+            : null;
+        var links = await context.LabelGrants.IgnoreQueryFilters().AsNoTracking()
+            .Where(grant => grant.LabelId == labelId &&
+                            grant.OwnerUserId == label.OwnerUserId &&
+                            grant.TokenHash != null &&
+                            grant.GranteeUserId == null &&
+                            grant.Permission == LabelGrantPermissions.Viewer &&
+                            grant.ExpiresAt != null)
+            .OrderByDescending(grant => grant.CreatedAt)
+            .Select(grant => new
+            {
+                grant.Id,
+                grant.LabelId,
+                ExpiresAt = grant.ExpiresAt!.Value,
+                grant.RevokedAt,
+                grant.Version
+            })
+            .ToListAsync(cancellationToken);
+        return links.Select(grant => new ShareLinkMetadataDto(
+            grant.Id,
+            grant.LabelId,
+            new DateTimeOffset(DateTime.SpecifyKind(grant.ExpiresAt, DateTimeKind.Utc)),
+            grant.RevokedAt is null
+                ? null
+                : new DateTimeOffset(DateTime.SpecifyKind(grant.RevokedAt.Value, DateTimeKind.Utc)),
+            grant.Version,
+            sharesAllOwnerResources,
+            warningCode)).ToList();
+    }
+
     public async Task<ShareTokenMutationResult> CreateAsync(
         Guid labelId,
         DateTimeOffset expiresAt,
@@ -119,11 +167,11 @@ public sealed class ShareTokenService(
             grant.LabelId,
             grant.OwnerUserId,
             LabelGrantPermissions.Viewer,
+            grant.Id,
             sharesAllOwnerResources,
             sharesAllOwnerResources
                 ? LabelShareWarningCodes.OwnerLabelSharesAllOwnerResources
-                : null,
-            grant.Id);
+                : null);
     }
 
     public async Task<ShareTokenMutationResult> RevokeAsync(

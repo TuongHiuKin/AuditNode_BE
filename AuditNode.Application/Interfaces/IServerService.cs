@@ -5,7 +5,7 @@ namespace AuditNode.Application.Interfaces;
 public interface IServerService
 {
     Task<IEnumerable<ServerResponseDto>> GetServersAsync();
-    Task<CursorPageDto<ServerResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, CancellationToken cancellationToken = default);
+    Task<CursorPageDto<ServerResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? ownerUserId = null, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default);
     Task<ServerResponseDto?> GetServerAsync(Guid id);
     Task<ServerResponseDto?> GetCatalogDetailAsync(Guid id, CancellationToken cancellationToken = default);
     Task<ServerOperationResult> CreateServerAsync(CreateServerDto dto);

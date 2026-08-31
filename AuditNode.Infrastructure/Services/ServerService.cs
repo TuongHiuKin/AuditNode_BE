@@ -26,10 +26,10 @@ public class ServerService : IServerService
         _timeProvider = timeProvider;
     }
 
-    public Task<CursorPageDto<ServerResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, CancellationToken cancellationToken = default) =>
+    public Task<CursorPageDto<ServerResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? ownerUserId = null, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default) =>
         string.IsNullOrWhiteSpace(_currentUser.UserId)
             ? Task.FromResult(new CursorPageDto<ServerResponseDto>([], null, false))
-            : _catalog.GetServersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            : _catalog.GetServersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, ownerUserId, labelKey, labelValue, cancellationToken);
 
     public Task<ServerResponseDto?> GetCatalogDetailAsync(Guid id, CancellationToken cancellationToken = default) =>
         string.IsNullOrWhiteSpace(_currentUser.UserId)

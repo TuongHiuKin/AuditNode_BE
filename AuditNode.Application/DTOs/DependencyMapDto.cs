@@ -18,4 +18,5 @@ public class ConnectionDto
     public Guid DestinationServerId { get; set; }
     public string ConnectionType { get; set; } = string.Empty;
     public bool IsRestricted { get; set; }
+    public bool CanEdit { get; set; }
 }

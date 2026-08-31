@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AuditNode.Application.DTOs;
 
 public enum CatalogView
@@ -6,10 +8,14 @@ public enum CatalogView
     Shared
 }
 
+[JsonConverter(typeof(JsonStringEnumConverter<LabelEffectivePermission>))]
 public enum LabelEffectivePermission
 {
+    [JsonStringEnumMemberName("viewer")]
     Viewer,
+    [JsonStringEnumMemberName("editor")]
     Editor,
+    [JsonStringEnumMemberName("owner")]
     Owner
 }
 

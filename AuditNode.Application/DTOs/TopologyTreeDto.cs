@@ -16,6 +16,7 @@ public class ServerNodeDto
     public string IpAddress { get; set; } = string.Empty;
     public List<LabelDto> Labels { get; set; } = new();
     public List<ApplicationNodeDto> Applications { get; set; } = new();
+    public bool CanEdit { get; set; }
 }
 
 public class ApplicationNodeDto
@@ -27,4 +28,5 @@ public class ApplicationNodeDto
     public Guid PortMappingId { get; set; }
     public int Port { get; set; }
     public string Protocol { get; set; } = string.Empty;
+    public bool CanEdit { get; set; }
 }

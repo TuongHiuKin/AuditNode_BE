@@ -17,6 +17,7 @@ public class ServersControllerTests
     {
         _service.Setup(service => service.GetCatalogPageAsync(
                 It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25 && query.Cursor == null),
+                null, null, null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CursorPageDto<ServerResponseDto>([], null, false));
 
@@ -24,9 +25,22 @@ public class ServersControllerTests
 
         ResultOf(result).Should().BeOfType<OkObjectResult>();
         _service.Verify(service => service.GetCatalogPageAsync(
-            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine), It.IsAny<CancellationToken>()), Times.Once);
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine), null, null, null, It.IsAny<CancellationToken>()), Times.Once);
         _service.Verify(service => service.GetCatalogPageAsync(
-            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared), It.IsAny<CancellationToken>()), Times.Never);
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task List_passes_owner_and_label_filters_to_service()
+    {
+        _service.Setup(service => service.GetCatalogPageAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared),
+                "owner-a", "env", "prod", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<ServerResponseDto>([], null, false));
+
+        await Controller().GetServers(view: "shared", ownerUserId: "owner-a", labelKey: "env", labelValue: "prod");
+
+        _service.VerifyAll();
     }
 
     [Theory]

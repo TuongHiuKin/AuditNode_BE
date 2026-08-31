@@ -26,10 +26,10 @@ public class ApplicationService : IApplicationService
         _timeProvider = timeProvider;
     }
 
-    public Task<CursorPageDto<ApplicationResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default) =>
+    public Task<CursorPageDto<ApplicationResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? labelKey = null, string? labelValue = null, string? ownerUserId = null, CancellationToken cancellationToken = default) =>
         string.IsNullOrWhiteSpace(_currentUser.UserId)
             ? Task.FromResult(new CursorPageDto<ApplicationResponseDto>([], null, false))
-            : _catalog.GetApplicationsAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, labelKey, labelValue, cancellationToken);
+            : _catalog.GetApplicationsAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, labelKey, labelValue, ownerUserId, cancellationToken);
 
     public Task<ApplicationResponseDto?> GetCatalogDetailAsync(Guid id, CancellationToken cancellationToken = default) =>
         string.IsNullOrWhiteSpace(_currentUser.UserId)

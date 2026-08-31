@@ -21,11 +21,15 @@ public sealed class LabelsController(ILabelCatalogService labels) : ControllerBa
         [FromQuery] string? view = null,
         [FromQuery] int? limit = null,
         [FromQuery] string? cursor = null,
+        [FromQuery] string? ownerUserId = null,
+        [FromQuery] string? labelKey = null,
+        [FromQuery] string? labelValue = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            return Ok(await labels.GetLabelsAsync(CatalogPageQuery.Parse(view, limit, cursor), cancellationToken));
+            return Ok(await labels.GetLabelsAsync(
+                CatalogPageQuery.Parse(view, limit, cursor), ownerUserId, labelKey, labelValue, cancellationToken));
         }
         catch (CatalogQueryValidationException exception)
         {

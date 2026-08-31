@@ -20,6 +20,7 @@ public sealed class LabelsControllerTests
             false);
         service.Setup(value => value.GetLabelsAsync(
                 It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25),
+                null, null, null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(page);
 
@@ -35,6 +36,7 @@ public sealed class LabelsControllerTests
         var service = new Mock<ILabelCatalogService>();
         service.Setup(value => value.GetLabelsAsync(
                 It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared && query.Limit == 10),
+                null, null, null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CursorPageDto<CatalogLabelDto>([], null, false));
 
@@ -42,6 +44,22 @@ public sealed class LabelsControllerTests
 
         service.Verify(value => value.GetLabelsAsync(
             It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared),
+            null, null, null,
             It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Get_labels_passes_owner_and_exact_label_filters()
+    {
+        var service = new Mock<ILabelCatalogService>();
+        service.Setup(value => value.GetLabelsAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared),
+                "owner-a", "env", "prod", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<CatalogLabelDto>([], null, false));
+
+        await new LabelsController(service.Object).GetLabels(
+            view: "shared", ownerUserId: "owner-a", labelKey: "env", labelValue: "prod");
+
+        service.VerifyAll();
     }
 }

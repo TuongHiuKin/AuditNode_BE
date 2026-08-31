@@ -25,7 +25,7 @@ public class InventorySearchControllerTests
         // Arrange
         var keyword = "test";
         var mockResults = new List<SearchResultDto> { new SearchResultDto { Title = "Match 1" } };
-        _mockService.Setup(s => s.SearchAsync(keyword, It.IsAny<CatalogPageQuery>(), It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.SearchAsync(keyword, It.IsAny<CatalogPageQuery>(), null, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CursorPageDto<SearchResultDto>(mockResults, null, false));
 
         // Act
@@ -40,7 +40,7 @@ public class InventorySearchControllerTests
     public async Task Search_ShouldReturnEmpty_WhenKeywordIsNull()
     {
         // Arrange
-        _mockService.Setup(s => s.SearchAsync(string.Empty, It.IsAny<CatalogPageQuery>(), It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.SearchAsync(string.Empty, It.IsAny<CatalogPageQuery>(), null, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new CursorPageDto<SearchResultDto>([], null, false));
 
         // Act
@@ -55,7 +55,7 @@ public class InventorySearchControllerTests
     public async Task Search_ShouldReturnSafe500WithCorrelationId_OnException()
     {
         // Arrange
-        _mockService.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<CatalogPageQuery>(), It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<CatalogPageQuery>(), null, null, null, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Search failed"));
 
         // Act

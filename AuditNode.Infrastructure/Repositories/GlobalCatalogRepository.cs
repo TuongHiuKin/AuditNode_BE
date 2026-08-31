@@ -259,11 +259,29 @@ public sealed class GlobalCatalogRepository(
         string userId,
         CatalogPageQuery query,
         DateTime utcNow,
+        string? ownerUserId = null,
+        string? labelKey = null,
+        string? labelValue = null,
         CancellationToken cancellationToken = default)
     {
         Validate(userId, query);
-        var cursor = Position("servers", query, userId, CatalogFilterFingerprint.None, 1);
+        var normalizedOwnerUserId = ownerUserId?.Trim();
+        var normalizedLabelKey = labelKey?.Trim();
+        var normalizedLabelValue = labelValue?.Trim();
+        var fingerprint = CatalogFilterFingerprint.Resources(normalizedOwnerUserId, normalizedLabelKey, normalizedLabelValue);
+        var cursor = Position("servers", query, userId, fingerprint, 1);
         var authorized = AuthorizedServers(userId, query.View, utcNow);
+        if (!string.IsNullOrWhiteSpace(normalizedOwnerUserId))
+            authorized = authorized.Where(server => server.OwnerUserId == normalizedOwnerUserId);
+        if (!string.IsNullOrWhiteSpace(normalizedLabelKey))
+        {
+            authorized = authorized.Where(server =>
+                context.ServerLabels.IgnoreQueryFilters().Any(link =>
+                    link.ServerId == server.Id &&
+                    link.OwnerUserId == server.OwnerUserId &&
+                    link.Label != null && link.Label.Key == normalizedLabelKey &&
+                    (string.IsNullOrWhiteSpace(normalizedLabelValue) || link.Label.Value == normalizedLabelValue)));
+        }
         if (cursor is not null)
         {
             var hostname = cursor.SortValues[0];
@@ -315,7 +333,7 @@ public sealed class GlobalCatalogRepository(
             };
         }).ToList();
 
-        return Page(items, hasNext, "servers", query, userId, CatalogFilterFingerprint.None, item => [item.Hostname], item => item.Id);
+        return Page(items, hasNext, "servers", query, userId, fingerprint, item => [item.Hostname], item => item.Id);
     }
 
     public async Task<CursorPageDto<ApplicationResponseDto>> GetApplicationsAsync(
@@ -324,14 +342,18 @@ public sealed class GlobalCatalogRepository(
         DateTime utcNow,
         string? labelKey = null,
         string? labelValue = null,
+        string? ownerUserId = null,
         CancellationToken cancellationToken = default)
     {
         Validate(userId, query);
         var normalizedLabelKey = labelKey?.Trim();
         var normalizedLabelValue = labelValue?.Trim();
-        var fingerprint = CatalogFilterFingerprint.Applications(normalizedLabelKey, normalizedLabelValue);
+        var normalizedOwnerUserId = ownerUserId?.Trim();
+        var fingerprint = CatalogFilterFingerprint.Resources(normalizedOwnerUserId, normalizedLabelKey, normalizedLabelValue);
         var cursor = Position("applications", query, userId, fingerprint, 1);
         var authorized = AuthorizedApplications(userId, query.View, utcNow);
+        if (!string.IsNullOrWhiteSpace(normalizedOwnerUserId))
+            authorized = authorized.Where(application => application.OwnerUserId == normalizedOwnerUserId);
         if (!string.IsNullOrWhiteSpace(normalizedLabelKey))
         {
             authorized = authorized.Where(application =>
@@ -397,10 +419,13 @@ public sealed class GlobalCatalogRepository(
         string userId,
         CatalogPageQuery query,
         DateTime utcNow,
+        string? ownerUserId = null,
         CancellationToken cancellationToken = default)
     {
         Validate(userId, query);
-        var cursor = Position("datacenters", query, userId, CatalogFilterFingerprint.None, 1);
+        var normalizedOwnerUserId = ownerUserId?.Trim();
+        var fingerprint = CatalogFilterFingerprint.Resources(normalizedOwnerUserId);
+        var cursor = Position("datacenters", query, userId, fingerprint, 1);
         var datacenters = context.Datacenters.IgnoreQueryFilters().AsNoTracking()
             .Where(datacenter => datacenter.OwnerUserId != null);
         datacenters = query.View == CatalogView.Mine
@@ -408,6 +433,8 @@ public sealed class GlobalCatalogRepository(
             : datacenters.Where(datacenter => datacenter.OwnerUserId != userId &&
                 AuthorizedServers(userId, CatalogView.Shared, utcNow)
                     .Any(server => server.DatacenterId == datacenter.Id && server.OwnerUserId == datacenter.OwnerUserId));
+        if (!string.IsNullOrWhiteSpace(normalizedOwnerUserId))
+            datacenters = datacenters.Where(datacenter => datacenter.OwnerUserId == normalizedOwnerUserId);
         if (cursor is not null)
         {
             var name = cursor.SortValues[0];
@@ -454,23 +481,35 @@ public sealed class GlobalCatalogRepository(
             SharedLabelIds = access[row.Id].SharedLabelIds,
             Capabilities = query.View == CatalogView.Mine ? CatalogCapabilities.Owner : CatalogCapabilities.ReadOnly
         }).ToList();
-        return Page(items, hasNext, "datacenters", query, userId, CatalogFilterFingerprint.None, item => [item.Name], item => item.Id);
+        return Page(items, hasNext, "datacenters", query, userId, fingerprint, item => [item.Name], item => item.Id);
     }
 
     public async Task<CursorPageDto<CatalogLabelDto>> GetLabelsAsync(
         string userId,
         CatalogPageQuery query,
         DateTime utcNow,
+        string? ownerUserId = null,
+        string? labelKey = null,
+        string? labelValue = null,
         CancellationToken cancellationToken = default)
     {
         Validate(userId, query);
-        var cursor = Position("labels", query, userId, CatalogFilterFingerprint.None, 2);
+        var normalizedOwnerUserId = ownerUserId?.Trim();
+        var normalizedLabelKey = labelKey?.Trim();
+        var normalizedLabelValue = labelValue?.Trim();
+        var fingerprint = CatalogFilterFingerprint.Resources(normalizedOwnerUserId, normalizedLabelKey, normalizedLabelValue);
+        var cursor = Position("labels", query, userId, fingerprint, 2);
         var activeGrants = ActiveGrants(userId, utcNow);
         var labels = context.Labels.IgnoreQueryFilters().AsNoTracking()
             .Where(label => label.OwnerUserId != null);
         labels = query.View == CatalogView.Mine
             ? labels.Where(label => label.OwnerUserId == userId)
             : labels.Where(label => label.OwnerUserId != userId && activeGrants.Any(grant => grant.LabelId == label.Id && grant.OwnerUserId == label.OwnerUserId));
+        if (!string.IsNullOrWhiteSpace(normalizedOwnerUserId))
+            labels = labels.Where(label => label.OwnerUserId == normalizedOwnerUserId);
+        if (!string.IsNullOrWhiteSpace(normalizedLabelKey))
+            labels = labels.Where(label => label.Key == normalizedLabelKey &&
+                (string.IsNullOrWhiteSpace(normalizedLabelValue) || label.Value == normalizedLabelValue));
         if (cursor is not null)
         {
             var key = cursor.SortValues[0];
@@ -519,7 +558,7 @@ public sealed class GlobalCatalogRepository(
             SharedLabelIds = permissionByLabel[row.Id].SharedLabelIds,
             Capabilities = permissionByLabel[row.Id].Capabilities
         }).ToList();
-        return Page(items, hasNext, "labels", query, userId, CatalogFilterFingerprint.None, item => [item.Key, item.Value], item => item.Id);
+        return Page(items, hasNext, "labels", query, userId, fingerprint, item => [item.Key, item.Value], item => item.Id);
     }
 
     public async Task<CursorPageDto<SearchResultDto>> SearchAsync(
@@ -527,20 +566,44 @@ public sealed class GlobalCatalogRepository(
         string keyword,
         CatalogPageQuery query,
         DateTime utcNow,
+        string? ownerUserId = null,
+        string? labelKey = null,
+        string? labelValue = null,
         CancellationToken cancellationToken = default)
     {
         Validate(userId, query);
         if (string.IsNullOrWhiteSpace(keyword) || keyword.Trim().Length < 2)
             return new CursorPageDto<SearchResultDto>([], null, false);
         var search = keyword.Trim().ToLower();
-        var fingerprint = CatalogFilterFingerprint.Search(search);
+        var normalizedOwnerUserId = ownerUserId?.Trim();
+        var normalizedLabelKey = labelKey?.Trim();
+        var normalizedLabelValue = labelValue?.Trim();
+        var fingerprint = CatalogFilterFingerprint.Search(search, normalizedOwnerUserId, normalizedLabelKey, normalizedLabelValue);
         var cursor = Position("search", query, userId, fingerprint, 2);
-        var servers = AuthorizedServers(userId, query.View, utcNow)
+        var serverEntities = AuthorizedServers(userId, query.View, utcNow);
+        var applicationEntities = AuthorizedApplications(userId, query.View, utcNow);
+        if (!string.IsNullOrWhiteSpace(normalizedOwnerUserId))
+        {
+            serverEntities = serverEntities.Where(server => server.OwnerUserId == normalizedOwnerUserId);
+            applicationEntities = applicationEntities.Where(application => application.OwnerUserId == normalizedOwnerUserId);
+        }
+        if (!string.IsNullOrWhiteSpace(normalizedLabelKey))
+        {
+            serverEntities = serverEntities.Where(server => context.ServerLabels.IgnoreQueryFilters().Any(link =>
+                link.ServerId == server.Id && link.OwnerUserId == server.OwnerUserId && link.Label != null &&
+                link.Label.Key == normalizedLabelKey &&
+                (string.IsNullOrWhiteSpace(normalizedLabelValue) || link.Label.Value == normalizedLabelValue)));
+            applicationEntities = applicationEntities.Where(application => context.ApplicationLabels.IgnoreQueryFilters().Any(link =>
+                link.ApplicationId == application.Id && link.OwnerUserId == application.OwnerUserId && link.Label != null &&
+                link.Label.Key == normalizedLabelKey &&
+                (string.IsNullOrWhiteSpace(normalizedLabelValue) || link.Label.Value == normalizedLabelValue)));
+        }
+        var servers = serverEntities
             .Where(server => server.Hostname.ToLower().Contains(search) || server.IpAddress.ToLower().Contains(search))
             .Select(server => new SearchRow(
                 server.Id, server.OwnerUserId!, "SERVER", server.Hostname, server.IpAddress,
                 server.Hostname.ToLower().Contains(search) ? "Matched by Server Hostname" : "Matched by Server IP"));
-        var applications = AuthorizedApplications(userId, query.View, utcNow)
+        var applications = applicationEntities
             .Where(application => application.AppName.ToLower().Contains(search) || application.AppCode.ToLower().Contains(search))
             .Select(application => new SearchRow(
                 application.Id, application.OwnerUserId!, "APP", application.AppName, application.AppCode,

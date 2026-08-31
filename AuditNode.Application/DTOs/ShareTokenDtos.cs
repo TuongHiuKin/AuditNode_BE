@@ -4,9 +4,9 @@ public sealed record ShareTokenResolutionDto(
     Guid LabelId,
     string OwnerUserId,
     string Permission,
+    Guid GrantId,
     bool SharesAllOwnerResources = false,
-    string? WarningCode = null,
-    Guid GrantId = default);
+    string? WarningCode = null);
 
 public enum ShareTokenMutationStatus
 {
@@ -46,6 +46,15 @@ public sealed record CreateShareLinkResponseDto(
     Guid GrantId,
     string Token,
     DateTimeOffset ExpiresAt,
+    long Version,
+    bool SharesAllOwnerResources,
+    string? WarningCode);
+
+public sealed record ShareLinkMetadataDto(
+    Guid GrantId,
+    Guid LabelId,
+    DateTimeOffset ExpiresAt,
+    DateTimeOffset? RevokedAt,
     long Version,
     bool SharesAllOwnerResources,
     string? WarningCode);

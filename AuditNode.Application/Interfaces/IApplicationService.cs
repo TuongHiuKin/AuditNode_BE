@@ -5,7 +5,7 @@ namespace AuditNode.Application.Interfaces;
 public interface IApplicationService
 {
     Task<IEnumerable<ApplicationResponseDto>> GetAllAsync(string? labelKey = null, string? labelValue = null);
-    Task<CursorPageDto<ApplicationResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default);
+    Task<CursorPageDto<ApplicationResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? labelKey = null, string? labelValue = null, string? ownerUserId = null, CancellationToken cancellationToken = default);
     Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids);
     Task<ApplicationResponseDto?> GetByIdAsync(Guid id);
     Task<ApplicationResponseDto?> GetCatalogDetailAsync(Guid id, CancellationToken cancellationToken = default);

@@ -28,6 +28,10 @@ public sealed class ShareLinksControllerTests
         ResponseContracts(nameof(ShareLinksController.Create))
             .Should().NotContain(contract => contract.StatusCode == StatusCodes.Status200OK,
                 "ApiExplorer must not infer 200 for create");
+        ResponseContracts(nameof(ShareLinksController.List)).Should().BeEquivalentTo([
+            new ResponseContract(StatusCodes.Status200OK, typeof(IReadOnlyList<ShareLinkMetadataDto>)),
+            new ResponseContract(StatusCodes.Status404NotFound, typeof(void))
+        ]);
         ResponseContracts(nameof(ShareLinksController.Revoke)).Should().BeEquivalentTo([
             new ResponseContract(StatusCodes.Status204NoContent, typeof(void)),
             new ResponseContract(StatusCodes.Status400BadRequest, typeof(void)),
@@ -105,6 +109,21 @@ public sealed class ShareLinksControllerTests
         created.StatusCode.Should().Be(StatusCodes.Status201Created);
         created.Value.Should().BeOfType<CreateShareLinkResponseDto>()
             .Which.Token.Should().Be("raw-token");
+    }
+
+    [Fact]
+    public async Task List_returns_safe_metadata_without_raw_tokens()
+    {
+        var labelId = Guid.NewGuid();
+        var tokenService = new Mock<IShareTokenService>();
+        tokenService.Setup(service => service.ListAsync(labelId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new ShareLinkMetadataDto(
+                Guid.NewGuid(), labelId, DateTimeOffset.UtcNow.AddHours(1), null, 1, false, null)]);
+
+        var result = await new ShareLinksController(tokenService.Object, Mock.Of<IShareCatalogService>())
+            .List(labelId);
+
+        result.Result.Should().BeOfType<OkObjectResult>();
     }
 
     [Theory]

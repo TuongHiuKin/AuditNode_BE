@@ -55,7 +55,7 @@ public sealed class ShareTokenServiceTests
         var empty = await Service(context, null).ResolveAsync(string.Empty);
 
         valid.Should().Be(new ShareTokenResolutionDto(
-            label.Id, "owner", LabelGrantPermissions.Viewer, GrantId: created.GrantId!.Value));
+            label.Id, "owner", LabelGrantPermissions.Viewer, created.GrantId!.Value));
         invalid.Should().BeNull();
         empty.Should().BeNull();
     }
@@ -151,6 +151,32 @@ public sealed class ShareTokenServiceTests
 
         logger.Messages.Should().NotContain(message =>
             message.Contains(result.RawToken!, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task List_returns_only_safe_link_metadata_to_the_label_owner()
+    {
+        await using var context = Context();
+        var label = BusinessLabel("owner");
+        context.Labels.Add(label);
+        await context.SaveChangesAsync();
+        var owner = Service(context, "owner");
+        var created = await owner.CreateAsync(label.Id, Now.AddHours(1));
+
+        var links = await owner.ListAsync(label.Id);
+        var denied = await Service(context, "other").ListAsync(label.Id);
+
+        links.Should().ContainSingle().Which.Should().Be(new ShareLinkMetadataDto(
+            created.GrantId!.Value,
+            label.Id,
+            Now.AddHours(1),
+            null,
+            created.Version!.Value,
+            false,
+            null));
+        denied.Should().BeNull();
+        typeof(ShareLinkMetadataDto).GetProperties().Select(property => property.Name)
+            .Should().NotContain(name => name.Contains("Token", StringComparison.OrdinalIgnoreCase));
     }
 
     private static ShareTokenService Service(

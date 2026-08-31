@@ -25,10 +25,10 @@ public class DatacenterService : IDatacenterService
         _timeProvider = timeProvider;
     }
 
-    public Task<CursorPageDto<DatacenterDto>> GetCatalogPageAsync(CatalogPageQuery query, CancellationToken cancellationToken = default) =>
+    public Task<CursorPageDto<DatacenterDto>> GetCatalogPageAsync(CatalogPageQuery query, string? ownerUserId = null, CancellationToken cancellationToken = default) =>
         string.IsNullOrWhiteSpace(_currentUser.UserId)
             ? Task.FromResult(new CursorPageDto<DatacenterDto>([], null, false))
-            : _catalog.GetDatacentersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            : _catalog.GetDatacentersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, ownerUserId, cancellationToken);
 
     public async Task<IEnumerable<DatacenterDto>> GetDatacentersAsync()
     {

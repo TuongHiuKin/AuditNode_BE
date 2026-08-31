@@ -24,10 +24,10 @@ public class InventorySearchService : IInventorySearchService
         _timeProvider = timeProvider;
     }
 
-    public Task<CursorPageDto<SearchResultDto>> SearchAsync(string keyword, CatalogPageQuery query, CancellationToken cancellationToken = default) =>
+    public Task<CursorPageDto<SearchResultDto>> SearchAsync(string keyword, CatalogPageQuery query, string? ownerUserId = null, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default) =>
         string.IsNullOrWhiteSpace(_currentUser.UserId)
             ? Task.FromResult(new CursorPageDto<SearchResultDto>([], null, false))
-            : _catalog.SearchAsync(_currentUser.UserId!, keyword, query, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+            : _catalog.SearchAsync(_currentUser.UserId!, keyword, query, _timeProvider.GetUtcNow().UtcDateTime, ownerUserId, labelKey, labelValue, cancellationToken);
 
     public async Task<IEnumerable<SearchResultDto>> SearchAsync(string keyword)
     {

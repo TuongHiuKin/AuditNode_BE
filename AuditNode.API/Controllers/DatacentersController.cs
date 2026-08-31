@@ -29,11 +29,12 @@ public class DatacentersController : ControllerBase
         [FromQuery] string? view = null,
         [FromQuery] int? limit = null,
         [FromQuery] string? cursor = null,
+        [FromQuery] string? ownerUserId = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            return Ok(await _datacenterService.GetCatalogPageAsync(CatalogPageQuery.Parse(view, limit, cursor), cancellationToken));
+            return Ok(await _datacenterService.GetCatalogPageAsync(CatalogPageQuery.Parse(view, limit, cursor), ownerUserId, cancellationToken));
         }
         catch (CatalogQueryValidationException exception)
         {

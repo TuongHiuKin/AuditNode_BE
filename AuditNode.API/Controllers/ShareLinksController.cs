@@ -13,6 +13,17 @@ namespace AuditNode.API.Controllers;
 [Route("api/v1")]
 public sealed class ShareLinksController(IShareTokenService shareTokens, IShareCatalogService shareCatalog) : ControllerBase
 {
+    [HttpGet("labels/{labelId:guid}/share-links")]
+    [ProducesResponseType(typeof(IReadOnlyList<ShareLinkMetadataDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<IReadOnlyList<ShareLinkMetadataDto>>> List(
+        Guid labelId,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await shareTokens.ListAsync(labelId, cancellationToken);
+        return result is null ? NotFound(DeniedError()) : Ok(result);
+    }
+
     [HttpPost("labels/{labelId:guid}/share-links")]
     [EnableRateLimiting("share-link-create")]
     [ProducesResponseType(typeof(CreateShareLinkResponseDto), StatusCodes.Status201Created)]

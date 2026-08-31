@@ -28,11 +28,15 @@ public class ServersController : ControllerBase
         [FromQuery] string? view = null,
         [FromQuery] int? limit = null,
         [FromQuery] string? cursor = null,
+        [FromQuery] string? ownerUserId = null,
+        [FromQuery] string? labelKey = null,
+        [FromQuery] string? labelValue = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            var result = await _serverService.GetCatalogPageAsync(CatalogPageQuery.Parse(view, limit, cursor), cancellationToken);
+            var result = await _serverService.GetCatalogPageAsync(
+                CatalogPageQuery.Parse(view, limit, cursor), ownerUserId, labelKey, labelValue, cancellationToken);
             return Ok(result);
         }
         catch (CatalogQueryValidationException exception)

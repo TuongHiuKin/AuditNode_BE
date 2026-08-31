@@ -230,8 +230,10 @@ public class TopologyRepositoryTests
         var map = await Repository(context).GetDependencyMapAsync();
         var nodes = map.Servers.SelectMany(server => server.Applications).ToArray();
 
+        map.Servers.Should().OnlyContain(server => server.CanEdit);
         nodes.Select(node => node.Id).Should().BeEquivalentTo([firstMapping.Id, secondMapping.Id]);
         nodes.Should().OnlyContain(node => node.AppId == app.Id);
+        nodes.Should().OnlyContain(node => node.CanEdit);
         nodes.Select(node => node.ServerId).Should().BeEquivalentTo([first.Id, second.Id]);
     }
 
@@ -305,8 +307,60 @@ public class TopologyRepositoryTests
         connection.Id.Should().NotBe(dependency.Id);
         connection.ConnectionType.Should().Be("Restricted");
         connection.IsRestricted.Should().BeTrue();
+        connection.CanEdit.Should().BeFalse();
+        map.Servers.Should().OnlyContain(server => !server.CanEdit && server.Applications.All(application => !application.CanEdit));
         map.RestrictedNodes.Should().ContainSingle(x => x.Id == connection.TargetAppId && x.IsRestricted && x.DisplayName == "External Resource (Restricted)");
         map.Servers.Should().NotContain(x => x.Id == hiddenServer.Id || x.Hostname == hiddenServer.Hostname);
+    }
+
+    [Fact]
+    public async Task Editor_application_is_not_editable_when_its_hosting_server_is_viewer_only()
+    {
+        using var context = GetDbContext();
+        var workspaceId = context.CurrentWorkspaceId!.Value;
+        var server = new Server
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = "test-user",
+            DatacenterId = Guid.NewGuid(), Hostname = "viewer-host", IpAddress = "10.0.0.10"
+        };
+        var application = new AppEntity
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = "test-user",
+            AppCode = "EDIT-APP", AppName = "Editor application"
+        };
+        var mapping = new PortMapping
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = "test-user",
+            ServerId = server.Id, AppId = application.Id, PortNumber = 443
+        };
+        var serverLabel = new Label
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = "test-user",
+            Key = "scope", Value = "server-viewer", Kind = LabelKinds.Business
+        };
+        var applicationLabel = new Label
+        {
+            Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = "test-user",
+            Key = "scope", Value = "application-editor", Kind = LabelKinds.Business
+        };
+        context.AddRange(server, application, mapping, serverLabel, applicationLabel,
+            new ServerLabel { WorkspaceId = workspaceId, OwnerUserId = "test-user", ServerId = server.Id, LabelId = serverLabel.Id },
+            new ApplicationLabel { WorkspaceId = workspaceId, OwnerUserId = "test-user", ApplicationId = application.Id, LabelId = applicationLabel.Id },
+            new LabelGrant { Id = Guid.NewGuid(), OwnerUserId = "test-user", LabelId = serverLabel.Id, GranteeUserId = "editor", Permission = LabelGrantPermissions.Viewer, Version = 1, CreatedByUserId = "test-user" },
+            new LabelGrant { Id = Guid.NewGuid(), OwnerUserId = "test-user", LabelId = applicationLabel.Id, GranteeUserId = "editor", Permission = LabelGrantPermissions.Editor, Version = 1, CreatedByUserId = "test-user" });
+        await context.SaveChangesAsync();
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(item => item.UserId).Returns("editor");
+        var tenant = new Mock<ITenantProvider>();
+        tenant.SetupGet(item => item.WorkspaceId).Returns(workspaceId);
+
+        var map = await new TopologyRepository(context, user.Object, tenant.Object,
+            new OwnerGraphAccessService(context, user.Object, TimeProvider.System))
+            .GetDependencyMapAsync(ownerUserId: "test-user");
+
+        var visibleServer = map.Servers.Should().ContainSingle().Which;
+        visibleServer.CanEdit.Should().BeFalse();
+        visibleServer.Applications.Should().ContainSingle().Which.CanEdit.Should().BeFalse();
     }
 
     [Fact]
