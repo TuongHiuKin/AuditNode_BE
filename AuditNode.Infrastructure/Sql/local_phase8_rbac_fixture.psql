@@ -1,0 +1,158 @@
+\set ON_ERROR_STOP on
+
+-- Local-only Phase 8 fixture. Supply immutable Keycloak user IDs with:
+-- psql --set=confirm_local_phase8_seed=AUDITNODE_LOCAL_PHASE8 \
+--   --set=expected_database=AuditNode.db --set=owner_user_id=... \
+--   --set=editor_user_id=... --set=viewer_user_id=... -f local_phase8_rbac_fixture.psql
+-- The script never creates identities, assigns realm roles, or changes credentials.
+
+BEGIN;
+
+SELECT set_config('auditnode.phase8.owner_user_id', :'owner_user_id', true);
+SELECT set_config('auditnode.phase8.editor_user_id', :'editor_user_id', true);
+SELECT set_config('auditnode.phase8.viewer_user_id', :'viewer_user_id', true);
+SELECT set_config('auditnode.phase8.confirmation', :'confirm_local_phase8_seed', true);
+SELECT set_config('auditnode.phase8.expected_database', :'expected_database', true);
+
+DO $$
+DECLARE
+    owner_id text := current_setting('auditnode.phase8.owner_user_id');
+    editor_id text := current_setting('auditnode.phase8.editor_user_id');
+    viewer_id text := current_setting('auditnode.phase8.viewer_user_id');
+    confirmation text := current_setting('auditnode.phase8.confirmation');
+    expected_database text := current_setting('auditnode.phase8.expected_database');
+BEGIN
+    IF confirmation <> 'AUDITNODE_LOCAL_PHASE8'
+       OR expected_database <> current_database()
+       OR current_database() <> 'AuditNode.db' THEN
+        RAISE EXCEPTION 'Refusing Phase 8 fixture: explicit local confirmation and exact AuditNode.db target are required';
+    END IF;
+    IF owner_id = '' OR editor_id = '' OR viewer_id = '' THEN
+        RAISE EXCEPTION 'owner_user_id, editor_user_id and viewer_user_id are required';
+    END IF;
+    IF owner_id = editor_id OR owner_id = viewer_id OR editor_id = viewer_id THEN
+        RAISE EXCEPTION 'Phase 8 fixture identities must be distinct';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM datacenters
+        WHERE id = '81000000-0000-4000-8000-000000000001' AND owner_user_id <> owner_id
+        UNION ALL
+        SELECT 1 FROM servers
+        WHERE id IN ('81000000-0000-4000-8000-000000000011', '81000000-0000-4000-8000-000000000012') AND owner_user_id <> owner_id
+        UNION ALL
+        SELECT 1 FROM applications
+        WHERE id IN ('81000000-0000-4000-8000-000000000021', '81000000-0000-4000-8000-000000000022') AND owner_user_id <> owner_id
+        UNION ALL
+        SELECT 1 FROM port_mappings
+        WHERE id IN ('81000000-0000-4000-8000-000000000031', '81000000-0000-4000-8000-000000000032') AND owner_user_id <> owner_id
+        UNION ALL
+        SELECT 1 FROM labels
+        WHERE id IN ('81000000-0000-4000-8000-000000000041', '81000000-0000-4000-8000-000000000042') AND owner_user_id <> owner_id
+        UNION ALL
+        SELECT 1 FROM labels
+        WHERE id = '81000000-0000-4000-8000-000000000043' AND owner_user_id <> editor_id
+        UNION ALL
+        SELECT 1 FROM labels
+        WHERE id = '81000000-0000-4000-8000-000000000044' AND owner_user_id <> viewer_id
+        UNION ALL
+        SELECT 1 FROM label_grants
+        WHERE id = '81000000-0000-4000-8000-000000000051'
+          AND (owner_user_id <> owner_id
+               OR label_id <> '81000000-0000-4000-8000-000000000042'
+               OR grantee_user_id <> editor_id
+               OR token_hash IS NOT NULL)
+        UNION ALL
+        SELECT 1 FROM label_grants
+        WHERE id = '81000000-0000-4000-8000-000000000052'
+          AND (owner_user_id <> owner_id
+               OR label_id <> '81000000-0000-4000-8000-000000000042'
+               OR grantee_user_id <> viewer_id
+               OR token_hash IS NOT NULL)
+    ) THEN
+        RAISE EXCEPTION 'Phase 8 fixture IDs already belong to another owner';
+    END IF;
+END $$;
+
+INSERT INTO labels (id, owner_user_id, key, value, kind, is_protected, created_at, updated_at)
+VALUES
+    ('81000000-0000-4000-8000-000000000041', current_setting('auditnode.phase8.owner_user_id'), 'Owner', current_setting('auditnode.phase8.owner_user_id'), 'owner', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    ('81000000-0000-4000-8000-000000000042', current_setting('auditnode.phase8.owner_user_id'), 'environment', 'Phase8-Shared', 'business', false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    ('81000000-0000-4000-8000-000000000043', current_setting('auditnode.phase8.editor_user_id'), 'Owner', current_setting('auditnode.phase8.editor_user_id'), 'owner', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    ('81000000-0000-4000-8000-000000000044', current_setting('auditnode.phase8.viewer_user_id'), 'Owner', current_setting('auditnode.phase8.viewer_user_id'), 'owner', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO UPDATE SET
+    key = EXCLUDED.key,
+    value = EXCLUDED.value,
+    kind = EXCLUDED.kind,
+    is_protected = EXCLUDED.is_protected,
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO datacenters (id, owner_user_id, name, location)
+VALUES ('81000000-0000-4000-8000-000000000001', current_setting('auditnode.phase8.owner_user_id'), 'Phase 8 Datacenter', 'Local fixture')
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    location = EXCLUDED.location;
+
+INSERT INTO servers (id, owner_user_id, datacenter_id, hostname, ip_address, os_type, environment, status)
+VALUES
+    ('81000000-0000-4000-8000-000000000011', current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000001', 'phase8-shared-server', '10.248.0.11', 'Linux', 'Phase8-Shared', 'Online'),
+    ('81000000-0000-4000-8000-000000000012', current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000001', 'phase8-private-server', '10.248.0.12', 'Linux', 'Phase8-Private', 'Online')
+ON CONFLICT (id) DO UPDATE SET
+    datacenter_id = EXCLUDED.datacenter_id,
+    hostname = EXCLUDED.hostname,
+    ip_address = EXCLUDED.ip_address,
+    os_type = EXCLUDED.os_type,
+    environment = EXCLUDED.environment,
+    status = EXCLUDED.status;
+
+INSERT INTO applications (id, owner_user_id, app_code, app_name, owner_team, tech_stack, risk, icon)
+VALUES
+    ('81000000-0000-4000-8000-000000000021', current_setting('auditnode.phase8.owner_user_id'), 'PHASE8-SHARED', 'Phase 8 Shared App', 'Local QA', 'ASP.NET Core', 'Low', ''),
+    ('81000000-0000-4000-8000-000000000022', current_setting('auditnode.phase8.owner_user_id'), 'PHASE8-PRIVATE', 'Phase 8 Private App', 'Local QA', 'React', 'Low', '')
+ON CONFLICT (id) DO UPDATE SET
+    app_code = EXCLUDED.app_code,
+    app_name = EXCLUDED.app_name,
+    owner_team = EXCLUDED.owner_team,
+    tech_stack = EXCLUDED.tech_stack,
+    risk = EXCLUDED.risk,
+    icon = EXCLUDED.icon;
+
+INSERT INTO port_mappings (id, owner_user_id, server_id, app_id, port_number, protocol)
+VALUES
+    ('81000000-0000-4000-8000-000000000031', current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000011', '81000000-0000-4000-8000-000000000021', 18443, 'HTTPS'),
+    ('81000000-0000-4000-8000-000000000032', current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000012', '81000000-0000-4000-8000-000000000022', 18444, 'HTTPS')
+ON CONFLICT (id) DO UPDATE SET
+    server_id = EXCLUDED.server_id,
+    app_id = EXCLUDED.app_id,
+    port_number = EXCLUDED.port_number,
+    protocol = EXCLUDED.protocol;
+
+INSERT INTO server_labels (owner_user_id, server_id, label_id)
+VALUES (current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000011', '81000000-0000-4000-8000-000000000042')
+ON CONFLICT (server_id, label_id) DO UPDATE SET owner_user_id = EXCLUDED.owner_user_id;
+
+INSERT INTO application_labels (owner_user_id, application_id, label_id)
+VALUES (current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000021', '81000000-0000-4000-8000-000000000042')
+ON CONFLICT (application_id, label_id) DO UPDATE SET owner_user_id = EXCLUDED.owner_user_id;
+
+INSERT INTO label_grants (
+    id, owner_user_id, label_id, grantee_user_id, permission, token_hash,
+    expires_at, revoked_at, version, created_by_user_id, created_at, updated_at)
+VALUES
+    ('81000000-0000-4000-8000-000000000051', current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000042', current_setting('auditnode.phase8.editor_user_id'), 'editor', NULL, NULL, NULL, 1, current_setting('auditnode.phase8.owner_user_id'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    ('81000000-0000-4000-8000-000000000052', current_setting('auditnode.phase8.owner_user_id'), '81000000-0000-4000-8000-000000000042', current_setting('auditnode.phase8.viewer_user_id'), 'viewer', NULL, NULL, NULL, 1, current_setting('auditnode.phase8.owner_user_id'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (id) DO UPDATE SET
+    permission = EXCLUDED.permission,
+    token_hash = NULL,
+    expires_at = NULL,
+    revoked_at = NULL,
+    version = GREATEST(label_grants.version, 1),
+    updated_at = CURRENT_TIMESTAMP;
+
+INSERT INTO owner_catalog_states (owner_user_id, topology_version, updated_at)
+VALUES
+    (current_setting('auditnode.phase8.owner_user_id'), 0, CURRENT_TIMESTAMP),
+    (current_setting('auditnode.phase8.editor_user_id'), 0, CURRENT_TIMESTAMP),
+    (current_setting('auditnode.phase8.viewer_user_id'), 0, CURRENT_TIMESTAMP)
+ON CONFLICT (owner_user_id) DO NOTHING;
+
+COMMIT;
