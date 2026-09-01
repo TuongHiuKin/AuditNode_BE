@@ -397,12 +397,9 @@ public sealed class TopologyCommandService(
     {
         var mappingIds = new[] { source.ReferenceId!.Value, target.ReferenceId!.Value };
         var mappings = await context.PortMappings.IgnoreQueryFilters().Where(item => item.OwnerUserId == ownerUserId && mappingIds.Contains(item.Id))
-            .Select(item => new { item.Id, item.AppId, item.WorkspaceId }).ToDictionaryAsync(item => item.Id, cancellationToken);
-        if (mappings.Count != 2 || mappings.Values.Select(item => item.WorkspaceId).Distinct().Count() != 1)
+            .Select(item => new { item.Id, item.AppId }).ToDictionaryAsync(item => item.Id, cancellationToken);
+        if (mappings.Count != 2)
             return (null, ForbiddenTuple("Cross-owner or cross-catalog dependency edges are forbidden."));
-        var workspaceId = mappings.Values.First().WorkspaceId;
-        if (source.WorkspaceId != workspaceId || target.WorkspaceId != workspaceId)
-            return (null, ForbiddenTuple("Topology nodes and deployment references must belong to the same catalog."));
         var sourceAppId = mappings[source.ReferenceId.Value].AppId;
         var targetAppId = mappings[target.ReferenceId.Value].AppId;
         if (sourceAppId == targetAppId) return (null, InvalidTuple("An application cannot depend on itself."));
@@ -417,7 +414,7 @@ public sealed class TopologyCommandService(
             entry.Entity.DestPortId == target.ReferenceId.Value);
         if (duplicate) return (null, InvalidTuple("Duplicate dependencies are not allowed."));
 
-        var dependency = existing ?? new AppDependency { Id = dependencyId, WorkspaceId = workspaceId, OwnerUserId = ownerUserId, CreatedAt = DateTime.UtcNow };
+        var dependency = existing ?? new AppDependency { Id = dependencyId, OwnerUserId = ownerUserId, CreatedAt = DateTime.UtcNow };
         dependency.SourceAppId = sourceAppId;
         dependency.DestAppId = targetAppId;
         dependency.DestPortId = target.ReferenceId.Value;
@@ -428,7 +425,6 @@ public sealed class TopologyCommandService(
     private static TopologyEdge NewEdge(Guid id, TopologyCommandDto operation, Guid dependencyId, TopologyNode source, string ownerUserId) => new()
     {
         Id = id,
-        WorkspaceId = source.WorkspaceId,
         OwnerUserId = ownerUserId,
         SourceNodeId = operation.SourceNodeId!.Value,
         TargetNodeId = operation.TargetNodeId!.Value,

@@ -56,8 +56,6 @@ public sealed class LabelAccessServiceTests
         var server = Server("owner");
         var viewerLabel = Label("owner", LabelKinds.Business);
         var editorLabel = Label("owner", LabelKinds.Business);
-        viewerLabel.WorkspaceId = server.WorkspaceId;
-        editorLabel.WorkspaceId = server.WorkspaceId;
         context.AddRange(server, viewerLabel, editorLabel);
         context.ServerLabels.AddRange(
             Join(server, viewerLabel),
@@ -103,11 +101,9 @@ public sealed class LabelAccessServiceTests
         await using var context = Context();
         var application = App("owner");
         var label = Label("owner", LabelKinds.Business);
-        label.WorkspaceId = application.WorkspaceId;
         context.AddRange(application, label);
         context.ApplicationLabels.Add(new ApplicationLabel
         {
-            WorkspaceId = application.WorkspaceId,
             OwnerUserId = application.OwnerUserId,
             ApplicationId = application.Id,
             LabelId = label.Id
@@ -134,9 +130,6 @@ public sealed class LabelAccessServiceTests
         var activeLabel = Label("owner", LabelKinds.Business);
         var expiredLabel = Label("expired-owner", LabelKinds.Business);
         var revokedLabel = Label("revoked-owner", LabelKinds.Business);
-        activeLabel.WorkspaceId = shared.WorkspaceId;
-        expiredLabel.WorkspaceId = expired.WorkspaceId;
-        revokedLabel.WorkspaceId = revoked.WorkspaceId;
         context.AddRange(mine, shared, expired, revoked, activeLabel, expiredLabel, revokedLabel);
         context.ServerLabels.AddRange(
             Join(shared, activeLabel),
@@ -157,17 +150,6 @@ public sealed class LabelAccessServiceTests
         (await service.GetServerAccessAsync(revoked.Id)).Should().BeNull();
     }
 
-    [Fact]
-    public async Task Null_legacy_owner_never_activates_owner_authorization()
-    {
-        await using var context = Context();
-        var server = Server(null);
-        context.Servers.Add(server);
-        await context.SaveChangesAsync();
-
-        (await Service(context, "owner").GetServerAccessAsync(server.Id)).Should().BeNull();
-    }
-
     private static LabelAccessService Service(AuditDbContext context, string userId)
     {
         var currentUser = new Mock<ICurrentUserService>();
@@ -177,19 +159,16 @@ public sealed class LabelAccessServiceTests
 
     private static AuditDbContext Context()
     {
-        var tenant = new Mock<ITenantProvider>();
         return new AuditDbContext(
             new DbContextOptionsBuilder<AuditDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options,
-            tenant.Object);
+                .Options);
     }
 
     private static Server Server(string? owner) => new()
     {
         Id = Guid.NewGuid(),
         OwnerUserId = owner,
-        WorkspaceId = Guid.NewGuid(),
         DatacenterId = Guid.NewGuid(),
         Hostname = Guid.NewGuid().ToString("N"),
         IpAddress = Guid.NewGuid().ToString("N"),
@@ -200,20 +179,20 @@ public sealed class LabelAccessServiceTests
 
     private static AuditNode.Domain.Entities.Application App(string owner) => new()
     {
-        Id = Guid.NewGuid(), WorkspaceId = Guid.NewGuid(), OwnerUserId = owner,
+        Id = Guid.NewGuid(), OwnerUserId = owner,
         AppCode = Guid.NewGuid().ToString("N"), AppName = "App", OwnerTeam = "Team", Risk = "Low"
     };
 
     private static Label Label(string owner, string kind) => new()
     {
-        Id = Guid.NewGuid(), WorkspaceId = Guid.NewGuid(), OwnerUserId = owner,
+        Id = Guid.NewGuid(), OwnerUserId = owner,
         Key = kind, Value = Guid.NewGuid().ToString("N"), Kind = kind,
         IsProtected = kind == LabelKinds.Owner
     };
 
     private static ServerLabel Join(Server server, Label label) => new()
     {
-        WorkspaceId = server.WorkspaceId, OwnerUserId = server.OwnerUserId,
+        OwnerUserId = server.OwnerUserId,
         ServerId = server.Id, LabelId = label.Id
     };
 

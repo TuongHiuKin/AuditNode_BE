@@ -3,7 +3,6 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Errors;
-using AuditNode.API.Middleware;
 using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
@@ -20,7 +19,6 @@ public class InventorySearchController : ControllerBase
         _searchService = searchService;
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet]
     [ProducesResponseType(typeof(CursorPageDto<SearchResultDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

@@ -10,9 +10,9 @@ public interface IApplicationRepository
     Task<IEnumerable<ApplicationResponseDto>> GetByIdsAsync(IEnumerable<Guid> ids);
     Task<IEnumerable<ApplicationResponseDto>> GetScopedAsync(IReadOnlySet<Guid>? applicationIds, IReadOnlySet<Guid>? serverIds, IEnumerable<Guid>? requestedIds = null, string? labelKey = null, string? labelValue = null);
     Task<AppEntity?> GetByIdAsync(Guid id);
-    Task<bool> AppCodeExistsAsync(string appCode, Guid? excludeApplicationId = null);
-    Task<bool> ServerExistsAsync(Guid serverId);
-    Task<bool> PortCollisionExistsAsync(Guid serverId, int portNumber, Guid? excludePortMappingId = null);
+    Task<bool> AppCodeExistsAsync(string appCode, string ownerUserId, Guid? excludeApplicationId = null);
+    Task<bool> ServerExistsAsync(Guid serverId, string ownerUserId);
+    Task<bool> PortCollisionExistsAsync(Guid serverId, int portNumber, string ownerUserId, Guid? excludePortMappingId = null);
     Task<PortMapping?> GetPortMappingAsync(Guid portMappingId);
     Task<AppEntity> CreateAsync(
         AppEntity application,

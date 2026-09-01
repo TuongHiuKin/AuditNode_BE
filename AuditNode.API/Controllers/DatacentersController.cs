@@ -4,7 +4,6 @@ using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Security;
-using AuditNode.API.Middleware;
 using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
@@ -21,7 +20,6 @@ public class DatacentersController : ControllerBase
         _datacenterService = datacenterService;
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet]
     [ProducesResponseType(typeof(CursorPageDto<DatacenterDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -42,7 +40,6 @@ public class DatacentersController : ControllerBase
         }
     }
 
-    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpPost]
     public async Task<ActionResult<DatacenterDto>> CreateDatacenter(CreateDatacenterDto dto)
     {

@@ -1,6 +1,6 @@
 namespace AuditNode.Application.Interfaces;
 
-public sealed record IdentityAdminUserDto(string Id, string Username, string? Email, bool Enabled, int WorkspaceCount = 0, bool IsSystemAdmin = false);
+public sealed record IdentityAdminUserDto(string Id, string Username, string? Email, bool Enabled, bool IsSystemAdmin = false);
 public sealed record CreateIdentityAdminUserDto(string Username, string Email, string Password);
 public interface IIdentityAdminService
 {

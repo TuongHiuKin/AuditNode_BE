@@ -3,9 +3,7 @@ namespace AuditNode.Domain.Entities;
 public class PortMapping
 {
     public Guid Id { get; set; }
-    public Guid WorkspaceId { get; set; }
     public string? OwnerUserId { get; set; }
-    public Workspace? Workspace { get; set; }
     public Guid ServerId { get; set; }
     public Guid AppId { get; set; }
     public int PortNumber { get; set; }

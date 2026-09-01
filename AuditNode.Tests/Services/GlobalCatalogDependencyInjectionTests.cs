@@ -20,7 +20,6 @@ public sealed class GlobalCatalogDependencyInjectionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton(Mock.Of<ITenantProvider>());
         services.AddSingleton(Mock.Of<ICurrentUserService>());
         services.AddDbContext<AuditDbContext>(options => options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
         services.AddSingleton<ICatalogCursorProtector>(new DataProtectionCatalogCursorProtector(new EphemeralDataProtectionProvider()));

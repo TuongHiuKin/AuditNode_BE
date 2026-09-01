@@ -2,7 +2,6 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Errors;
-using AuditNode.API.Middleware;
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Exceptions;
 
@@ -20,7 +19,6 @@ public class AnalyticsController : ControllerBase
         _analyticsRepository = analyticsRepository;
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("topology")]
     public async Task<ActionResult> GetTopology([FromQuery] string? environment, [FromQuery] Guid? datacenterId, [FromQuery] string? view = null, CancellationToken cancellationToken = default)
     {
@@ -39,7 +37,6 @@ public class AnalyticsController : ControllerBase
         }
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("dependencies")]
     public async Task<ActionResult> GetDependencies([FromQuery] string? environment, [FromQuery] Guid? datacenterId, [FromQuery] string? view = null, CancellationToken cancellationToken = default)
     {

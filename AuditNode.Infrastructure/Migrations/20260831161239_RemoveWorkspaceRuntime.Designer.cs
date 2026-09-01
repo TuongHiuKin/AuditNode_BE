@@ -3,6 +3,7 @@ using System;
 using AuditNode.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AuditNode.Infrastructure.Migrations
 {
     [DbContext(typeof(AuditDbContext))]
-    partial class AuditDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260831161239_RemoveWorkspaceRuntime")]
+    partial class RemoveWorkspaceRuntime
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -58,11 +61,11 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("OwnerUserId", "Id");
+                    b.HasIndex("DestAppId");
 
-                    b.HasIndex("OwnerUserId", "DestAppId");
+                    b.HasIndex("DestPortId");
 
-                    b.HasIndex("OwnerUserId", "DestPortId");
+                    b.HasIndex("SourceAppId");
 
                     b.HasIndex("OwnerUserId", "SourceAppId", "DestAppId", "DestPortId")
                         .IsUnique();
@@ -140,7 +143,7 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasKey("ApplicationId", "LabelId");
 
-                    b.HasIndex("OwnerUserId", "ApplicationId");
+                    b.HasIndex("LabelId");
 
                     b.HasIndex("OwnerUserId", "LabelId");
 
@@ -440,7 +443,9 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OwnerUserId", "AppId");
+                    b.HasIndex("AppId");
+
+                    b.HasIndex("ServerId");
 
                     b.HasIndex("OwnerUserId", "ServerId", "PortNumber")
                         .IsUnique();
@@ -492,7 +497,7 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OwnerUserId", "DatacenterId");
+                    b.HasIndex("DatacenterId");
 
                     b.HasIndex("OwnerUserId", "IpAddress")
                         .IsUnique();
@@ -518,9 +523,9 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasKey("ServerId", "LabelId");
 
-                    b.HasIndex("OwnerUserId", "LabelId");
+                    b.HasIndex("LabelId");
 
-                    b.HasIndex("OwnerUserId", "ServerId");
+                    b.HasIndex("OwnerUserId", "LabelId");
 
                     b.ToTable("server_labels", (string)null);
                 });
@@ -572,9 +577,9 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasAlternateKey("OwnerUserId", "Id");
+                    b.HasIndex("SourceNodeId");
 
-                    b.HasIndex("OwnerUserId", "TargetNodeId");
+                    b.HasIndex("TargetNodeId");
 
                     b.HasIndex("OwnerUserId", "SourceNodeId", "TargetNodeId", "SourceHandle", "TargetHandle")
                         .IsUnique();
@@ -633,7 +638,7 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasIndex("OwnerUserId");
 
-                    b.HasIndex("OwnerUserId", "ParentNodeId");
+                    b.HasIndex("ParentNodeId");
 
                     b.ToTable("topology_nodes", (string)null);
                 });
@@ -700,22 +705,19 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.Application", "DestinationApplication")
                         .WithMany("DestinationDependencies")
-                        .HasForeignKey("OwnerUserId", "DestAppId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("DestAppId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.PortMapping", "DestinationPort")
                         .WithMany("AppDependencies")
-                        .HasForeignKey("OwnerUserId", "DestPortId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("DestPortId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Application", "SourceApplication")
                         .WithMany("SourceDependencies")
-                        .HasForeignKey("OwnerUserId", "SourceAppId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("SourceAppId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -730,15 +732,13 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.Application", "Application")
                         .WithMany("ApplicationLabels")
-                        .HasForeignKey("OwnerUserId", "ApplicationId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("ApplicationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Label", "Label")
                         .WithMany("ApplicationLabels")
-                        .HasForeignKey("OwnerUserId", "LabelId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("LabelId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -751,8 +751,7 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.Label", "Label")
                         .WithMany("Grants")
-                        .HasForeignKey("OwnerUserId", "LabelId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("LabelId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -763,15 +762,13 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.Application", "Application")
                         .WithMany("PortMappings")
-                        .HasForeignKey("OwnerUserId", "AppId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("AppId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Server", "Server")
                         .WithMany("PortMappings")
-                        .HasForeignKey("OwnerUserId", "ServerId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("ServerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -784,8 +781,7 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.Datacenter", "Datacenter")
                         .WithMany("Servers")
-                        .HasForeignKey("OwnerUserId", "DatacenterId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("DatacenterId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -796,15 +792,13 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.Label", "Label")
                         .WithMany("ServerLabels")
-                        .HasForeignKey("OwnerUserId", "LabelId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("LabelId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Server", "Server")
                         .WithMany("ServerLabels")
-                        .HasForeignKey("OwnerUserId", "ServerId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("ServerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -817,15 +811,13 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.TopologyNode", "SourceNode")
                         .WithMany()
-                        .HasForeignKey("OwnerUserId", "SourceNodeId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("SourceNodeId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.TopologyNode", "TargetNode")
                         .WithMany()
-                        .HasForeignKey("OwnerUserId", "TargetNodeId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("TargetNodeId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -838,8 +830,7 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.HasOne("AuditNode.Domain.Entities.TopologyNode", "ParentNode")
                         .WithMany("ChildNodes")
-                        .HasForeignKey("OwnerUserId", "ParentNodeId")
-                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .HasForeignKey("ParentNodeId")
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("ParentNode");

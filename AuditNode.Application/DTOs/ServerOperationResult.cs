@@ -3,11 +3,10 @@ namespace AuditNode.Application.DTOs;
 public enum ServerOperationStatus
 {
     Success,
-    InvalidWorkspace,
     NotFound,
     DatacenterNotFound,
-    DuplicateIp
-    ,Forbidden
+    DuplicateIp,
+    Forbidden
 }
 
 public sealed record ServerOperationResult(

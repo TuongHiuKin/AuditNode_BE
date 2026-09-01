@@ -17,12 +17,13 @@ public sealed class LabelPolicyDependencyInjectionTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton(Mock.Of<ITenantProvider>());
         services.AddSingleton(Mock.Of<ICurrentUserService>());
         services.AddSingleton(Mock.Of<IIdentityAdminService>());
         services.AddDbContext<AuditDbContext>(options =>
             options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
         services.AddScoped<ILabelAccessService, LabelAccessService>();
+        services.AddScoped<IOwnerGraphAccessService, OwnerGraphAccessService>();
+        services.AddScoped<ILabelMutationCoordinator, LabelMutationCoordinator>();
         services.AddScoped<ILabelGrantService, LabelGrantService>();
         services.AddScoped<IShareTokenService, ShareTokenService>();
         services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();
@@ -35,6 +36,7 @@ public sealed class LabelPolicyDependencyInjectionTests
         using var scope = provider.CreateScope();
 
         scope.ServiceProvider.GetRequiredService<ILabelAccessService>().Should().BeOfType<LabelAccessService>();
+        scope.ServiceProvider.GetRequiredService<ILabelMutationCoordinator>().Should().BeOfType<LabelMutationCoordinator>();
         scope.ServiceProvider.GetRequiredService<ILabelGrantService>().Should().BeOfType<LabelGrantService>();
         scope.ServiceProvider.GetRequiredService<IShareTokenService>().Should().BeOfType<ShareTokenService>();
         scope.ServiceProvider.GetRequiredService<ILabelShareOptionsService>()

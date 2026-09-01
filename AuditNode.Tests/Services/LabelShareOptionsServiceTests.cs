@@ -102,16 +102,14 @@ public sealed class LabelShareOptionsServiceTests
 
     private static AuditDbContext Context()
     {
-        var tenant = new Mock<ITenantProvider>();
         return new AuditDbContext(
             new DbContextOptionsBuilder<AuditDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options,
-            tenant.Object);
+                .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
     }
 
     private static Label Label(string owner, string kind = LabelKinds.Business) => new()
     {
-        Id = Guid.NewGuid(), WorkspaceId = Guid.NewGuid(), OwnerUserId = owner,
+        Id = Guid.NewGuid(), OwnerUserId = owner,
         Key = "domain", Value = Guid.NewGuid().ToString("N"), Kind = kind,
         IsProtected = kind == LabelKinds.Owner
     };

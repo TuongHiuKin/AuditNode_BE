@@ -3,7 +3,6 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Security;
-using AuditNode.API.Middleware;
 
 namespace AuditNode.API.Controllers;
 
@@ -19,7 +18,6 @@ public class DependenciesController : ControllerBase
         _dependencyService = dependencyService;
     }
 
-    [SkipWorkspaceValidation]
     [HttpPut("sync")]
     public async Task<IActionResult> SyncDependencies([FromBody] SyncDependenciesDto dto)
     {

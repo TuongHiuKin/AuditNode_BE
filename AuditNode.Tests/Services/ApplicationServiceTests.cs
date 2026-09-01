@@ -12,16 +12,11 @@ namespace AuditNode.Tests.Services;
 public class ApplicationServiceTests
 {
     private readonly Mock<IApplicationRepository> _repository = new();
-    private readonly Mock<ITenantProvider> _tenant = new();
-
-    public ApplicationServiceTests() =>
-        _tenant.SetupGet(x => x.WorkspaceId).Returns(Guid.NewGuid());
-
     [Fact]
-    public async Task Create_rejects_duplicate_app_code_in_workspace()
+    public async Task Create_rejects_duplicate_app_code_in_owner_catalog()
     {
         var dto = ValidCreate();
-        _repository.Setup(x => x.AppCodeExistsAsync("APP01", null)).ReturnsAsync(true);
+        _repository.Setup(x => x.AppCodeExistsAsync("APP01", "test-user", null)).ReturnsAsync(true);
 
         var result = await Service().CreateAsync(dto);
 
@@ -31,15 +26,13 @@ public class ApplicationServiceTests
     }
 
     [Fact]
-    public async Task Create_with_deployment_rejects_server_outside_workspace()
+    public async Task Create_with_deployment_rejects_server_outside_owner_catalog()
     {
         var dto = ValidCreate();
         dto.Deployment = new CreateApplicationDeploymentDto
         {
             ServerId = Guid.NewGuid(), PortNumber = 443, Protocol = "TCP"
         };
-        _repository.Setup(x => x.ServerExistsAsync(dto.Deployment.ServerId)).ReturnsAsync(false);
-
         var result = await Service().CreateAsync(dto);
 
         result.Status.Should().Be(ApplicationOperationStatus.ServerNotFound);
@@ -54,7 +47,7 @@ public class ApplicationServiceTests
         {
             ServerId = Guid.NewGuid(), PortNumber = 443, Protocol = "tcp"
         };
-        _repository.Setup(x => x.ServerExistsAsync(dto.Deployment.ServerId)).ReturnsAsync(true);
+        _repository.Setup(x => x.ServerExistsAsync(dto.Deployment.ServerId, "test-user")).ReturnsAsync(true);
         _repository.Setup(x => x.CreateAsync(
                 It.IsAny<AppEntity>(), It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<PortMapping>()))
             .ReturnsAsync((AppEntity app, IReadOnlyCollection<LabelDto> _, PortMapping? _) => app);
@@ -75,7 +68,7 @@ public class ApplicationServiceTests
     public async Task Metadata_only_update_never_selects_or_migrates_a_deployment()
     {
         var id = Guid.NewGuid();
-        var app = new AppEntity { Id = id, AppCode = "APP01" };
+        var app = new AppEntity { Id = id, OwnerUserId = "test-user", AppCode = "APP01" };
         _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(app);
         var dto = ValidUpdate();
 
@@ -94,7 +87,7 @@ public class ApplicationServiceTests
         dto.PortMappingId = Guid.NewGuid();
         dto.TargetServerId = Guid.NewGuid();
         dto.PortNumber = 443;
-        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(new AppEntity { Id = id });
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(new AppEntity { Id = id, OwnerUserId = "test-user" });
         _repository.Setup(x => x.GetPortMappingAsync(dto.PortMappingId.Value))
             .ReturnsAsync(new PortMapping { Id = dto.PortMappingId.Value, AppId = Guid.NewGuid() });
 
@@ -103,16 +96,80 @@ public class ApplicationServiceTests
         result.Status.Should().Be(ApplicationOperationStatus.DeploymentNotFound);
     }
 
+    [Fact]
+    public async Task Editor_can_update_application_properties_without_changing_labels()
+    {
+        var id = Guid.NewGuid();
+        var application = new AppEntity { Id = id, OwnerUserId = "owner", AppCode = "APP01" };
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(application);
+        var access = new Mock<ILabelAccessService>();
+        access.Setup(x => x.GetApplicationAccessAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(
+            new ResourceLabelAccessDto(id, "owner", LabelEffectivePermission.Editor, [Guid.NewGuid()], new(true, true, false, false, false, false, false)));
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(x => x.UserId).Returns("editor");
+        var service = new ApplicationService(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        var dto = ValidUpdate();
+        dto.Labels = null;
+
+        var result = await service.UpdateAsync(id, dto);
+
+        result.Status.Should().Be(ApplicationOperationStatus.Success);
+        _repository.Verify(x => x.UpdateAsync(application, null, null), Times.Once);
+    }
+
+    [Fact]
+    public async Task Editor_update_fails_when_transactional_revalidation_observes_revoke()
+    {
+        var id = Guid.NewGuid();
+        var application = new AppEntity { Id = id, OwnerUserId = "owner", AppCode = "APP01" };
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(application);
+        var access = new Mock<ILabelAccessService>();
+        access.Setup(x => x.GetApplicationAccessAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(
+            new ResourceLabelAccessDto(id, "owner", LabelEffectivePermission.Editor, [Guid.NewGuid()], new(true, true, false, false, false, false, false)));
+        var coordinator = new Mock<ILabelMutationCoordinator>();
+        coordinator.Setup(item => item.ExecuteAsync(
+                "owner", It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<Func<CancellationToken, Task>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        var service = new ApplicationService(
+            _repository.Object, access.Object, coordinator.Object, Mock.Of<ICurrentUserService>(),
+            Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        var dto = ValidUpdate();
+        dto.Labels = null;
+
+        var result = await service.UpdateAsync(id, dto);
+
+        result.Status.Should().Be(ApplicationOperationStatus.Forbidden);
+        _repository.Verify(x => x.UpdateAsync(It.IsAny<AppEntity>(), It.IsAny<IReadOnlyCollection<LabelDto>?>(), It.IsAny<PortMapping?>()), Times.Never);
+    }
+
     private ApplicationService Service()
     {
-        var policy = new Mock<IScopedResourcePolicy>();
-        policy.Setup(x => x.CanReadAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        policy.Setup(x => x.CanWriteAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        policy.Setup(x => x.CanCreateAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<IReadOnlyCollection<LabelDto>>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
-        policy.Setup(x => x.GetReadableIdsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlySet<Guid>?)null);
+        var access = new Mock<ILabelAccessService>();
+        access.Setup(x => x.GetApplicationAccessAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(
+            (Guid id, CancellationToken _) => new ResourceLabelAccessDto(id, "test-user", LabelEffectivePermission.Owner, [], new(true, true, true, true, true, false, true)));
+        access.Setup(x => x.GetServerAccessAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(
+            (Guid id, CancellationToken _) => new ResourceLabelAccessDto(id, "test-user", LabelEffectivePermission.Owner, [], new(true, true, true, true, true, false, true)));
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(x => x.UserId).Returns("test-user");
-        return new(_repository.Object, _tenant.Object, policy.Object, user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        return new(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+    }
+
+    private static ILabelMutationCoordinator AllowingCoordinator()
+    {
+        var coordinator = new Mock<ILabelMutationCoordinator>();
+        coordinator.Setup(item => item.ExecuteAsync(
+                It.IsAny<string>(),
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<IReadOnlyCollection<Guid>>(),
+                It.IsAny<Func<CancellationToken, Task>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(async (string _, IReadOnlyCollection<Guid> _, IReadOnlyCollection<Guid> _, Func<CancellationToken, Task> mutation, CancellationToken cancellationToken) =>
+            {
+                await mutation(cancellationToken);
+                return true;
+            });
+        return coordinator.Object;
     }
 
     private static CreateApplicationDto ValidCreate() => new()

@@ -20,18 +20,12 @@ public sealed class OwnerGraphAccessService(
         var actorUserId = currentUser.UserId;
         if (string.IsNullOrWhiteSpace(actorUserId) || string.IsNullOrWhiteSpace(ownerUserId)) return null;
 
-        var transitionalWorkspaceIds = await context.Workspaces.AsNoTracking()
-            .Where(item => item.OwnerUserId == ownerUserId)
-            .Select(item => item.Id).ToListAsync(cancellationToken);
-
         var allServers = await context.Servers.IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.OwnerUserId == ownerUserId ||
-                           item.OwnerUserId == null && transitionalWorkspaceIds.Contains(item.WorkspaceId))
+            .Where(item => item.OwnerUserId == ownerUserId)
             .Select(item => item.Id)
             .ToHashSetAsync(cancellationToken);
         var allApplications = await context.Applications.IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.OwnerUserId == ownerUserId ||
-                           item.OwnerUserId == null && transitionalWorkspaceIds.Contains(item.WorkspaceId))
+            .Where(item => item.OwnerUserId == ownerUserId)
             .Select(item => item.Id)
             .ToHashSetAsync(cancellationToken);
 

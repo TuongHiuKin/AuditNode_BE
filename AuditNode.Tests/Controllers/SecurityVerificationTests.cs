@@ -1,6 +1,5 @@
 using AuditNode.API.Controllers;
 using AuditNode.API.Security;
-using AuditNode.API.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,8 +20,6 @@ public class SecurityVerificationTests
     [InlineData(typeof(InventorySearchController))]
     [InlineData(typeof(ServersController))]
     [InlineData(typeof(TopologyController))]
-    [InlineData(typeof(WorkspacesController))]
-    [InlineData(typeof(WorkspaceSharingController))]
     [InlineData(typeof(AdminUsersController))]
     public void Controller_Should_Have_AuthorizeAttribute(Type controllerType)
     {
@@ -32,25 +29,6 @@ public class SecurityVerificationTests
     }
 
     [Theory]
-    [InlineData(typeof(DatacentersController), nameof(DatacentersController.CreateDatacenter))]
-    [InlineData(typeof(InventoryImportController), nameof(InventoryImportController.ImportInventory))]
-    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.MigrateApp))]
-    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.PurgeApp))]
-    public void Sensitive_Mutations_Should_Require_WorkspaceAuthorization(Type controllerType, string methodName)
-    {
-        // Arrange
-        var methodInfo = controllerType.GetMethod(methodName);
-        methodInfo.Should().NotBeNull($"Method {methodName} should exist on {controllerType.Name}");
-
-        // Act
-        var authorizeAttr = methodInfo!.GetCustomAttribute<WorkspaceMutationAttribute>();
-
-        // Assert
-        authorizeAttr.Should().NotBeNull($"Method {methodName} on {controllerType.Name} must enforce workspace authorization");
-    }
-
-    [Theory]
-    [InlineData(typeof(WorkspacesController), nameof(WorkspacesController.GetWorkspaces))]
     [InlineData(typeof(DatacentersController), nameof(DatacentersController.GetDatacenters))]
     [InlineData(typeof(ServersController), nameof(ServersController.GetServers))]
     [InlineData(typeof(ServersController), nameof(ServersController.ExportServers))]
@@ -103,15 +81,4 @@ public class SecurityVerificationTests
         anonymousActions.Should().BeEquivalentTo(allowedAnonymousActions);
     }
 
-    [Theory]
-    [InlineData(typeof(DependenciesController), nameof(DependenciesController.SyncDependencies))]
-    [InlineData(typeof(TopologyController), nameof(TopologyController.SaveState))]
-    [InlineData(typeof(TopologyController), nameof(TopologyController.ExecuteCommands))]
-    public void Owner_graph_mutations_bypass_only_legacy_workspace_middleware(Type controllerType, string methodName)
-    {
-        var method = controllerType.GetMethod(methodName)!;
-        method.Should().BeDecoratedWith<SkipWorkspaceValidationAttribute>();
-        method.Should().NotBeDecoratedWith<WorkspaceMutationAttribute>();
-        method.Should().NotBeDecoratedWith<WorkspaceGraphMutationAttribute>();
-    }
 }

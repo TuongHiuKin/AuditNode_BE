@@ -3,7 +3,6 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Security;
-using AuditNode.API.Middleware;
 
 namespace AuditNode.API.Controllers;
 
@@ -22,7 +21,6 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("tree")]
-    [SkipWorkspaceValidation]
     public async Task<ActionResult<IEnumerable<TopologyTreeDto>>> GetTree(
         [FromQuery] Guid? datacenterId,
         [FromQuery] int skip = 0,
@@ -46,7 +44,6 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("map")]
-    [SkipWorkspaceValidation]
     public async Task<ActionResult<DependencyMapDto>> GetDependencyMap(
         [FromQuery] string? environment,
         [FromQuery] Guid? datacenterId,
@@ -64,7 +61,6 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("status")]
-    [SkipWorkspaceValidation]
     public async Task<ActionResult<IEnumerable<ApplicationStatusDto>>> GetStatus([FromQuery] string? ownerUserId = null)
     {
         try
@@ -78,7 +74,6 @@ public class TopologyController : ControllerBase
     }
 
     [HttpGet("state")]
-    [SkipWorkspaceValidation]
     public async Task<ActionResult<TopologyStateDto>> GetState([FromQuery] string? ownerUserId = null)
     {
         try
@@ -93,7 +88,6 @@ public class TopologyController : ControllerBase
 
     [HttpPost("state")]
     [HttpPut("state")]
-    [SkipWorkspaceValidation]
     public async Task<IActionResult> SaveState([FromBody] SaveTopologyStateDto state)
     {
         if (state?.Version is null || state.Nodes is null || state.Edges is null || state.Dependencies is null)
@@ -122,7 +116,6 @@ public class TopologyController : ControllerBase
     }
 
     [HttpPost("commands")]
-    [SkipWorkspaceValidation]
     public async Task<IActionResult> ExecuteCommands([FromBody] TopologyCommandBatchDto batch, CancellationToken cancellationToken)
     {
         if (batch is null || batch.Operations is null)

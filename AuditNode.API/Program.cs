@@ -1,4 +1,3 @@
-using AuditNode.API.Middleware;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
@@ -22,7 +21,6 @@ using Microsoft.AspNetCore.DataProtection;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
-builder.Services.AddScoped<ITenantProvider, TenantProvider>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 builder.Services.AddSingleton(TimeProvider.System);
@@ -176,17 +174,10 @@ builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
 builder.Services.AddScoped<IGlobalCatalogRepository, GlobalCatalogRepository>();
 builder.Services.AddSingleton<ICatalogCursorProtector, DataProtectionCatalogCursorProtector>();
 builder.Services.AddSingleton<ICatalogCursorCodec, CatalogCursorCodec>();
-builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
 
 // Register Services
 builder.Services.AddScoped<IApplicationService, AuditNode.Infrastructure.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Infrastructure.Services.ServerService>();
-builder.Services.AddScoped<IWorkspaceService, AuditNode.Infrastructure.Services.WorkspaceService>();
-builder.Services.AddScoped<IWorkspaceAccessService, WorkspaceAccessService>();
-builder.Services.AddScoped<IWorkspaceSharingService, WorkspaceSharingService>();
-builder.Services.AddScoped<IWorkspaceUserSummaryService, WorkspaceUserSummaryService>();
-builder.Services.AddScoped<IWorkspaceShareOptionsService, WorkspaceShareOptionsService>();
-builder.Services.AddScoped<IScopedResourcePolicy, ScopedResourcePolicy>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
 builder.Services.AddScoped<ITopologyCommandService, TopologyCommandService>();
@@ -197,6 +188,7 @@ builder.Services.AddScoped<IShareCatalogService, ShareCatalogService>();
 builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Services.InfrastructureService>();
 builder.Services.AddScoped<ILabelAccessService, LabelAccessService>();
 builder.Services.AddScoped<IOwnerGraphAccessService, OwnerGraphAccessService>();
+builder.Services.AddScoped<ILabelMutationCoordinator, LabelMutationCoordinator>();
 builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();
 builder.Services.AddScoped<IShareTokenService, ShareTokenService>();
 builder.Services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();
@@ -277,9 +269,6 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = registration => registration.Tags.Contains("ready")
 }).AllowAnonymous();
-
-// Workspace isolation middleware
-app.UseMiddleware<WorkspaceMiddleware>();
 
 // Map controllers
 app.MapControllers();

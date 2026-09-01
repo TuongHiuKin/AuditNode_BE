@@ -46,16 +46,9 @@ public sealed class PostgresLabelGrantConcurrencyTests
             $"owner-{Guid.NewGuid():N}",
             $"grantee-{Guid.NewGuid():N}");
         await using var context = Context(fixture.WorkspaceId);
-        context.Workspaces.Add(new Workspace
-        {
-            Id = fixture.WorkspaceId,
-            Name = $"Label grant concurrency {fixture.WorkspaceId:N}",
-            OwnerUserId = fixture.OwnerUserId
-        });
         context.Labels.Add(new Label
         {
             Id = fixture.LabelId,
-            WorkspaceId = fixture.WorkspaceId,
             OwnerUserId = fixture.OwnerUserId,
             Key = "concurrency",
             Value = fixture.LabelId.ToString("N"),
@@ -95,13 +88,10 @@ public sealed class PostgresLabelGrantConcurrencyTests
 
     private static AuditDbContext Context(Guid workspaceId)
     {
-        var tenant = new Mock<ITenantProvider>();
-        tenant.SetupGet(provider => provider.WorkspaceId).Returns(workspaceId);
         return new AuditDbContext(
             new DbContextOptionsBuilder<AuditDbContext>()
                 .UseNpgsql(Environment.GetEnvironmentVariable("AUDITNODE_TEST_POSTGRES")!)
-                .Options,
-            tenant.Object);
+                .Options);
     }
 
     private sealed record Fixture(

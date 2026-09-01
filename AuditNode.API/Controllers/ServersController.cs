@@ -3,7 +3,6 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using AuditNode.API.Middleware;
 using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
@@ -20,7 +19,6 @@ public class ServersController : ControllerBase
         _serverService = serverService;
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet]
     [ProducesResponseType(typeof(CursorPageDto<ServerResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -49,7 +47,6 @@ public class ServersController : ControllerBase
         }
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ServerResponseDto>> GetServer(Guid id, CancellationToken cancellationToken = default)
     {
@@ -80,11 +77,9 @@ public class ServersController : ControllerBase
                 ServerOperationStatus.Success when result.Server is not null =>
                     CreatedAtAction(nameof(GetServer), new { id = result.Server.Id }, result.Server),
                 ServerOperationStatus.DatacenterNotFound =>
-                    BadRequest(Problem(400, "Datacenter was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Datacenter was not found in your catalog.")),
                 ServerOperationStatus.DuplicateIp =>
-                    Conflict(Problem(409, "A server with this IP address already exists in the current workspace.")),
-                ServerOperationStatus.InvalidWorkspace =>
-                    BadRequest(Problem(400, "A valid workspace is required.")),
+                    Conflict(Problem(409, "A server with this IP address already exists in your catalog.")),
                 ServerOperationStatus.Forbidden => Forbid(),
                 _ => ServerFailure()
             };
@@ -109,11 +104,9 @@ public class ServersController : ControllerBase
                 ServerOperationStatus.Success => NoContent(),
                 ServerOperationStatus.NotFound => NotFound(Problem(404, "Server was not found.")),
                 ServerOperationStatus.DatacenterNotFound =>
-                    BadRequest(Problem(400, "Datacenter was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Datacenter was not found in the resource owner's catalog.")),
                 ServerOperationStatus.DuplicateIp =>
-                    Conflict(Problem(409, "A server with this IP address already exists in the current workspace.")),
-                ServerOperationStatus.InvalidWorkspace =>
-                    BadRequest(Problem(400, "A valid workspace is required.")),
+                    Conflict(Problem(409, "A server with this IP address already exists in the resource owner's catalog.")),
                 ServerOperationStatus.Forbidden => Forbid(),
                 _ => ServerFailure()
             };
@@ -137,8 +130,6 @@ public class ServersController : ControllerBase
             {
                 ServerOperationStatus.Success => NoContent(),
                 ServerOperationStatus.NotFound => NotFound(Problem(404, "Server was not found.")),
-                ServerOperationStatus.InvalidWorkspace =>
-                    BadRequest(Problem(400, "A valid workspace is required.")),
                 ServerOperationStatus.Forbidden => Forbid(),
                 _ => ServerFailure()
             };
@@ -149,7 +140,6 @@ public class ServersController : ControllerBase
         }
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("export")]
     public async Task<ActionResult<IEnumerable<ServerResponseDto>>> ExportServers(
         [FromQuery] List<Guid> ids,

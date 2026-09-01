@@ -32,13 +32,12 @@ public sealed class GlobalCatalogRepositoryTests
     }
 
     [Fact]
-    public async Task Mine_returns_only_owned_resources_and_fails_closed_for_legacy_null_owner()
+    public async Task Mine_returns_only_owned_resources()
     {
         await using var context = Context();
         var mine = Server("me", "same");
         var other = Server("other", "same");
-        var legacy = Server(null, "legacy");
-        context.AddRange(mine.Datacenter!, other.Datacenter!, legacy.Datacenter!, mine, other, legacy);
+        context.AddRange(mine.Datacenter!, other.Datacenter!, mine, other);
         await context.SaveChangesAsync();
 
         var page = await Repository(context).GetServersAsync("me", Query(CatalogView.Mine), Now);
@@ -166,7 +165,7 @@ public sealed class GlobalCatalogRepositoryTests
         var secondServer = Server("me", "server-two");
         var app = new AuditNode.Domain.Entities.Application
         {
-            Id = Guid.NewGuid(), WorkspaceId = server.WorkspaceId, OwnerUserId = "me", AppCode = "APP", AppName = "App"
+            Id = Guid.NewGuid(), OwnerUserId = "me", AppCode = "APP", AppName = "App"
         };
         context.AddRange(server.Datacenter!, secondServer.Datacenter!, server, secondServer, app);
         await context.SaveChangesAsync();
@@ -338,14 +337,11 @@ public sealed class GlobalCatalogRepositoryTests
 
     private static AuditDbContext Context()
     {
-        var workspaceId = Guid.NewGuid();
-        var tenant = new Mock<ITenantProvider>();
-        tenant.SetupGet(value => value.WorkspaceId).Returns(workspaceId);
         var options = new DbContextOptionsBuilder<AuditDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .ConfigureWarnings(warnings => warnings.Ignore(InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        return new AuditDbContext(options, tenant.Object);
+        return new AuditDbContext(options);
     }
 
     private static Datacenter Datacenter(string? owner, string name) => new()

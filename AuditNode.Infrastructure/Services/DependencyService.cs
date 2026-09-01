@@ -47,23 +47,15 @@ public class DependencyService : IDependencyService
 
         var appIds = payload.SelectMany(item => new[] { item.SourceAppId, item.DestAppId }).Distinct().ToArray();
         string ownerUserId;
-        Guid workspaceId;
         if (appIds.Length == 0)
         {
             ownerUserId = _currentUser.UserId!;
-            workspaceId = await _dbContext.Workspaces.IgnoreQueryFilters().AsNoTracking()
-                .Where(item => item.OwnerUserId == ownerUserId)
-                .OrderByDescending(item => item.IsPersonal)
-                .ThenBy(item => item.Id)
-                .Select(item => item.Id)
-                .FirstOrDefaultAsync();
-            if (workspaceId == Guid.Empty) return DependencySyncStatus.Forbidden;
         }
         else
         {
             var applications = await _dbContext.Applications.IgnoreQueryFilters().AsNoTracking()
                 .Where(application => appIds.Contains(application.Id))
-                .Select(application => new { application.Id, application.OwnerUserId, application.WorkspaceId })
+                .Select(application => new { application.Id, application.OwnerUserId })
                 .ToListAsync();
             if (applications.Count != appIds.Length)
                 return DependencySyncStatus.NotFound;
@@ -71,9 +63,6 @@ public class DependencyService : IDependencyService
             if (ownerIds.Count != 1 || applications.Any(item => item.OwnerUserId is null))
                 return DependencySyncStatus.Forbidden;
             ownerUserId = ownerIds[0]!;
-            var workspaceIds = applications.Select(item => item.WorkspaceId).Distinct().ToList();
-            if (workspaceIds.Count != 1) return DependencySyncStatus.Forbidden;
-            workspaceId = workspaceIds[0];
         }
 
         // This endpoint replaces the owner's complete dependency set. Scoped editors must use
@@ -87,12 +76,10 @@ public class DependencyService : IDependencyService
         var destinationPortIds = payload.Select(item => item.DestinationPortMappingId).Distinct().ToArray();
         var destinationPorts = await _dbContext.PortMappings.IgnoreQueryFilters()
             .Where(mapping => mapping.OwnerUserId == ownerUserId && destinationPortIds.Contains(mapping.Id))
-            .Select(mapping => new { mapping.Id, mapping.AppId, mapping.WorkspaceId })
+            .Select(mapping => new { mapping.Id, mapping.AppId })
             .ToDictionaryAsync(mapping => mapping.Id);
         if (destinationPorts.Count != destinationPortIds.Length)
             return DependencySyncStatus.NotFound;
-        if (destinationPorts.Values.Any(mapping => mapping.WorkspaceId != workspaceId))
-            return DependencySyncStatus.Forbidden;
         if (payload.Any(item => destinationPorts[item.DestinationPortMappingId].AppId != item.DestAppId))
             return DependencySyncStatus.DestinationMismatch;
 
@@ -109,7 +96,6 @@ public class DependencyService : IDependencyService
             .Select(item => new AppDependency
             {
                 Id = Guid.NewGuid(),
-                WorkspaceId = workspaceId,
                 OwnerUserId = ownerUserId,
                 SourceAppId = item.SourceAppId,
                 DestAppId = item.DestAppId,

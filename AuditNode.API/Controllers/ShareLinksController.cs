@@ -1,6 +1,5 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
-using AuditNode.API.Middleware;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -8,7 +7,6 @@ using Microsoft.AspNetCore.RateLimiting;
 namespace AuditNode.API.Controllers;
 
 [Authorize]
-[SkipWorkspaceValidation]
 [ApiController]
 [Route("api/v1")]
 public sealed class ShareLinksController(IShareTokenService shareTokens, IShareCatalogService shareCatalog) : ControllerBase

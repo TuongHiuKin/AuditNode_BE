@@ -15,18 +15,15 @@ public class TopologyRepository : ITopologyRepository
 {
     private readonly AuditDbContext _context;
     private readonly ICurrentUserService _currentUser;
-    private readonly ITenantProvider _tenant;
     private readonly IOwnerGraphAccessService _graphAccess;
 
     public TopologyRepository(
         AuditDbContext context,
         ICurrentUserService currentUser,
-        ITenantProvider tenant,
         IOwnerGraphAccessService graphAccess)
     {
         _context = context;
         _currentUser = currentUser;
-        _tenant = tenant;
         _graphAccess = graphAccess;
     }
 
@@ -34,7 +31,6 @@ public class TopologyRepository : ITopologyRepository
     {
         var scope = await ResolveReadScopeAsync(ownerUserId);
         if (scope is null || string.IsNullOrWhiteSpace(_currentUser.UserId)) return new();
-        var transitionalWorkspaceIds = await TransitionalWorkspaceIdsAsync(scope.OwnerUserId);
         await using var transaction = _context.Database.IsRelational()
             ? await _context.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead)
             : null;
@@ -47,8 +43,7 @@ public class TopologyRepository : ITopologyRepository
         var allowedMappings = (await _context.PortMappings.IgnoreQueryFilters().Where(x => x.OwnerUserId == scope.OwnerUserId && allowedApps.Contains(x.AppId) && allowedServers.Contains(x.ServerId)).Select(x => x.Id).ToListAsync()).ToHashSet();
         var rawNodes = await _context.TopologyNodes.AsNoTracking()
             .IgnoreQueryFilters()
-            .Where(node => node.OwnerUserId == scope.OwnerUserId ||
-                           node.OwnerUserId == null && transitionalWorkspaceIds.Contains(node.WorkspaceId))
+            .Where(node => node.OwnerUserId == scope.OwnerUserId)
             .OrderBy(node => node.Id)
             .Select(node => new TopologyNodeDto
             {
@@ -103,8 +98,7 @@ public class TopologyRepository : ITopologyRepository
         }
         var rawEdges = await _context.TopologyEdges.AsNoTracking()
             .IgnoreQueryFilters()
-            .Where(edge => edge.OwnerUserId == scope.OwnerUserId ||
-                           edge.OwnerUserId == null && transitionalWorkspaceIds.Contains(edge.WorkspaceId))
+            .Where(edge => edge.OwnerUserId == scope.OwnerUserId)
             .OrderBy(edge => edge.Id)
             .Select(edge => new TopologyEdgeDto
             {
@@ -161,19 +155,6 @@ public class TopologyRepository : ITopologyRepository
         return new Guid(hash.AsSpan(0, 16));
     }
 
-    private async Task<Guid?> ResolveTransitionalWorkspaceAsync(string ownerUserId)
-    {
-        if (_tenant.WorkspaceId.HasValue && _tenant.WorkspaceId != Guid.Empty &&
-            await _context.Workspaces.IgnoreQueryFilters().AnyAsync(item => item.Id == _tenant.WorkspaceId && item.OwnerUserId == ownerUserId))
-            return _tenant.WorkspaceId;
-        return await _context.Workspaces.IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.OwnerUserId == ownerUserId)
-            .OrderByDescending(item => item.IsPersonal)
-            .ThenBy(item => item.Id)
-            .Select(item => (Guid?)item.Id)
-            .FirstOrDefaultAsync();
-    }
-
     private async Task<OwnerCatalogState> LockOwnerStateAsync(string ownerUserId)
     {
         if (_context.Database.IsRelational())
@@ -205,19 +186,16 @@ public class TopologyRepository : ITopologyRepository
             if (string.IsNullOrWhiteSpace(_currentUser.UserId))
                 return TopologyStateStatus.Forbidden;
             var ownerUserId = _currentUser.UserId!;
-            var workspaceId = await ResolveTransitionalWorkspaceAsync(ownerUserId);
-            if (!workspaceId.HasValue) return TopologyStateStatus.Forbidden;
             var ownerState = await LockOwnerStateAsync(ownerUserId);
             if (ownerState.TopologyVersion != state.Version.Value)
                 return TopologyStateStatus.Conflict;
 
-            var validation = await ValidateStateAsync(state, ownerUserId, workspaceId.Value);
+            var validation = await ValidateStateAsync(state, ownerUserId);
             if (validation != TopologyStateStatus.Success)
                 return validation;
 
             var existingNodes = await _context.TopologyNodes.IgnoreQueryFilters()
-                .Where(n => n.WorkspaceId == workspaceId.Value &&
-                            (n.OwnerUserId == ownerUserId || n.OwnerUserId == null))
+                .Where(n => n.OwnerUserId == ownerUserId)
                 .ToDictionaryAsync(n => n.Id);
             foreach (var nodeDto in state.Nodes)
             {
@@ -238,7 +216,6 @@ public class TopologyRepository : ITopologyRepository
                     var newNode = new TopologyNode
                     {
                         Id = nodeDto.Id,
-                        WorkspaceId = workspaceId.Value,
                         OwnerUserId = ownerUserId,
                         NodeType = nodeDto.NodeType,
                         Label = nodeDto.Label,
@@ -257,15 +234,14 @@ public class TopologyRepository : ITopologyRepository
             var nodesToDelete = existingNodes.Values.Where(n => !incomingIds.Contains(n.Id));
 
             var existingEdges = await _context.TopologyEdges.IgnoreQueryFilters()
-                .Where(edge => edge.WorkspaceId == workspaceId.Value &&
-                               (edge.OwnerUserId == ownerUserId || edge.OwnerUserId == null))
+                .Where(edge => edge.OwnerUserId == ownerUserId)
                 .ToDictionaryAsync(edge => edge.Id);
             var persistedEdges = new Dictionary<Guid, TopologyEdge>();
             foreach (var edgeDto in state.Edges)
             {
                 if (!existingEdges.TryGetValue(edgeDto.Id, out var edge))
                 {
-                    edge = new TopologyEdge { Id = edgeDto.Id, WorkspaceId = workspaceId.Value, OwnerUserId = ownerUserId };
+                    edge = new TopologyEdge { Id = edgeDto.Id, OwnerUserId = ownerUserId };
                     _context.TopologyEdges.Add(edge);
                 }
 
@@ -283,7 +259,7 @@ public class TopologyRepository : ITopologyRepository
             _context.TopologyEdges.RemoveRange(existingEdges.Values.Where(edge => !incomingEdgeIds.Contains(edge.Id)));
             _context.TopologyNodes.RemoveRange(nodesToDelete);
 
-            var dependencyValidation = await ValidateAndApplyDependenciesAsync(state, persistedEdges, ownerUserId, workspaceId.Value);
+            var dependencyValidation = await ValidateAndApplyDependenciesAsync(state, persistedEdges, ownerUserId);
             if (dependencyValidation != TopologyStateStatus.Success)
                 return dependencyValidation;
 
@@ -304,8 +280,7 @@ public class TopologyRepository : ITopologyRepository
     private async Task<TopologyStateStatus> ValidateAndApplyDependenciesAsync(
         SaveTopologyStateDto state,
         IReadOnlyDictionary<Guid, TopologyEdge> persistedEdges,
-        string ownerUserId,
-        Guid workspaceId)
+        string ownerUserId)
     {
         var payload = state.Dependencies;
         if (payload is null || payload.Any(item =>
@@ -318,14 +293,12 @@ public class TopologyRepository : ITopologyRepository
 
         var appIds = payload.SelectMany(item => new[] { item.SourceAppId, item.DestAppId }).Distinct().ToArray();
         var validAppCount = await _context.Applications.IgnoreQueryFilters()
-            .CountAsync(item => item.WorkspaceId == workspaceId &&
-                                (item.OwnerUserId == ownerUserId || item.OwnerUserId == null) &&
+            .CountAsync(item => item.OwnerUserId == ownerUserId &&
                                 appIds.Contains(item.Id));
         if (validAppCount != appIds.Length) return TopologyStateStatus.InvalidDependency;
         var destinationPortIds = payload.Select(item => item.DestinationPortMappingId).Distinct().ToArray();
         var destinationPorts = await _context.PortMappings.IgnoreQueryFilters()
-            .Where(item => item.WorkspaceId == workspaceId &&
-                           (item.OwnerUserId == ownerUserId || item.OwnerUserId == null) &&
+            .Where(item => item.OwnerUserId == ownerUserId &&
                            destinationPortIds.Contains(item.Id))
             .Select(item => new { item.Id, item.AppId })
             .ToDictionaryAsync(item => item.Id, item => item.AppId);
@@ -334,8 +307,7 @@ public class TopologyRepository : ITopologyRepository
             return TopologyStateStatus.InvalidDependency;
 
         var existing = await _context.AppDependencies.IgnoreQueryFilters()
-            .Where(item => item.WorkspaceId == workspaceId &&
-                           (item.OwnerUserId == ownerUserId || item.OwnerUserId == null)).ToListAsync();
+            .Where(item => item.OwnerUserId == ownerUserId).ToListAsync();
         var desiredKeys = keys.ToHashSet(StringComparer.Ordinal);
         var referencedIds = state.Edges!.Where(edge => edge.ReferenceId.HasValue)
             .Select(edge => edge.ReferenceId!.Value).ToHashSet();
@@ -351,7 +323,6 @@ public class TopologyRepository : ITopologyRepository
             .Select(item => new AppDependency
             {
                 Id = Guid.NewGuid(),
-                WorkspaceId = workspaceId,
                 OwnerUserId = ownerUserId,
                 SourceAppId = item.SourceAppId,
                 DestAppId = item.DestAppId,
@@ -368,8 +339,7 @@ public class TopologyRepository : ITopologyRepository
             .Where(item => item.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase) && item.ReferenceId.HasValue)
             .Select(item => item.ReferenceId!.Value).Distinct().ToArray();
         var deploymentApps = await _context.PortMappings.IgnoreQueryFilters()
-            .Where(item => item.WorkspaceId == workspaceId &&
-                           (item.OwnerUserId == ownerUserId || item.OwnerUserId == null) &&
+            .Where(item => item.OwnerUserId == ownerUserId &&
                            deploymentIds.Contains(item.Id))
             .Select(item => new { item.Id, item.AppId })
             .ToDictionaryAsync(item => item.Id, item => item.AppId);
@@ -401,7 +371,7 @@ public class TopologyRepository : ITopologyRepository
     private static string DependencyKey(AppDependency item) =>
         $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestPortId:N}";
 
-    private async Task<TopologyStateStatus> ValidateStateAsync(SaveTopologyStateDto? state, string ownerUserId, Guid workspaceId)
+    private async Task<TopologyStateStatus> ValidateStateAsync(SaveTopologyStateDto? state, string ownerUserId)
     {
         if (state?.Nodes is null || state.Edges is null)
             return TopologyStateStatus.InvalidRequest;
@@ -417,16 +387,15 @@ public class TopologyRepository : ITopologyRepository
         var incomingEdgeIds = state.Edges.Select(item => item.Id).ToArray();
         var foreignNodeIdExists = await _context.TopologyNodes.IgnoreQueryFilters().AsNoTracking().AnyAsync(item =>
             incomingNodeIds.Contains(item.Id) &&
-            !(item.WorkspaceId == workspaceId && (item.OwnerUserId == ownerUserId || item.OwnerUserId == null)));
+            item.OwnerUserId != ownerUserId);
         var foreignEdgeIdExists = await _context.TopologyEdges.IgnoreQueryFilters().AsNoTracking().AnyAsync(item =>
             incomingEdgeIds.Contains(item.Id) &&
-            !(item.WorkspaceId == workspaceId && (item.OwnerUserId == ownerUserId || item.OwnerUserId == null)));
+            item.OwnerUserId != ownerUserId);
         if (foreignNodeIdExists || foreignEdgeIdExists)
             return TopologyStateStatus.InvalidReference;
 
         var selectedExistingEdgeIds = await _context.TopologyEdges.IgnoreQueryFilters().AsNoTracking()
-            .Where(item => incomingEdgeIds.Contains(item.Id) && item.WorkspaceId == workspaceId &&
-                           (item.OwnerUserId == ownerUserId || item.OwnerUserId == null))
+            .Where(item => incomingEdgeIds.Contains(item.Id) && item.OwnerUserId == ownerUserId)
             .Select(item => item.Id)
             .ToListAsync();
         var nodeCrossTableCollision = await _context.TopologyEdges.IgnoreQueryFilters().AsNoTracking()
@@ -485,13 +454,11 @@ public class TopologyRepository : ITopologyRepository
             return TopologyStateStatus.InvalidReference;
 
         var serverIds = await _context.Servers.IgnoreQueryFilters()
-            .Where(server => server.WorkspaceId == workspaceId &&
-                             (server.OwnerUserId == ownerUserId || server.OwnerUserId == null) &&
+            .Where(server => server.OwnerUserId == ownerUserId &&
                              serverReferences.Contains(server.Id))
             .Select(server => server.Id).ToListAsync();
         var mappings = await _context.PortMappings.IgnoreQueryFilters()
-            .Where(mapping => mapping.WorkspaceId == workspaceId &&
-                              (mapping.OwnerUserId == ownerUserId || mapping.OwnerUserId == null) &&
+            .Where(mapping => mapping.OwnerUserId == ownerUserId &&
                               deploymentReferences.Contains(mapping.Id))
             .Select(mapping => new { mapping.Id, mapping.ServerId, mapping.AppId })
             .ToDictionaryAsync(mapping => mapping.Id);
@@ -529,8 +496,7 @@ public class TopologyRepository : ITopologyRepository
             if (dependencyReferences.Distinct().Count() != dependencyReferences.Count)
                 return TopologyStateStatus.InvalidReference;
             var found = await _context.AppDependencies.IgnoreQueryFilters()
-                .Where(dependency => dependency.WorkspaceId == workspaceId &&
-                                     (dependency.OwnerUserId == ownerUserId || dependency.OwnerUserId == null) &&
+                .Where(dependency => dependency.OwnerUserId == ownerUserId &&
                                      dependencyReferences.Contains(dependency.Id))
                 .Select(dependency => new
                 {
@@ -579,7 +545,6 @@ public class TopologyRepository : ITopologyRepository
     {
         var scope = await ResolveReadScopeAsync(ownerUserId);
         if (scope is null) return [];
-        var transitionalWorkspaceIds = await TransitionalWorkspaceIdsAsync(scope.OwnerUserId);
         var allowedServers = scope.ReadableServerIds;
         var allowedApps = scope.ReadableApplicationIds;
         var query = _context.Datacenters.IgnoreQueryFilters()
@@ -590,7 +555,7 @@ public class TopologyRepository : ITopologyRepository
                 .ThenInclude(s => s.Labels)
             .AsSplitQuery()
             .AsNoTracking()
-            .Where(d => (d.OwnerUserId == scope.OwnerUserId || d.OwnerUserId == null && transitionalWorkspaceIds.Contains(d.WorkspaceId)) &&
+            .Where(d => d.OwnerUserId == scope.OwnerUserId &&
                         d.Servers.Any(s => allowedServers.Contains(s.Id)));
 
         if (datacenterId.HasValue && datacenterId.Value != Guid.Empty)
@@ -646,7 +611,6 @@ public class TopologyRepository : ITopologyRepository
     {
         var scope = await ResolveReadScopeAsync(ownerUserId);
         if (scope is null) return new();
-        var transitionalWorkspaceIds = await TransitionalWorkspaceIdsAsync(scope.OwnerUserId);
         var allowedServers = scope.ReadableServerIds;
         var allowedApps = scope.ReadableApplicationIds;
         var serverQuery = _context.Servers.IgnoreQueryFilters()
@@ -655,7 +619,7 @@ public class TopologyRepository : ITopologyRepository
             .Include(s => s.Labels)
             .AsSplitQuery()
             .AsNoTracking()
-            .Where(s => (s.OwnerUserId == scope.OwnerUserId || s.OwnerUserId == null && transitionalWorkspaceIds.Contains(s.WorkspaceId)) &&
+            .Where(s => s.OwnerUserId == scope.OwnerUserId &&
                         allowedServers.Contains(s.Id));
 
         if (!string.IsNullOrWhiteSpace(environment))
@@ -678,7 +642,7 @@ public class TopologyRepository : ITopologyRepository
 
         var connections = await _context.AppDependencies.IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(ad => (ad.OwnerUserId == scope.OwnerUserId || ad.OwnerUserId == null && transitionalWorkspaceIds.Contains(ad.WorkspaceId)) &&
+            .Where(ad => ad.OwnerUserId == scope.OwnerUserId &&
                          (allowedApps.Contains(ad.SourceAppId) || allowedApps.Contains(ad.DestAppId)))
             .Select(ad => new ConnectionDto
             {
@@ -693,7 +657,7 @@ public class TopologyRepository : ITopologyRepository
 
         var sourceAppIds = connections.Select(connection => connection.SourceAppId).Distinct().ToArray();
         var sourceDeploymentServers = await _context.PortMappings.IgnoreQueryFilters().AsNoTracking()
-            .Where(mapping => (mapping.OwnerUserId == scope.OwnerUserId || mapping.OwnerUserId == null && transitionalWorkspaceIds.Contains(mapping.WorkspaceId)) &&
+            .Where(mapping => mapping.OwnerUserId == scope.OwnerUserId &&
                               sourceAppIds.Contains(mapping.AppId) &&
                               allowedServers.Contains(mapping.ServerId))
             .Select(mapping => new { mapping.Id, mapping.AppId, mapping.ServerId })
@@ -763,12 +727,10 @@ public class TopologyRepository : ITopologyRepository
     {
         var scope = await ResolveReadScopeAsync(ownerUserId);
         if (scope is null) return [];
-        var transitionalWorkspaceIds = await TransitionalWorkspaceIdsAsync(scope.OwnerUserId);
         var allowedApps = scope.ReadableApplicationIds;
         var ownedDependencies = _context.AppDependencies.IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(item => item.OwnerUserId == scope.OwnerUserId ||
-                           item.OwnerUserId == null && transitionalWorkspaceIds.Contains(item.WorkspaceId));
+            .Where(item => item.OwnerUserId == scope.OwnerUserId);
         var mappedAppIds = await ownedDependencies.Select(ad => ad.SourceAppId)
             .Union(ownedDependencies.Select(ad => ad.DestAppId))
             .Distinct()
@@ -776,7 +738,7 @@ public class TopologyRepository : ITopologyRepository
 
         return await _context.Applications.IgnoreQueryFilters()
             .AsNoTracking()
-            .Where(a => (a.OwnerUserId == scope.OwnerUserId || a.OwnerUserId == null && transitionalWorkspaceIds.Contains(a.WorkspaceId)) &&
+            .Where(a => a.OwnerUserId == scope.OwnerUserId &&
                         allowedApps.Contains(a.Id))
             .Select(a => new ApplicationStatusDto
             {
@@ -796,8 +758,4 @@ public class TopologyRepository : ITopologyRepository
         return _graphAccess.ResolveAsync(selectedOwner);
     }
 
-    private Task<List<Guid>> TransitionalWorkspaceIdsAsync(string ownerUserId) =>
-        _context.Workspaces.IgnoreQueryFilters().AsNoTracking()
-            .Where(item => item.OwnerUserId == ownerUserId)
-            .Select(item => item.Id).ToListAsync();
 }

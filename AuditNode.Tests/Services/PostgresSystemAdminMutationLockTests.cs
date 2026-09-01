@@ -146,10 +146,9 @@ public sealed class PostgresSystemAdminMutationLockTests
 
     private static AuditDbContext Context(string connectionString)
     {
-        var tenant = new Mock<ITenantProvider>();
         return new AuditDbContext(new DbContextOptionsBuilder<AuditDbContext>()
             .UseNpgsql(connectionString)
-            .Options, tenant.Object);
+            .Options);
     }
 }
 

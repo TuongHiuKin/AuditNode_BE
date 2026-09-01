@@ -55,20 +55,21 @@ public class ApplicationRepository : IApplicationRepository
 
     public Task<AppEntity?> GetByIdAsync(Guid id) => ReadQuery().FirstOrDefaultAsync(application => application.Id == id);
 
-    public Task<bool> AppCodeExistsAsync(string appCode, Guid? excludeApplicationId = null) =>
+    public Task<bool> AppCodeExistsAsync(string appCode, string ownerUserId, Guid? excludeApplicationId = null) =>
         _dbContext.Applications.AnyAsync(application =>
-            application.AppCode == appCode &&
+            application.OwnerUserId == ownerUserId && application.AppCode == appCode &&
             (!excludeApplicationId.HasValue || application.Id != excludeApplicationId.Value));
 
-    public Task<bool> ServerExistsAsync(Guid serverId) =>
-        _dbContext.Servers.AnyAsync(server => server.Id == serverId);
+    public Task<bool> ServerExistsAsync(Guid serverId, string ownerUserId) =>
+        _dbContext.Servers.AnyAsync(server => server.Id == serverId && server.OwnerUserId == ownerUserId);
 
     public Task<bool> PortCollisionExistsAsync(
         Guid serverId,
         int portNumber,
+        string ownerUserId,
         Guid? excludePortMappingId = null) =>
         _dbContext.PortMappings.AnyAsync(mapping =>
-            mapping.ServerId == serverId &&
+            mapping.OwnerUserId == ownerUserId && mapping.ServerId == serverId &&
             mapping.PortNumber == portNumber &&
             (!excludePortMappingId.HasValue || mapping.Id != excludePortMappingId.Value));
 
@@ -96,14 +97,17 @@ public class ApplicationRepository : IApplicationRepository
         IReadOnlyCollection<LabelDto>? labels,
         PortMapping? deployment)
     {
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        await using var transaction = _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync()
+            : null;
         if (labels is not null)
             await ReplaceLabelsAsync(application, labels);
         if (deployment is not null)
             _dbContext.PortMappings.Update(deployment);
 
         await _dbContext.SaveChangesAsync();
-        await transaction.CommitAsync();
+        if (transaction is not null)
+            await transaction.CommitAsync();
     }
 
     private IQueryable<AppEntity> ReadQuery() => _dbContext.Applications
@@ -134,13 +138,12 @@ public class ApplicationRepository : IApplicationRepository
                 existing.Key == value.Key && existing.Value == value.Value);
             if (label is null)
             {
-                label = new Label { Id = Guid.NewGuid(), WorkspaceId = application.WorkspaceId, OwnerUserId = application.OwnerUserId, Key = value.Key, Value = value.Value };
+                label = new Label { Id = Guid.NewGuid(), OwnerUserId = application.OwnerUserId, Key = value.Key, Value = value.Value };
                 _dbContext.Labels.Add(label);
             }
 
             _dbContext.ApplicationLabels.Add(new ApplicationLabel
             {
-                WorkspaceId = application.WorkspaceId,
                 OwnerUserId = application.OwnerUserId,
                 ApplicationId = application.Id,
                 LabelId = label.Id,

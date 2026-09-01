@@ -1,5 +1,4 @@
 using AuditNode.Application.DTOs;
-using AuditNode.API.Middleware;
 using AuditNode.Application.Exceptions;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
@@ -13,7 +12,6 @@ namespace AuditNode.API.Controllers;
 [Route("api/v1/inventory/labels")]
 public sealed class LabelsController(ILabelCatalogService labels) : ControllerBase
 {
-    [SkipWorkspaceValidation]
     [HttpGet]
     [ProducesResponseType(typeof(CursorPageDto<CatalogLabelDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]

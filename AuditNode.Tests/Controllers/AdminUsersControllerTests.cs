@@ -1,11 +1,9 @@
 using AuditNode.API.Controllers;
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
-using AuditNode.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -24,8 +22,7 @@ public class AdminUsersControllerTests
     {
         var identity = new Mock<IIdentityAdminService>();
         identity.Setup(x => x.CreateUserAsync(It.IsAny<CreateIdentityAdminUserDto>(), It.IsAny<CancellationToken>())).ThrowsAsync(new IdentityConflictException());
-        var summaries = new Mock<IWorkspaceUserSummaryService>();
-        var controller = new AdminUsersController(identity.Object, summaries.Object, NullLogger<AdminUsersController>.Instance);
+        var controller = new AdminUsersController(identity.Object, NullLogger<AdminUsersController>.Instance);
 
         var result = await controller.Create(new("user", "user@example.com", "password"), default);
 
@@ -37,8 +34,7 @@ public class AdminUsersControllerTests
     {
         var identity = new Mock<IIdentityAdminService>();
         identity.Setup(x => x.SetSystemAdminAsync("last-admin", false, It.IsAny<CancellationToken>())).ThrowsAsync(new IdentityConflictException());
-        var summaries = new Mock<IWorkspaceUserSummaryService>();
-        var controller = new AdminUsersController(identity.Object, summaries.Object, NullLogger<AdminUsersController>.Instance);
+        var controller = new AdminUsersController(identity.Object, NullLogger<AdminUsersController>.Instance);
 
         var result = await controller.Roles("last-admin", new(false), default);
 
@@ -49,7 +45,7 @@ public class AdminUsersControllerTests
     public async Task Status_rejects_whitespace_identifier_without_calling_identity_service()
     {
         var identity = new Mock<IIdentityAdminService>();
-        var controller = new AdminUsersController(identity.Object, new Mock<IWorkspaceUserSummaryService>().Object, NullLogger<AdminUsersController>.Instance);
+        var controller = new AdminUsersController(identity.Object, NullLogger<AdminUsersController>.Instance);
 
         var result = await controller.Status(" ", new(true), default);
 
@@ -75,7 +71,7 @@ public class AdminUsersControllerTests
             _ => new IdentityUpstreamUnavailableException()
         };
         identity.Setup(x => x.SetEnabledAsync("user-id", false, It.IsAny<CancellationToken>())).ThrowsAsync(exception);
-        var controller = new AdminUsersController(identity.Object, new Mock<IWorkspaceUserSummaryService>().Object, NullLogger<AdminUsersController>.Instance);
+        var controller = new AdminUsersController(identity.Object, NullLogger<AdminUsersController>.Instance);
 
         var result = await controller.Status("user-id", new(false), default);
 
@@ -92,8 +88,7 @@ public class AdminUsersControllerTests
             ? (Exception)new IdentityMutationLockUnavailableException()
             : new IdentityInvariantViolationException();
         identity.Setup(x => x.SetSystemAdminAsync("user-id", false, It.IsAny<CancellationToken>())).ThrowsAsync(exception);
-        var controller = new AdminUsersController(identity.Object, new Mock<IWorkspaceUserSummaryService>().Object,
-            NullLogger<AdminUsersController>.Instance);
+        var controller = new AdminUsersController(identity.Object, NullLogger<AdminUsersController>.Instance);
 
         var result = await controller.Roles("user-id", new(false), default);
 
@@ -106,17 +101,11 @@ public class AdminUsersControllerTests
         var identity = new Mock<IIdentityAdminService>();
         identity.Setup(x => x.SetEnabledAsync("break-glass", false, It.IsAny<CancellationToken>()))
             .ThrowsAsync(new IdentityProtectedException());
-        var controller = new AdminUsersController(identity.Object, new Mock<IWorkspaceUserSummaryService>().Object,
-            NullLogger<AdminUsersController>.Instance);
+        var controller = new AdminUsersController(identity.Object, NullLogger<AdminUsersController>.Instance);
 
         var result = await controller.Status("break-glass", new(false), default);
 
         result.Should().BeAssignableTo<ConflictObjectResult>();
     }
 
-    private static AuditDbContext Context()
-    {
-        var tenant = new Mock<ITenantProvider>();
-        return new AuditDbContext(new DbContextOptionsBuilder<AuditDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options, tenant.Object);
-    }
 }

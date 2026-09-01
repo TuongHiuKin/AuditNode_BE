@@ -1,11 +1,9 @@
-using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;
 using AuditNode.Infrastructure.Data;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
-using Moq;
 using Xunit;
 
 namespace AuditNode.Tests.Persistence;
@@ -17,13 +15,11 @@ public sealed class GlobalCatalogPersistenceModelTests
         var options = new DbContextOptionsBuilder<AuditDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
-        var tenant = new Mock<ITenantProvider>();
-        tenant.SetupGet(provider => provider.WorkspaceId).Returns(Guid.NewGuid());
-        return new AuditDbContext(options, tenant.Object);
+        return new AuditDbContext(options);
     }
 
     [Fact]
-    public void BusinessResources_ShouldExposeTransitionalOwnerIdentity()
+    public void BusinessResources_ShouldRequireOwnerIdentity()
     {
         using var context = CreateContext();
         Type[] resourceTypes =
@@ -48,8 +44,7 @@ public sealed class GlobalCatalogPersistenceModelTests
             var ownerProperty = entityType!.FindProperty("OwnerUserId");
             ownerProperty.Should().NotBeNull($"{resourceType.Name} must carry catalog ownership");
             ownerProperty!.GetMaxLength().Should().Be(100);
-            ownerProperty.IsNullable.Should().BeTrue(
-                "Phase 1 is additive and cannot assign trustworthy ownership to legacy rows");
+            ownerProperty.IsNullable.Should().BeFalse();
         }
     }
 
@@ -71,7 +66,7 @@ public sealed class GlobalCatalogPersistenceModelTests
         label.GetIndexes().Should().Contain(index =>
             index.IsUnique &&
             index.Properties.Select(property => property.Name)
-                .SequenceEqual(new[] { nameof(Label.WorkspaceId), nameof(Label.OwnerUserId), nameof(Label.Key), nameof(Label.Value) }));
+                .SequenceEqual(new[] { nameof(Label.OwnerUserId), nameof(Label.Key), nameof(Label.Value) }));
         label.GetIndexes().Should().Contain(index =>
             index.IsUnique &&
             index.GetFilter() == "kind = 'owner' AND owner_user_id IS NOT NULL");
@@ -123,7 +118,7 @@ public sealed class GlobalCatalogPersistenceModelTests
     }
 
     [Fact]
-    public void ReadOnlyViews_ShouldExposeTransitionalOwnerProjection()
+    public void ReadOnlyViews_ShouldExposeOwnerProjection()
     {
         using var context = CreateContext();
         var model = context.GetService<IDesignTimeModel>().Model;
@@ -135,6 +130,34 @@ public sealed class GlobalCatalogPersistenceModelTests
             owner!.IsNullable.Should().BeTrue();
             owner.GetMaxLength().Should().Be(100);
             owner.GetColumnName().Should().Be("owner_user_id");
+        }
+    }
+
+    [Fact]
+    public void OwnerScopedRelationships_ShouldUseCompositeForeignKeys()
+    {
+        using var context = CreateContext();
+        var model = context.GetService<IDesignTimeModel>().Model;
+        Type[] dependentTypes =
+        [
+            typeof(Server),
+            typeof(ServerLabel),
+            typeof(ApplicationLabel),
+            typeof(PortMapping),
+            typeof(AppDependency),
+            typeof(TopologyNode),
+            typeof(TopologyEdge),
+            typeof(LabelGrant)
+        ];
+
+        foreach (var dependentType in dependentTypes)
+        {
+            var foreignKeys = model.FindEntityType(dependentType)!.GetForeignKeys().ToList();
+            foreignKeys.Should().NotBeEmpty();
+            foreignKeys.Should().OnlyContain(foreignKey =>
+                foreignKey.Properties.Any(property => property.Name == "OwnerUserId") &&
+                foreignKey.PrincipalKey.Properties.Any(property => property.Name == "OwnerUserId"),
+                $"every {dependentType.Name} relationship must enforce same-owner references in PostgreSQL");
         }
     }
 }

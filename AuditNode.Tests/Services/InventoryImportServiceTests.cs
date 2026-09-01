@@ -22,15 +22,13 @@ public class InventoryImportServiceTests
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        var mockTenantProvider = new Mock<ITenantProvider>();
-        mockTenantProvider.Setup(x => x.WorkspaceId).Returns(Guid.NewGuid());
-        _context = new AuditDbContext(options, mockTenantProvider.Object);
+        _context = new AuditDbContext(options);
         _context.Datacenters.Add(new AuditNode.Domain.Entities.Datacenter
         {
-            Id = Guid.NewGuid(), Name = "DC", Location = "Local"
+            Id = Guid.NewGuid(), OwnerUserId = "owner", Name = "DC", Location = "Local"
         });
         _context.SaveChanges();
-        _service = new InventoryImportService(_context, NullLogger<InventoryImportService>.Instance);
+        _service = new InventoryImportService(_context, NullLogger<InventoryImportService>.Instance, User("owner"));
     }
 
     [Fact]
@@ -95,6 +93,7 @@ public class InventoryImportServiceTests
         var existingApp = new AppEntity 
         { 
             Id = Guid.NewGuid(), 
+            OwnerUserId = "owner",
             AppCode = "APP01", 
             AppName = "Original Name", 
             OwnerTeam = "Original Team"
@@ -242,12 +241,10 @@ public class InventoryImportServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .ConfigureWarnings(x => x.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
-        var tenant = new Mock<ITenantProvider>();
-        tenant.SetupGet(x => x.WorkspaceId).Returns(Guid.NewGuid());
-        await using var context = new FailingAuditDbContext(options, tenant.Object);
+        await using var context = new FailingAuditDbContext(options);
         context.Datacenters.Add(new AuditNode.Domain.Entities.Datacenter
         {
-            Id = Guid.NewGuid(), Name = "DC", Location = "Local"
+            Id = Guid.NewGuid(), OwnerUserId = "owner", Name = "DC", Location = "Local"
         });
         await context.SaveChangesAsync();
         context.FailSaves = true;
@@ -255,7 +252,7 @@ public class InventoryImportServiceTests
         AddRow(workbook, 2, "srv-1", "10.0.0.1", "app1", 443);
         using var stream = Save(workbook);
 
-        var result = await new InventoryImportService(context, NullLogger<InventoryImportService>.Instance)
+        var result = await new InventoryImportService(context, NullLogger<InventoryImportService>.Instance, User("owner"))
             .ImportInventoryAsync(stream);
 
         result.Errors.Should().ContainSingle(error =>
@@ -301,8 +298,8 @@ public class InventoryImportServiceTests
     {
         public bool FailSaves { get; set; }
 
-        public FailingAuditDbContext(DbContextOptions<AuditDbContext> options, ITenantProvider tenantProvider)
-            : base(options, tenantProvider)
+        public FailingAuditDbContext(DbContextOptions<AuditDbContext> options)
+            : base(options)
         {
         }
 
@@ -310,5 +307,12 @@ public class InventoryImportServiceTests
             FailSaves
                 ? Task.FromException<int>(new InvalidOperationException("simulated database detail"))
                 : base.SaveChangesAsync(cancellationToken);
+    }
+
+    private static ICurrentUserService User(string id)
+    {
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(item => item.UserId).Returns(id);
+        return user.Object;
     }
 }

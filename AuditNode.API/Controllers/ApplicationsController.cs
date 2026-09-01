@@ -3,7 +3,6 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using AuditNode.API.Middleware;
 using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
@@ -20,7 +19,6 @@ public class ApplicationsController : ControllerBase
         _applicationService = applicationService;
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet]
     [ProducesResponseType(typeof(CursorPageDto<ApplicationResponseDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
@@ -48,7 +46,6 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("export")]
     public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> ExportApplications(
         [FromQuery] List<Guid> ids,
@@ -72,7 +69,6 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<ApplicationResponseDto>> GetApplication(Guid id, CancellationToken cancellationToken = default)
     {
@@ -103,13 +99,13 @@ public class ApplicationsController : ControllerBase
                 ApplicationOperationStatus.Success when result.Application is not null =>
                     CreatedAtAction(nameof(GetApplication), new { id = result.Application.Id }, result.Application),
                 ApplicationOperationStatus.DuplicateAppCode =>
-                    Conflict(Problem(409, "An application with this code already exists in the current workspace.")),
+                    Conflict(Problem(409, "An application with this code already exists in your catalog.")),
                 ApplicationOperationStatus.ServerNotFound =>
-                    BadRequest(Problem(400, "Deployment server was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Deployment server was not found in your catalog.")),
                 ApplicationOperationStatus.PortCollision =>
                     Conflict(Problem(409, "The target server port is already assigned.")),
-                ApplicationOperationStatus.InvalidRequest or ApplicationOperationStatus.InvalidWorkspace =>
-                    BadRequest(Problem(400, "Application data is invalid for the current workspace.")),
+                ApplicationOperationStatus.InvalidRequest =>
+                    BadRequest(Problem(400, "Application data is invalid for your catalog.")),
                 ApplicationOperationStatus.Forbidden => Forbid(),
                 _ => Failure(500, "Application could not be created.")
             };
@@ -136,11 +132,11 @@ public class ApplicationsController : ControllerBase
                 ApplicationOperationStatus.DeploymentNotFound =>
                     NotFound(Problem(404, "Deployment was not found for this application.")),
                 ApplicationOperationStatus.ServerNotFound =>
-                    BadRequest(Problem(400, "Deployment server was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Deployment server was not found in the resource owner's catalog.")),
                 ApplicationOperationStatus.PortCollision =>
                     Conflict(Problem(409, "The target server port is already assigned.")),
-                ApplicationOperationStatus.InvalidRequest or ApplicationOperationStatus.InvalidWorkspace =>
-                    BadRequest(Problem(400, "Application data is invalid for the current workspace.")),
+                ApplicationOperationStatus.InvalidRequest =>
+                    BadRequest(Problem(400, "Application data is invalid for the resource owner's catalog.")),
                 ApplicationOperationStatus.Forbidden => Forbid(),
                 _ => Failure(500, "Application could not be updated.")
             };

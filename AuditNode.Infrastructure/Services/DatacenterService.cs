@@ -9,18 +9,14 @@ namespace AuditNode.Infrastructure.Services;
 public class DatacenterService : IDatacenterService
 {
     private readonly AuditDbContext _context;
-    private readonly IScopedResourcePolicy _policy;
     private readonly ICurrentUserService _currentUser;
-    private readonly ITenantProvider _tenant;
     private readonly IGlobalCatalogRepository _catalog;
     private readonly TimeProvider _timeProvider;
 
-    public DatacenterService(AuditDbContext context, IScopedResourcePolicy policy, ICurrentUserService currentUser, ITenantProvider tenant, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
+    public DatacenterService(AuditDbContext context, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
     {
         _context = context;
-        _policy = policy;
         _currentUser = currentUser;
-        _tenant = tenant;
         _catalog = catalog;
         _timeProvider = timeProvider;
     }
@@ -30,27 +26,17 @@ public class DatacenterService : IDatacenterService
             ? Task.FromResult(new CursorPageDto<DatacenterDto>([], null, false))
             : _catalog.GetDatacentersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, ownerUserId, cancellationToken);
 
-    public async Task<IEnumerable<DatacenterDto>> GetDatacentersAsync()
-    {
-        if (!_tenant.WorkspaceId.HasValue || string.IsNullOrWhiteSpace(_currentUser.UserId)) return [];
-        var serverIds = await _policy.GetReadableIdsAsync(_tenant.WorkspaceId.Value, _currentUser.UserId!, "server");
-        var query = _context.Datacenters.AsQueryable();
-        if (serverIds is not null) query = query.Where(datacenter => datacenter.Servers.Any(server => serverIds.Contains(server.Id)));
-        var datacenters = await query.ToListAsync();
-        return datacenters.Select(d => new DatacenterDto
-        {
-            Id = d.Id,
-            Name = d.Name,
-            Location = d.Location
-        });
-    }
+    public async Task<IEnumerable<DatacenterDto>> GetDatacentersAsync() =>
+        (await GetCatalogPageAsync(new CatalogPageQuery(CatalogView.Mine, 100))).Items;
 
     public async Task<DatacenterDto> CreateDatacenterAsync(CreateDatacenterDto dto)
     {
+        var actor = _currentUser.UserId;
+        if (string.IsNullOrWhiteSpace(actor)) throw new UnauthorizedAccessException();
         var datacenter = new Datacenter
         {
             Id = Guid.NewGuid(),
-            OwnerUserId = _currentUser.UserId,
+            OwnerUserId = actor,
             Name = dto.Name,
             Location = dto.Location
         };

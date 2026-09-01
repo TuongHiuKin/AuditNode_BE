@@ -24,7 +24,6 @@ public class InventoryImportController : ControllerBase
     public IActionResult DownloadTemplate() =>
         File(_importService.GenerateTemplate(), ExcelContentType, "Inventory_Import_Template.xlsx");
 
-    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpPost("import")]
     [RequestSizeLimit(MaxImportBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxImportBytes)]

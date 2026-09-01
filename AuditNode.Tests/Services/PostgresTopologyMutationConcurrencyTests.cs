@@ -158,15 +158,12 @@ public sealed class PostgresTopologyMutationConcurrencyTests
     {
         await using var context = Context(workspaceId);
         var owner = OwnerFor(workspaceId);
-        context.Workspaces.Add(new Workspace { Id = workspaceId, Name = "Topology concurrency", OwnerUserId = owner });
         context.OwnerCatalogStates.Add(new OwnerCatalogState { OwnerUserId = owner });
-        first.WorkspaceId = workspaceId;
         first.OwnerUserId = owner;
         context.TopologyNodes.Add(first);
         AddServerReferenceIfNeeded(context, workspaceId, owner, first);
         if (second is not null)
         {
-            second.WorkspaceId = workspaceId;
             second.OwnerUserId = owner;
             context.TopologyNodes.Add(second);
             AddServerReferenceIfNeeded(context, workspaceId, owner, second);
@@ -175,7 +172,7 @@ public sealed class PostgresTopologyMutationConcurrencyTests
         {
             var label = new Label
             {
-                Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = owner,
+                Id = Guid.NewGuid(), OwnerUserId = owner,
                 Key = "Owner", Value = owner, Kind = LabelKinds.Owner, IsProtected = true
             };
             var grant = new LabelGrant
@@ -196,12 +193,12 @@ public sealed class PostgresTopologyMutationConcurrencyTests
         if (!node.NodeType.Equals("server", StringComparison.OrdinalIgnoreCase) || node.ReferenceId.HasValue) return;
         var datacenter = new Datacenter
         {
-            Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = owner,
+            Id = Guid.NewGuid(), OwnerUserId = owner,
             Name = $"dc-{node.Id:N}", Location = "test"
         };
         var server = new Server
         {
-            Id = Guid.NewGuid(), WorkspaceId = workspaceId, OwnerUserId = owner, DatacenterId = datacenter.Id,
+            Id = Guid.NewGuid(), OwnerUserId = owner, DatacenterId = datacenter.Id,
             Hostname = $"host-{node.Id:N}", IpAddress = $"10.{node.Id.ToByteArray()[0]}.{node.Id.ToByteArray()[1]}.1",
             OsType = "Linux", Environment = "test", Status = "up"
         };
@@ -258,7 +255,6 @@ public sealed class PostgresTopologyMutationConcurrencyTests
         targetMapping.OwnerUserId = owner;
         sourceNode.OwnerUserId = owner;
         targetNode.OwnerUserId = owner;
-        context.Workspaces.Add(new Workspace { Id = workspaceId, Name = "Dependency race", OwnerUserId = owner });
         context.OwnerCatalogStates.Add(new OwnerCatalogState { OwnerUserId = owner });
         context.AddRange(datacenter, sourceServer, targetServer, sourceApp, targetApp, sourceMapping, targetMapping, sourceNode, targetNode);
         await context.SaveChangesAsync();
@@ -267,7 +263,6 @@ public sealed class PostgresTopologyMutationConcurrencyTests
 
     private static TopologyCommandService CommandService(AuditDbContext context, Guid workspaceId, string userId)
     {
-        var tenant = Tenant(workspaceId);
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(item => item.UserId).Returns(userId);
         return new TopologyCommandService(
@@ -277,10 +272,9 @@ public sealed class PostgresTopologyMutationConcurrencyTests
 
     private static TopologyRepository Repository(AuditDbContext context, Guid workspaceId, string userId)
     {
-        var tenant = Tenant(workspaceId);
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(item => item.UserId).Returns(userId);
-        return new TopologyRepository(context, user.Object, tenant.Object,
+        return new TopologyRepository(context, user.Object,
             new OwnerGraphAccessService(context, user.Object, TimeProvider.System));
     }
 
@@ -295,17 +289,8 @@ public sealed class PostgresTopologyMutationConcurrencyTests
 
     private static AuditDbContext Context(Guid workspaceId)
     {
-        var tenant = Tenant(workspaceId);
         return new AuditDbContext(
-            new DbContextOptionsBuilder<AuditDbContext>().UseNpgsql(ConnectionString()).Options,
-            tenant.Object);
-    }
-
-    private static Mock<ITenantProvider> Tenant(Guid workspaceId)
-    {
-        var tenant = new Mock<ITenantProvider>();
-        tenant.SetupGet(item => item.WorkspaceId).Returns(workspaceId);
-        return tenant;
+            new DbContextOptionsBuilder<AuditDbContext>().UseNpgsql(ConnectionString()).Options);
     }
 
     private static string ConnectionString() => Environment.GetEnvironmentVariable("AUDITNODE_TEST_POSTGRES")!;

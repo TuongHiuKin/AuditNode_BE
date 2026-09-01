@@ -2,7 +2,6 @@ namespace AuditNode.Domain.Entities;
 
 public class DependencyView
 {
-    public Guid WorkspaceId { get; set; }
     public Guid SourceAppId { get; set; }
     public string SourceAppName { get; set; } = string.Empty;
     public string SourceAppCode { get; set; } = string.Empty;

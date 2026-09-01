@@ -102,15 +102,15 @@ public class ServerRepository : IServerRepository
             .FirstOrDefaultAsync(s => s.Id == id);
     }
 
-    public Task<bool> DatacenterExistsAsync(Guid id)
+    public Task<bool> DatacenterExistsAsync(Guid id, string ownerUserId)
     {
-        return _dbContext.Datacenters.AnyAsync(datacenter => datacenter.Id == id);
+        return _dbContext.Datacenters.AnyAsync(datacenter => datacenter.Id == id && datacenter.OwnerUserId == ownerUserId);
     }
 
-    public Task<bool> IpAddressExistsAsync(string ipAddress, Guid? excludeServerId = null)
+    public Task<bool> IpAddressExistsAsync(string ipAddress, string ownerUserId, Guid? excludeServerId = null)
     {
         return _dbContext.Servers.AnyAsync(server =>
-            server.IpAddress == ipAddress &&
+            server.OwnerUserId == ownerUserId && server.IpAddress == ipAddress &&
             (!excludeServerId.HasValue || server.Id != excludeServerId.Value));
     }
 
@@ -165,7 +165,6 @@ public class ServerRepository : IServerRepository
                 label = new Label
                 {
                     Id = Guid.NewGuid(),
-                    WorkspaceId = server.WorkspaceId,
                     OwnerUserId = server.OwnerUserId,
                     Key = value.Key,
                     Value = value.Value
@@ -178,7 +177,6 @@ public class ServerRepository : IServerRepository
             {
                 _dbContext.ServerLabels.Add(new ServerLabel
                 {
-                    WorkspaceId = server.WorkspaceId,
                     OwnerUserId = server.OwnerUserId,
                     ServerId = server.Id,
                     LabelId = label.Id,

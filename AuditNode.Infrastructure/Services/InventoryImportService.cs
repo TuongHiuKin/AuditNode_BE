@@ -18,11 +18,13 @@ public class InventoryImportService : IInventoryImportService
 
     private readonly AuditDbContext _context;
     private readonly ILogger<InventoryImportService> _logger;
+    private readonly ICurrentUserService _currentUser;
 
-    public InventoryImportService(AuditDbContext context, ILogger<InventoryImportService> logger)
+    public InventoryImportService(AuditDbContext context, ILogger<InventoryImportService> logger, ICurrentUserService currentUser)
     {
         _context = context;
         _logger = logger;
+        _currentUser = currentUser;
     }
 
     public byte[] GenerateTemplate()
@@ -49,9 +51,10 @@ public class InventoryImportService : IInventoryImportService
     public async Task<ImportResponseDto> ImportInventoryAsync(Stream excelStream)
     {
         var response = new ImportResponseDto();
-        if (!_context.CurrentWorkspaceId.HasValue || _context.CurrentWorkspaceId == Guid.Empty)
+        var actor = _currentUser.UserId;
+        if (string.IsNullOrWhiteSpace(actor))
         {
-            AddError(response, 0, "Validation", "A valid workspace is required.");
+            AddError(response, 0, "Authorization", "An authenticated catalog owner is required.");
             return response;
         }
 
@@ -106,14 +109,14 @@ public class InventoryImportService : IInventoryImportService
             if (response.Errors.Count > 0 || response.Conflicts.Count > 0)
                 return response;
 
-            var datacenter = await _context.Datacenters.AsNoTracking().OrderBy(item => item.Id).FirstOrDefaultAsync();
+            var datacenter = await _context.Datacenters.AsNoTracking().Where(item => item.OwnerUserId == actor).OrderBy(item => item.Id).FirstOrDefaultAsync();
             if (datacenter is null)
             {
-                AddError(response, 0, "Validation", "The current workspace does not have a datacenter.");
+                AddError(response, 0, "Validation", "Your catalog does not have a datacenter.");
                 return response;
             }
 
-            var existingAppRows = await _context.Applications.AsNoTracking().ToListAsync();
+            var existingAppRows = await _context.Applications.AsNoTracking().Where(item => item.OwnerUserId == actor).ToListAsync();
             var duplicateExistingCodes = existingAppRows
                 .GroupBy(app => app.AppCode, StringComparer.OrdinalIgnoreCase)
                 .FirstOrDefault(group => group.Count() > 1);
@@ -123,12 +126,12 @@ public class InventoryImportService : IInventoryImportService
                 {
                     Row = 0,
                     AppCode = duplicateExistingCodes.Key,
-                    Message = "The workspace contains application codes that differ only by case."
+                    Message = "Your catalog contains application codes that differ only by case."
                 });
                 return response;
             }
             var existingApps = existingAppRows.ToDictionary(app => app.AppCode, StringComparer.OrdinalIgnoreCase);
-            var existingServers = (await _context.Servers.AsNoTracking().ToListAsync())
+            var existingServers = (await _context.Servers.AsNoTracking().Where(item => item.OwnerUserId == actor).ToListAsync())
                 .ToDictionary(server => server.IpAddress, StringComparer.OrdinalIgnoreCase);
 
             foreach (var row in parsedRows)
@@ -164,7 +167,7 @@ public class InventoryImportService : IInventoryImportService
             if (response.Conflicts.Count > 0)
                 return response;
 
-            await PersistAsync(parsedRows, datacenter.Id, existingApps, existingServers, mappingLookup, response);
+            await PersistAsync(parsedRows, datacenter.Id, actor, existingApps, existingServers, mappingLookup, response);
             return response;
         }
     }
@@ -172,6 +175,7 @@ public class InventoryImportService : IInventoryImportService
     private async Task PersistAsync(
         IReadOnlyCollection<ImportRow> rows,
         Guid datacenterId,
+        string ownerUserId,
         IDictionary<string, AppEntity> apps,
         IDictionary<string, Server> servers,
         IDictionary<string, PortMapping> mappings,
@@ -186,7 +190,7 @@ public class InventoryImportService : IInventoryImportService
                 {
                     server = new Server
                     {
-                        Id = Guid.NewGuid(), DatacenterId = datacenterId, Hostname = row.ServerName,
+                        Id = Guid.NewGuid(), OwnerUserId = ownerUserId, DatacenterId = datacenterId, Hostname = row.ServerName,
                         IpAddress = row.IpAddress, Environment = row.Environment, OsType = "Unknown", Status = "Active"
                     };
                     servers.Add(row.IpAddress, server);
@@ -197,7 +201,7 @@ public class InventoryImportService : IInventoryImportService
                 {
                     application = new AppEntity
                     {
-                        Id = Guid.NewGuid(), AppCode = row.AppCode, AppName = row.AppName,
+                        Id = Guid.NewGuid(), OwnerUserId = ownerUserId, AppCode = row.AppCode, AppName = row.AppName,
                         OwnerTeam = row.OwnerTeam, Risk = "MEDIUM"
                     };
                     apps.Add(row.AppCode, application);
@@ -209,7 +213,7 @@ public class InventoryImportService : IInventoryImportService
                 {
                     var mapping = new PortMapping
                     {
-                        Id = Guid.NewGuid(), ServerId = server.Id, AppId = application.Id,
+                        Id = Guid.NewGuid(), OwnerUserId = ownerUserId, ServerId = server.Id, AppId = application.Id,
                         PortNumber = row.Port, Protocol = row.Protocol
                     };
                     mappings.Add(key, mapping);

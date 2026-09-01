@@ -3,7 +3,6 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Security;
-using AuditNode.API.Middleware;
 
 namespace AuditNode.API.Controllers;
 
@@ -19,7 +18,6 @@ public class InfrastructureController : ControllerBase
         _infrastructureService = infrastructureService;
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("apps/{id:guid}/dependencies-count")]
     public async Task<ActionResult<int>> GetDependenciesCount(Guid id, CancellationToken cancellationToken = default)
     {
@@ -36,7 +34,6 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpPut("apps/migrate")]
     public async Task<IActionResult> MigrateApp([FromBody] MigrateAppDto migrateDto)
     {
@@ -51,9 +48,10 @@ public class InfrastructureController : ControllerBase
                 DeploymentOperationStatus.NotFound =>
                     NotFound(Problem(404, "Deployment was not found.")),
                 DeploymentOperationStatus.ServerNotFound =>
-                    BadRequest(Problem(400, "Target server was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Target server was not found in the resource owner's catalog.")),
                 DeploymentOperationStatus.PortCollision =>
                     Conflict(Problem(409, "The target server port is already assigned.")),
+                DeploymentOperationStatus.Forbidden => Forbid(),
                 _ => Failure("Deployment could not be migrated.")
             };
         }
@@ -63,7 +61,6 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [WorkspaceMutation(ownerOrAdminOnly: true)]
     [HttpDelete("apps/{id:guid}/purge")]
     public async Task<IActionResult> PurgeApp(Guid id)
     {
@@ -81,7 +78,6 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [SkipWorkspaceValidation]
     [HttpGet("servers/{id:guid}/deployed-apps")]
     public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id, CancellationToken cancellationToken = default)
     {

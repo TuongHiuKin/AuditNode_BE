@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
-using AuditNode.API.Middleware;
 using System.Reflection;
 
 namespace AuditNode.Tests.Controllers;
@@ -25,7 +24,6 @@ public sealed class ApiResponseContractTests
         Type responseType)
     {
         var method = controllerType.GetMethod(action)!;
-        method.GetCustomAttribute<SkipWorkspaceValidationAttribute>().Should().NotBeNull();
         var metadata = method.GetCustomAttributes<ProducesResponseTypeAttribute>().ToList();
         metadata.Should().Contain(attribute => attribute.StatusCode == StatusCodes.Status200OK && attribute.Type == responseType);
         metadata.Should().Contain(attribute => attribute.StatusCode == StatusCodes.Status400BadRequest && attribute.Type == typeof(ProblemDetails));
