@@ -14,15 +14,17 @@ public class ServerService : IServerService
     private readonly ILabelMutationCoordinator _mutationCoordinator;
     private readonly ICurrentUserService _currentUser;
     private readonly IGlobalCatalogRepository _catalog;
+    private readonly IOwnerLabelService _ownerLabels;
     private readonly TimeProvider _timeProvider;
 
-    public ServerService(IServerRepository repository, ILabelAccessService labelAccess, ILabelMutationCoordinator mutationCoordinator, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
+    public ServerService(IServerRepository repository, ILabelAccessService labelAccess, ILabelMutationCoordinator mutationCoordinator, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, IOwnerLabelService ownerLabels, TimeProvider timeProvider)
     {
         _repository = repository;
         _labelAccess = labelAccess;
         _mutationCoordinator = mutationCoordinator;
         _currentUser = currentUser;
         _catalog = catalog;
+        _ownerLabels = ownerLabels;
         _timeProvider = timeProvider;
     }
 
@@ -61,6 +63,8 @@ public class ServerService : IServerService
         if (await _repository.IpAddressExistsAsync(normalizedIp, actor, null))
             return new(ServerOperationStatus.DuplicateIp);
 
+        await _ownerLabels.EnsureAsync(actor);
+
         var server = new Server
         {
             Id = Guid.NewGuid(),
@@ -93,7 +97,8 @@ public class ServerService : IServerService
         if (server is null)
             return new(ServerOperationStatus.NotFound);
         var access = await _labelAccess.GetServerAccessAsync(id);
-        if (access?.Capabilities.CanEditProperties != true) return new(ServerOperationStatus.Forbidden);
+        if (access is null) return new(ServerOperationStatus.NotFound);
+        if (!access.Capabilities.CanEditProperties) return new(ServerOperationStatus.Forbidden);
         if (dto.Labels is not null && !access.Capabilities.CanChangeLabels) return new(ServerOperationStatus.Forbidden);
 
         if (!await _repository.DatacenterExistsAsync(dto.DatacenterId, access.OwnerUserId))
@@ -137,7 +142,8 @@ public class ServerService : IServerService
         if (server is null)
             return ServerOperationStatus.NotFound;
         var access = await _labelAccess.GetServerAccessAsync(id);
-        if (access?.Capabilities.CanDelete != true) return ServerOperationStatus.Forbidden;
+        if (access is null) return ServerOperationStatus.NotFound;
+        if (!access.Capabilities.CanDelete) return ServerOperationStatus.Forbidden;
 
         await _repository.DeleteAsync(server);
         return ServerOperationStatus.Success;

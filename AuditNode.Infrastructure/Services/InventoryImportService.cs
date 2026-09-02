@@ -19,12 +19,14 @@ public class InventoryImportService : IInventoryImportService
     private readonly AuditDbContext _context;
     private readonly ILogger<InventoryImportService> _logger;
     private readonly ICurrentUserService _currentUser;
+    private readonly IOwnerLabelService _ownerLabels;
 
-    public InventoryImportService(AuditDbContext context, ILogger<InventoryImportService> logger, ICurrentUserService currentUser)
+    public InventoryImportService(AuditDbContext context, ILogger<InventoryImportService> logger, ICurrentUserService currentUser, IOwnerLabelService ownerLabels)
     {
         _context = context;
         _logger = logger;
         _currentUser = currentUser;
+        _ownerLabels = ownerLabels;
     }
 
     public byte[] GenerateTemplate()
@@ -167,6 +169,7 @@ public class InventoryImportService : IInventoryImportService
             if (response.Conflicts.Count > 0)
                 return response;
 
+            await _ownerLabels.EnsureAsync(actor);
             await PersistAsync(parsedRows, datacenter.Id, actor, existingApps, existingServers, mappingLookup, response);
             return response;
         }

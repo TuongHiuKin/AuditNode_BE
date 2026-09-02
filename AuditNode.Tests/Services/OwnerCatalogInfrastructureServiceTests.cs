@@ -62,6 +62,35 @@ public sealed class OwnerCatalogInfrastructureServiceTests
     }
 
     [Fact]
+    public async Task Migrate_returns_not_found_when_existing_mapping_is_outside_callers_read_scope()
+    {
+        await using var context = CreateContext();
+        var fixture = await SeedDeploymentAsync(context);
+        var access = new Mock<ILabelAccessService>();
+        access.Setup(item => item.GetApplicationAccessAsync(fixture.ApplicationId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ResourceLabelAccessDto?)null);
+        var currentUser = new Mock<ICurrentUserService>();
+        currentUser.SetupGet(item => item.UserId).Returns("other-user");
+        var service = new InfrastructureService(
+            context,
+            NullLogger<InfrastructureService>.Instance,
+            access.Object,
+            AllowingCoordinator(),
+            currentUser.Object,
+            Mock.Of<IGlobalCatalogRepository>(),
+            TimeProvider.System);
+
+        var result = await service.MigrateAppAsync(new MigrateAppDto
+        {
+            PortMappingId = fixture.MappingId,
+            TargetServerId = fixture.TargetServerId,
+            NewPortNumber = 8443
+        });
+
+        result.Should().Be(DeploymentOperationStatus.NotFound);
+    }
+
+    [Fact]
     public async Task Owner_purge_removes_application_deployments_and_incident_dependencies()
     {
         await using var context = CreateContext();

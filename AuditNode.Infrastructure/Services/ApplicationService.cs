@@ -14,15 +14,17 @@ public class ApplicationService : IApplicationService
     private readonly ILabelMutationCoordinator _mutationCoordinator;
     private readonly ICurrentUserService _currentUser;
     private readonly IGlobalCatalogRepository _catalog;
+    private readonly IOwnerLabelService _ownerLabels;
     private readonly TimeProvider _timeProvider;
 
-    public ApplicationService(IApplicationRepository repository, ILabelAccessService labelAccess, ILabelMutationCoordinator mutationCoordinator, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
+    public ApplicationService(IApplicationRepository repository, ILabelAccessService labelAccess, ILabelMutationCoordinator mutationCoordinator, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, IOwnerLabelService ownerLabels, TimeProvider timeProvider)
     {
         _repository = repository;
         _labelAccess = labelAccess;
         _mutationCoordinator = mutationCoordinator;
         _currentUser = currentUser;
         _catalog = catalog;
+        _ownerLabels = ownerLabels;
         _timeProvider = timeProvider;
     }
 
@@ -85,6 +87,8 @@ public class ApplicationService : IApplicationService
             };
         }
 
+        await _ownerLabels.EnsureAsync(actor);
+
         var application = new AppEntity
         {
             Id = Guid.NewGuid(),
@@ -122,7 +126,8 @@ public class ApplicationService : IApplicationService
         if (application is null)
             return new(ApplicationOperationStatus.NotFound);
         var access = await _labelAccess.GetApplicationAccessAsync(id);
-        if (access?.Capabilities.CanEditProperties != true) return new(ApplicationOperationStatus.Forbidden);
+        if (access is null) return new(ApplicationOperationStatus.NotFound);
+        if (!access.Capabilities.CanEditProperties) return new(ApplicationOperationStatus.Forbidden);
         if (updateDto.Labels is not null && !access.Capabilities.CanChangeLabels) return new(ApplicationOperationStatus.Forbidden);
 
         PortMapping? deployment = null;

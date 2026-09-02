@@ -38,6 +38,19 @@ public class ApplicationsControllerTests
     }
 
     [Fact]
+    public async Task Update_returns_not_found_when_resource_is_absent_or_outside_read_scope()
+    {
+        var id = Guid.NewGuid();
+        var dto = new UpdateApplicationDto();
+        _service.Setup(x => x.UpdateAsync(id, dto))
+            .ReturnsAsync(new ApplicationOperationResult(ApplicationOperationStatus.NotFound));
+
+        var result = await Controller().PutApplication(id, dto);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
     public async Task Get_passes_label_filters_to_service()
     {
         _service.Setup(x => x.GetCatalogPageAsync(

@@ -11,13 +11,15 @@ public class DatacenterService : IDatacenterService
     private readonly AuditDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IGlobalCatalogRepository _catalog;
+    private readonly IOwnerLabelService _ownerLabels;
     private readonly TimeProvider _timeProvider;
 
-    public DatacenterService(AuditDbContext context, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, TimeProvider timeProvider)
+    public DatacenterService(AuditDbContext context, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, IOwnerLabelService ownerLabels, TimeProvider timeProvider)
     {
         _context = context;
         _currentUser = currentUser;
         _catalog = catalog;
+        _ownerLabels = ownerLabels;
         _timeProvider = timeProvider;
     }
 
@@ -33,6 +35,7 @@ public class DatacenterService : IDatacenterService
     {
         var actor = _currentUser.UserId;
         if (string.IsNullOrWhiteSpace(actor)) throw new UnauthorizedAccessException();
+        await _ownerLabels.EnsureAsync(actor);
         var datacenter = new Datacenter
         {
             Id = Guid.NewGuid(),

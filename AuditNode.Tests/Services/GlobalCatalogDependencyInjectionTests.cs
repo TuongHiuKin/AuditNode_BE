@@ -26,6 +26,7 @@ public sealed class GlobalCatalogDependencyInjectionTests
         services.AddSingleton<ICatalogCursorCodec, CatalogCursorCodec>();
         services.AddScoped<IGlobalCatalogRepository, GlobalCatalogRepository>();
         services.AddScoped<ILabelCatalogService, LabelCatalogService>();
+        services.AddScoped<IOwnerLabelService, OwnerLabelService>();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
@@ -36,6 +37,7 @@ public sealed class GlobalCatalogDependencyInjectionTests
 
         scope.ServiceProvider.GetRequiredService<IGlobalCatalogRepository>().Should().BeOfType<GlobalCatalogRepository>();
         scope.ServiceProvider.GetRequiredService<ILabelCatalogService>().Should().BeOfType<LabelCatalogService>();
+        scope.ServiceProvider.GetRequiredService<IOwnerLabelService>().Should().BeOfType<OwnerLabelService>();
         provider.GetRequiredService<ICatalogCursorCodec>().Should().BeOfType<CatalogCursorCodec>();
     }
 

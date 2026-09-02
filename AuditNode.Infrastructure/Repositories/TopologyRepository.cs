@@ -392,7 +392,7 @@ public class TopologyRepository : ITopologyRepository
             incomingEdgeIds.Contains(item.Id) &&
             item.OwnerUserId != ownerUserId);
         if (foreignNodeIdExists || foreignEdgeIdExists)
-            return TopologyStateStatus.InvalidReference;
+            return TopologyStateStatus.Forbidden;
 
         var selectedExistingEdgeIds = await _context.TopologyEdges.IgnoreQueryFilters().AsNoTracking()
             .Where(item => incomingEdgeIds.Contains(item.Id) && item.OwnerUserId == ownerUserId)

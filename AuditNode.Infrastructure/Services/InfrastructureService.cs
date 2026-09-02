@@ -75,9 +75,13 @@ public class InfrastructureService : IInfrastructureService
         var applicationAccess = await _labelAccess.GetApplicationAccessAsync(portMapping.AppId);
         var sourceServerAccess = await _labelAccess.GetServerAccessAsync(portMapping.ServerId);
         var targetServerAccess = await _labelAccess.GetServerAccessAsync(migrateDto.TargetServerId);
-        if (applicationAccess?.Capabilities.CanEditProperties != true ||
-            sourceServerAccess?.Capabilities.CanEditProperties != true ||
-            targetServerAccess?.Capabilities.CanEditProperties != true ||
+        if (applicationAccess is null || sourceServerAccess is null)
+            return DeploymentOperationStatus.NotFound;
+        if (targetServerAccess is null)
+            return DeploymentOperationStatus.ServerNotFound;
+        if (!applicationAccess.Capabilities.CanEditProperties ||
+            !sourceServerAccess.Capabilities.CanEditProperties ||
+            !targetServerAccess.Capabilities.CanEditProperties ||
             applicationAccess.OwnerUserId != sourceServerAccess.OwnerUserId ||
             applicationAccess.OwnerUserId != targetServerAccess.OwnerUserId)
             return DeploymentOperationStatus.Forbidden;

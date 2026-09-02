@@ -46,7 +46,8 @@ public class ServerServiceTests
         _repository.Setup(x => x.CreateServerAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>>()))
             .ReturnsAsync((Server value, IReadOnlyCollection<LabelDto> labels) => value);
 
-        var result = await Service().CreateServerAsync(dto);
+        var ownerLabels = new Mock<IOwnerLabelService>();
+        var result = await Service(ownerLabels: ownerLabels.Object).CreateServerAsync(dto);
 
         result.Status.Should().Be(ServerOperationStatus.Success);
         result.Server.Should().NotBeNull();
@@ -55,6 +56,7 @@ public class ServerServiceTests
         result.Server.OwnerUserId.Should().Be("test-user");
         _repository.Verify(x => x.CreateServerAsync(It.Is<Server>(s =>
             s.Id != Guid.Empty && s.DatacenterId == dto.DatacenterId && s.IpAddress == dto.IpAddress && s.OwnerUserId == "test-user"), dto.Labels));
+        ownerLabels.Verify(x => x.EnsureAsync("test-user", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -132,14 +134,14 @@ public class ServerServiceTests
             ids.Order().SequenceEqual(new[] { first, second }.Order())), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    private ServerService Service(IGlobalCatalogRepository? catalog = null)
+    private ServerService Service(IGlobalCatalogRepository? catalog = null, IOwnerLabelService? ownerLabels = null)
     {
         var access = new Mock<ILabelAccessService>();
         access.Setup(x => x.GetServerAccessAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(
             (Guid id, CancellationToken _) => new ResourceLabelAccessDto(id, "test-user", LabelEffectivePermission.Owner, [], new(true, true, true, true, true, false, true)));
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(x => x.UserId).Returns("test-user");
-        return new(_repository.Object, access.Object, AllowingCoordinator(), user.Object, catalog ?? Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        return new(_repository.Object, access.Object, AllowingCoordinator(), user.Object, catalog ?? Mock.Of<IGlobalCatalogRepository>(), ownerLabels ?? Mock.Of<IOwnerLabelService>(), TimeProvider.System);
     }
 
     private static ILabelMutationCoordinator AllowingCoordinator()
@@ -164,7 +166,7 @@ public class ServerServiceTests
     {
         var access = new Mock<ILabelAccessService>();
         var user = new Mock<ICurrentUserService>();
-        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), Mock.Of<IOwnerLabelService>(), TimeProvider.System);
 
         var result = await service.CreateServerAsync(ValidCreate());
 
@@ -182,7 +184,7 @@ public class ServerServiceTests
             new ResourceLabelAccessDto(id, "owner", LabelEffectivePermission.Editor, [], new(true, true, false, false, false, false, false)));
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(x => x.UserId).Returns("auditor");
-        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), Mock.Of<IOwnerLabelService>(), TimeProvider.System);
         var dto = ValidUpdate();
         dto.Labels = [new LabelDto { Key = "env", Value = "production" }];
 
@@ -205,7 +207,7 @@ public class ServerServiceTests
             new ResourceLabelAccessDto(id, "owner", LabelEffectivePermission.Editor, [Guid.NewGuid()], new(true, true, false, false, false, false, false)));
         var user = new Mock<ICurrentUserService>();
         user.SetupGet(x => x.UserId).Returns("editor");
-        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), user.Object, Mock.Of<IGlobalCatalogRepository>(), Mock.Of<IOwnerLabelService>(), TimeProvider.System);
         var dto = ValidUpdate();
         dto.Labels = null;
 
@@ -232,7 +234,7 @@ public class ServerServiceTests
             .ReturnsAsync(false);
         var service = new ServerService(
             _repository.Object, access.Object, coordinator.Object, Mock.Of<ICurrentUserService>(),
-            Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+            Mock.Of<IGlobalCatalogRepository>(), Mock.Of<IOwnerLabelService>(), TimeProvider.System);
         var dto = ValidUpdate();
         dto.Labels = null;
 
@@ -250,12 +252,46 @@ public class ServerServiceTests
         var access = new Mock<ILabelAccessService>();
         access.Setup(x => x.GetServerAccessAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync(
             new ResourceLabelAccessDto(id, "owner", LabelEffectivePermission.Viewer, [Guid.NewGuid()], new(true, false, false, false, false, false, false)));
-        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), Mock.Of<ICurrentUserService>(), Mock.Of<IGlobalCatalogRepository>(), TimeProvider.System);
+        var service = new ServerService(_repository.Object, access.Object, AllowingCoordinator(), Mock.Of<ICurrentUserService>(), Mock.Of<IGlobalCatalogRepository>(), Mock.Of<IOwnerLabelService>(), TimeProvider.System);
 
         var result = await service.UpdateServerAsync(id, ValidUpdate());
 
         result.Status.Should().Be(ServerOperationStatus.Forbidden);
         _repository.Verify(x => x.UpdateAsync(It.IsAny<Server>(), It.IsAny<IReadOnlyCollection<LabelDto>?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Update_returns_not_found_for_existing_server_outside_callers_read_scope()
+    {
+        var id = Guid.NewGuid();
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(new Server { Id = id, OwnerUserId = "another-owner" });
+        var access = new Mock<ILabelAccessService>();
+        access.Setup(x => x.GetServerAccessAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ResourceLabelAccessDto?)null);
+        var service = new ServerService(
+            _repository.Object, access.Object, AllowingCoordinator(), Mock.Of<ICurrentUserService>(),
+            Mock.Of<IGlobalCatalogRepository>(), Mock.Of<IOwnerLabelService>(), TimeProvider.System);
+
+        var result = await service.UpdateServerAsync(id, ValidUpdate());
+
+        result.Status.Should().Be(ServerOperationStatus.NotFound);
+    }
+
+    [Fact]
+    public async Task Purge_returns_not_found_for_existing_server_outside_callers_read_scope()
+    {
+        var id = Guid.NewGuid();
+        _repository.Setup(x => x.GetByIdAsync(id)).ReturnsAsync(new Server { Id = id, OwnerUserId = "another-owner" });
+        var access = new Mock<ILabelAccessService>();
+        access.Setup(x => x.GetServerAccessAsync(id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ResourceLabelAccessDto?)null);
+        var service = new ServerService(
+            _repository.Object, access.Object, AllowingCoordinator(), Mock.Of<ICurrentUserService>(),
+            Mock.Of<IGlobalCatalogRepository>(), Mock.Of<IOwnerLabelService>(), TimeProvider.System);
+
+        var result = await service.PurgeServerAsync(id);
+
+        result.Should().Be(ServerOperationStatus.NotFound);
     }
 
     private static CreateServerDto ValidCreate() => new()

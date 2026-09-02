@@ -172,6 +172,7 @@ builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
 builder.Services.AddScoped<IGlobalCatalogRepository, GlobalCatalogRepository>();
+builder.Services.AddScoped<IOwnerLabelService, OwnerLabelService>();
 builder.Services.AddSingleton<ICatalogCursorProtector, DataProtectionCatalogCursorProtector>();
 builder.Services.AddSingleton<ICatalogCursorCodec, CatalogCursorCodec>();
 

@@ -118,6 +118,19 @@ public class ServersControllerTests
     }
 
     [Fact]
+    public async Task Update_returns_not_found_when_resource_is_absent_or_outside_read_scope()
+    {
+        var id = Guid.NewGuid();
+        var dto = ValidUpdate();
+        _service.Setup(x => x.UpdateServerAsync(id, dto))
+            .ReturnsAsync(new ServerOperationResult(ServerOperationStatus.NotFound));
+
+        var result = await Controller().UpdateServer(id, dto);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
     public async Task Delete_returns_not_found_when_server_is_not_visible_to_tenant()
     {
         var id = Guid.NewGuid();

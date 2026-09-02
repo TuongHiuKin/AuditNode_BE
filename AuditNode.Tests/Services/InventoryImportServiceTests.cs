@@ -15,6 +15,7 @@ public class InventoryImportServiceTests
 {
     private readonly AuditDbContext _context;
     private readonly InventoryImportService _service;
+    private readonly Mock<IOwnerLabelService> _ownerLabels = new();
 
     public InventoryImportServiceTests()
     {
@@ -28,7 +29,7 @@ public class InventoryImportServiceTests
             Id = Guid.NewGuid(), OwnerUserId = "owner", Name = "DC", Location = "Local"
         });
         _context.SaveChanges();
-        _service = new InventoryImportService(_context, NullLogger<InventoryImportService>.Instance, User("owner"));
+        _service = new InventoryImportService(_context, NullLogger<InventoryImportService>.Instance, User("owner"), _ownerLabels.Object);
     }
 
     [Fact]
@@ -84,6 +85,7 @@ public class InventoryImportServiceTests
         _context.Servers.Count().Should().Be(1);
         _context.Applications.Count().Should().Be(1);
         _context.PortMappings.Count().Should().Be(1);
+        _ownerLabels.Verify(item => item.EnsureAsync("owner", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -252,7 +254,7 @@ public class InventoryImportServiceTests
         AddRow(workbook, 2, "srv-1", "10.0.0.1", "app1", 443);
         using var stream = Save(workbook);
 
-        var result = await new InventoryImportService(context, NullLogger<InventoryImportService>.Instance, User("owner"))
+        var result = await new InventoryImportService(context, NullLogger<InventoryImportService>.Instance, User("owner"), Mock.Of<IOwnerLabelService>())
             .ImportInventoryAsync(stream);
 
         result.Errors.Should().ContainSingle(error =>
