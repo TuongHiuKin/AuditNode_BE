@@ -13,7 +13,8 @@ using Xunit;
 namespace AuditNode.Tests.Services;
 
 [Trait("Category", "PostgreSQL")]
-public sealed class PostgresTopologyMutationConcurrencyTests
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgresTopologyMutationConcurrencyTests(PostgreSqlDatabaseFixture database)
 {
     private const string Owner = "topology-owner";
     private const string Auditor = "topology-auditor";
@@ -151,7 +152,7 @@ public sealed class PostgresTopologyMutationConcurrencyTests
     private static TopologyCommandBatchDto Move(long version, Guid nodeId, Guid? parentId, double x) =>
         new(version, [new TopologyCommandDto { Type = "moveNode", NodeId = nodeId, ParentId = parentId, X = x, Y = x }]);
 
-    private static async Task<(Guid? LabelId, Guid? GrantId)> SeedAsync(
+    private async Task<(Guid? LabelId, Guid? GrantId)> SeedAsync(
         Guid workspaceId,
         TopologyNode first,
         TopologyNode? second = null,
@@ -207,7 +208,7 @@ public sealed class PostgresTopologyMutationConcurrencyTests
         context.AddRange(datacenter, server);
     }
 
-    private static async Task<(Guid SourceNodeId, Guid TargetNodeId, Guid SourceMappingId, Guid TargetMappingId)>
+    private async Task<(Guid SourceNodeId, Guid TargetNodeId, Guid SourceMappingId, Guid TargetMappingId)>
         SeedDependencyGraphAsync(Guid workspaceId)
     {
         await using var context = Context(workspaceId);
@@ -288,13 +289,13 @@ public sealed class PostgresTopologyMutationConcurrencyTests
             NullLogger<LabelGrantService>.Instance);
     }
 
-    private static AuditDbContext Context(Guid workspaceId)
+    private AuditDbContext Context(Guid workspaceId)
     {
         return new AuditDbContext(
             new DbContextOptionsBuilder<AuditDbContext>().UseNpgsql(ConnectionString()).Options);
     }
 
-    private static string ConnectionString() => Environment.GetEnvironmentVariable("AUDITNODE_TEST_POSTGRES")!;
+    private string ConnectionString() => database.ConnectionString;
 
     private static string OwnerFor(Guid workspaceId) => $"{Owner}-{workspaceId:N}";
 }

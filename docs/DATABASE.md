@@ -14,6 +14,23 @@ Application and server label joins carry `owner_user_id` and reference owner-con
 
 The repository cannot establish whether these migrations have been applied to any deployed database. Inspect that environment's `__EFMigrationsHistory` before rollout. `RemoveWorkspaceRuntime` is intentionally a destructive reset boundary and is not an in-place data-preserving upgrade for a populated legacy Workspace database; preserve a verified backup and use only an explicitly approved reset/migration procedure.
 
+### Required PostgreSQL regression suite
+
+Database-specific transaction, concurrency, constraint, and fresh-migration behavior lives in `AuditNode.Database.IntegrationTests`. The suite always creates disposable databases whose names use an allow-listed test prefix, migrates them to the current model, and drops only those databases during fixture cleanup. It must run against real PostgreSQL; EF InMemory results are not accepted as evidence for relational behavior.
+
+From the backend directory, point the suite at a dedicated test PostgreSQL database and run:
+
+```powershell
+$env:AUDITNODE_TEST_POSTGRES = "Host=localhost;Port=5432;Database=auditnode_local_test;Username=<test-user>;Password=<test-password>"
+dotnet test AuditNode.Database.IntegrationTests/AuditNode.Database.IntegrationTests.csproj --configuration Release --filter "Category=PostgreSQL"
+```
+
+The test role must be allowed to create and drop the generated `auditnode_suite_test_*` and `auditnode_migration_test_*` databases. Do not point this variable at a shared development or production database.
+
+CI publishes the suite's TRX and verifies that the file contains at least one executed test and zero skipped tests. A missing environment variable, missing TRX, empty suite, or skipped test is therefore a failed required gate rather than a silent pass.
+
+This repository currently has no designated production-release tag/database snapshot, so the fresh-migration test is **not** evidence that a populated previous production database can upgrade to HEAD. Adding a previous-release upgrade fixture remains blocked until an operator designates the release migration and approves a sanitized, reproducible fixture source.
+
 ### Legacy Workspace remediation snapshot (superseded)
 
 The following notes document the earlier Workspace-era rollout and are retained for historical audit context. They do not describe the current runtime schema or current authorization model.

@@ -2,6 +2,7 @@
   <Project Path="AuditNode.API/AuditNode.API.csproj" />
   <Project Path="AuditNode.API.IntegrationTests/AuditNode.API.IntegrationTests.csproj" />
   <Project Path="AuditNode.Application/AuditNode.Application.csproj" />
+  <Project Path="AuditNode.Database.IntegrationTests/AuditNode.Database.IntegrationTests.csproj" />
   <Project Path="AuditNode.Domain/AuditNode.Domain.csproj" />
   <Project Path="AuditNode.Infrastructure/AuditNode.Infrastructure.csproj" />
   <Project Path="AuditNode.Tests/AuditNode.Tests.csproj" />

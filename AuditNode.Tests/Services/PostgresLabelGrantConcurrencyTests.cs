@@ -12,7 +12,8 @@ using Xunit;
 namespace AuditNode.Tests.Services;
 
 [Trait("Category", "PostgreSQL")]
-public sealed class PostgresLabelGrantConcurrencyTests
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgresLabelGrantConcurrencyTests(PostgreSqlDatabaseFixture database)
 {
     [PostgresIntegrationFact]
     public async Task Concurrent_updates_with_the_same_version_allow_exactly_one_winner()
@@ -38,7 +39,7 @@ public sealed class PostgresLabelGrantConcurrencyTests
             .Version.Should().Be(2);
     }
 
-    private static async Task<Fixture> SeedAsync()
+    private async Task<Fixture> SeedAsync()
     {
         var fixture = new Fixture(
             Guid.NewGuid(),
@@ -87,11 +88,11 @@ public sealed class PostgresLabelGrantConcurrencyTests
             NullLogger<LabelGrantService>.Instance);
     }
 
-    private static AuditDbContext Context(Guid workspaceId)
+    private AuditDbContext Context(Guid workspaceId)
     {
         return new AuditDbContext(
             new DbContextOptionsBuilder<AuditDbContext>()
-                .UseNpgsql(Environment.GetEnvironmentVariable("AUDITNODE_TEST_POSTGRES")!)
+                .UseNpgsql(database.ConnectionString)
                 .Options);
     }
 

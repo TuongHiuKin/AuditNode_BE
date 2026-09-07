@@ -69,7 +69,7 @@ jobs:
 
       - name: Run required PostgreSQL tests
         run: >-
-          dotnet test AuditNode.Tests/AuditNode.Tests.csproj
+          dotnet test AuditNode.Database.IntegrationTests/AuditNode.Database.IntegrationTests.csproj
           --configuration Release
           --no-build
           --filter "Category=PostgreSQL"

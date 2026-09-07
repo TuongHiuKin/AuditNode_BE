@@ -169,7 +169,6 @@ public class InventoryImportService : IInventoryImportService
             if (response.Conflicts.Count > 0)
                 return response;
 
-            await _ownerLabels.EnsureAsync(actor);
             await PersistAsync(parsedRows, datacenter.Id, actor, existingApps, existingServers, mappingLookup, response);
             return response;
         }
@@ -187,6 +186,9 @@ public class InventoryImportService : IInventoryImportService
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
+            // Owner-label creation and every imported resource must commit or roll back together.
+            await _ownerLabels.EnsureAsync(ownerUserId);
+
             foreach (var row in rows)
             {
                 if (!servers.TryGetValue(row.IpAddress, out var server))

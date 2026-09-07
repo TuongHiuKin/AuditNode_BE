@@ -10,7 +10,8 @@ using Xunit;
 namespace AuditNode.Tests.Services;
 
 [Trait("Category", "PostgreSQL")]
-public sealed class PostgresSystemAdminMutationLockTests
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgresSystemAdminMutationLockTests(PostgreSqlDatabaseFixture database)
 {
     [PostgresIntegrationFact]
     public async Task Independent_database_connections_are_mutually_exclusive()
@@ -143,7 +144,7 @@ public sealed class PostgresSystemAdminMutationLockTests
         secondRan.Should().BeTrue();
     }
 
-    private static string ConnectionString() => Environment.GetEnvironmentVariable("AUDITNODE_TEST_POSTGRES")!;
+    private string ConnectionString() => database.ConnectionString;
 
     private static AuditDbContext Context(string connectionString)
     {
