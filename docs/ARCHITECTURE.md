@@ -1,21 +1,21 @@
 # AuditNode System Architecture
 
-## Current backend architecture (August 2026)
+## Current backend architecture (September 2026)
 
 The backend preserves Clean Architecture boundaries: domain entities and invariants do not depend on infrastructure; application DTOs/interfaces define use cases; infrastructure implements EF Core repositories and external identity services; API controllers and middleware translate HTTP/authentication concerns.
 
-### Authentication and tenant boundary
+### Authentication and catalog boundary
 
 The custom `/api/v1/auth` gateway lets the frontend keep its own login/register UI. The gateway exchanges credentials with Keycloak, returns short-lived access-token metadata, and stores the refresh token only in the secure HttpOnly `auditnode.refresh_token` cookie. JWT bearer validation still protects application APIs. Configuration is supplied through the existing `Keycloak:*` keys; secrets are never documented or hard-coded.
 
-After authentication, `WorkspaceMiddleware` resolves `X-Workspace-Id`, resolves the user from `NameIdentifier` or `sub`, and checks workspace ownership/membership before initializing the tenant provider. Only authentication routes and `/api/v1/workspaces` bypass workspace resolution. EF query filters and same-workspace foreign keys provide a second tenant boundary; `Guid.Empty` is never accepted as an implicit workspace.
+After authentication, the `sub`/name-identifier claim selects the actor. Mutable inventory is partitioned by `owner_user_id`; the runtime has no `WorkspaceMiddleware`, `X-Workspace-Id`, or workspace-membership lookup. Owners can delegate labeled subsets through direct Viewer/Editor Label Grants. Anonymous share tokens are revocable Viewer-only capabilities and do not establish an authenticated owner context. Owner-consistent keys, foreign keys, queries, and service authorization form the persistence boundary.
 
 ### Canonical aggregate flows
 
-- Server create/update validates canonical IPv4, same-workspace datacenter references, and tenant-unique IP addresses.
+- Server create/update validates canonical IPv4, same-owner datacenter references, and owner-unique IP addresses.
 - Application create can persist metadata, labels, and an optional deployment atomically. Deployment updates/migrations target an explicit `PortMappingId`; they never select an arbitrary first mapping.
 - Application labels use an `ApplicationLabel` join entity rather than reusing the server-label relationship.
-- Topology state is loaded and saved as one `{nodes, edges}` contract. Application nodes are deployment-based and use `PortMappingId` as stable identity. Parent, reference, endpoint, and workspace invariants are validated before persistence.
+- Topology state is loaded and saved as one `{nodes, edges}` contract. Application nodes are deployment-based and use `PortMappingId` as stable identity. Parent, reference, endpoint, owner, grant, and revision invariants are validated before persistence.
 - Dependency synchronization retains the destination deployment mapping and is idempotent, so repeating the same state does not produce duplicate dependencies or new IDs.
 - Inventory import validates the complete workbook before one database transaction/save. Any conflict or persistence failure leaves no partial import.
 
@@ -84,18 +84,28 @@ The visualization uses **React Flow** with the following customizations:
 ---
 
 ## 4. Quality & Testing Strategy
-The project enforces a **Strict TDD Contract** as per `AGENT.md`, ensuring that all functional code is accompanied by corresponding unit tests.
+Regressible behavior is covered through focused tests using the existing xUnit stack. CI separates fast tests from PostgreSQL transaction/concurrency tests so relational checks cannot be silently skipped.
 
 ### Test Automation Stack
 - **Unit Testing**: xUnit (Standard .NET test runner).
 - **Mocking**: Moq (For isolating services and repositories).
 - **Assertions**: FluentAssertions (For human-readable test results).
 - **Validation Testing**: FluentValidation.TestHelper (For declarative DTO validation checks).
-- **Database Isolation**: EF Core `InMemoryDatabase` provider (For high-speed repository testing without external dependencies).
+- **Fast Data Tests**: EF Core `InMemoryDatabase` supports quick service/repository feedback where relational semantics are not the subject.
+- **PostgreSQL Integration**: Nine tests carry `Category=PostgreSQL` and run against a migrated disposable PostgreSQL 17 database in CI.
 
 ### Testing Layers
 - **API Controllers**: Mock-based verification of HTTP responses, DTO mapping, and error handling.
 - **Application Services**: Core business logic verification with fully mocked dependencies.
-- **Infrastructure Repositories**: Integrated testing of LINQ queries and transactional logic using an in-memory database.
+- **Infrastructure Repositories**: Fast LINQ/service tests use InMemory; advisory locks, optimistic concurrency, and topology/revoke serialization run in the PostgreSQL category.
 - **Security Verification**: Reflection-based tests to ensure every controller is decorated with the `[Authorize]` attribute.
 - **Data Validation**: Unit tests for every `AbstractValidator<T>`, ensuring strict adherence to schema constraints (e.g., regex-based IP validation).
+
+### Required backend CI sequence
+
+1. Restore `AuditNode.slnx` in locked mode and build Release binaries.
+2. Run the fast suite with `Category!=PostgreSQL` and emit TRX.
+3. Apply EF migrations to the disposable PostgreSQL service.
+4. Run `Category=PostgreSQL`, emit TRX, and verify that total/executed are greater than zero, every selected test passed, and no test was skipped or not executed.
+5. Check for pending EF Core model changes.
+6. Publish test/build artifacts. The main-branch image job depends on all verification gates.

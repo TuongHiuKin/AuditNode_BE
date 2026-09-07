@@ -12,6 +12,7 @@ using Xunit;
 
 namespace AuditNode.Tests.Services;
 
+[Trait("Category", "PostgreSQL")]
 public sealed class PostgresTopologyMutationConcurrencyTests
 {
     private const string Owner = "topology-owner";

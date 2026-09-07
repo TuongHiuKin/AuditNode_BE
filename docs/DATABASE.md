@@ -1,12 +1,22 @@
 # Database Documentation - PostgreSQL & EF Core
 
-## Current tenant schema and rollout status (August 2026)
+## Current Global Catalog schema and rollout status (September 2026)
 
-All mutable tenant data is scoped by `workspace_id`. Workspace owners and rows in `workspace_members` define access; middleware authorization happens before tenant context is installed, and EF query filters apply the selected workspace. Datacenters are workspace-owned. Composite keys/foreign keys prevent server, application, deployment, label, topology, and dependency references from crossing workspaces. Server IP and application code are unique inside a workspace rather than globally.
+All mutable catalog data is partitioned by required `owner_user_id` values. The current model has no Workspace runtime tables or `workspace_id` columns. Owner-scoped alternate keys and composite foreign keys prevent datacenters, servers, applications, deployments, labels, topology, grants, and dependencies from crossing owner catalogs. Server IP, application code, label key/value, deployment port, topology edge, and dependency uniqueness are enforced within the relevant owner catalog.
 
-Application labels are persisted through `application_labels`, whose key includes workspace, application, and label identity. Canonical topology edges are persisted in `topology_edges`; application topology identity is deployment-based (`port_mapping_id`). The topology and dependency read views project `workspace_id` and use tenant-consistent joins.
+Application and server label joins carry `owner_user_id` and reference owner-consistent resource/label keys. `label_grants` supports either a direct `grantee_user_id` or a hashed anonymous token, Viewer/Editor permissions, expiry/revocation, and an optimistic-concurrency version; database checks constrain anonymous tokens to Viewer and require their expiry. `owner_catalog_states` holds the per-owner topology revision. The `v_topology_map` and `v_dependency_graph` views project `owner_user_id` and join rows only when ownership matches.
 
-### Pending remediation artifacts — not applied
+### Current owner-scoped cutover migrations
+
+- `20260831161239_RemoveWorkspaceRuntime` fails closed unless the legacy Workspace and catalog tables are empty, then drops Workspace tables/columns, makes catalog ownership required, and recreates the read views with `owner_user_id`.
+- `20260901045717_EnforceOwnerScopedRelations` adds owner/id alternate keys plus owner-consistent indexes and foreign keys across the catalog graph.
+- `20260901130248_RemoveLegacyWorkspaceMigrationArtifacts` removes the remaining Workspace migration-audit tables.
+
+The repository cannot establish whether these migrations have been applied to any deployed database. Inspect that environment's `__EFMigrationsHistory` before rollout. `RemoveWorkspaceRuntime` is intentionally a destructive reset boundary and is not an in-place data-preserving upgrade for a populated legacy Workspace database; preserve a verified backup and use only an explicitly approved reset/migration procedure.
+
+### Legacy Workspace remediation snapshot (superseded)
+
+The following notes document the earlier Workspace-era rollout and are retained for historical audit context. They do not describe the current runtime schema or current authorization model.
 
 The following artifacts were generated and reviewed, but **have not been applied to a live database**:
 
@@ -17,7 +27,7 @@ The following artifacts were generated and reviewed, but **have not been applied
 
 These are the three new EF migrations plus one SQL view artifact. The older `docs/migrations/20260719_add_workspaces_rbac.sql` is a legacy/preparatory script and is not a substitute for reviewing the current migration chain.
 
-### Production apply runbook
+#### Historical Workspace apply runbook
 
 1. Take and verify a restorable database backup. Record the current EF migration history and capture counts for workspaces, datacenters, servers, applications, deployments, labels, and dependencies.
 2. Audit/backfill ownership and tenant data before enforcing final constraints. The first migration does not fabricate ownership from optional legacy columns: `owner_user_id` remains nullable, and datacenter workspace is populated only when its servers identify exactly one non-empty workspace. Unassigned rows remain nullable for an operator-approved backfill. Until a workspace receives a real owner or membership row, application authorization intentionally grants no access to it.
@@ -43,7 +53,7 @@ The remediation baseline reported no pending model changes. These commands inspe
 
 ## Legacy schema snapshot (superseded)
 
-The material below predates workspace-scoped constraints, application labels, and canonical topology edges. Use it only for historical context.
+The material below predates the Global Catalog owner cutover, Label Grants, application labels, and canonical topology edges. Use it only for historical context.
 
 ## Overview
 The project uses **PostgreSQL** with **Entity Framework Core** for data persistence. All tables use `snake_case` naming conventions in the database and map to `PascalCase` properties in C# models.

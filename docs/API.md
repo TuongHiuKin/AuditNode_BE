@@ -1,8 +1,8 @@
 # AuditNode Backend API Documentation
 
-## Canonical contract (August 2026)
+## Canonical contract (September 2026)
 
-All routes below require a valid bearer access token unless marked anonymous. Tenant routes also require `X-Workspace-Id`. Missing, malformed, or empty workspace IDs return 400; an unknown workspace returns 404; a user who is neither owner nor member receives 403. `/api/v1/auth/*` and `GET /api/v1/workspaces` do not require the workspace header.
+All routes below require a valid bearer access token unless marked anonymous. Authenticated catalog routes derive the actor from the validated token; the runtime does not accept `X-Workspace-Id` or expose a Workspace-selection endpoint. Inventory is partitioned by `owner_user_id`. Owners access their full catalog, while grantees receive Viewer or Editor capabilities only for resources selected by active Label Grants. Resource authorization failures use non-disclosing not-found responses where documented. Anonymous access is limited to resolving and browsing a valid, unexpired, unrevoked Viewer share token.
 
 ### Authentication gateway
 
@@ -13,7 +13,6 @@ All routes below require a valid bearer access token unless marked anonymous. Te
 | POST | `/api/v1/auth/refresh` | Anonymous, rate limited | Uses the refresh cookie and rotates the session |
 | POST | `/api/v1/auth/logout` | Authenticated | Clears the local cookie and returns 204 |
 | GET | `/api/v1/auth/me` | Authenticated | Returns the authenticated user projection |
-| GET | `/api/v1/workspaces` | Authenticated | Returns owned/member workspaces |
 
 The cookie is named `auditnode.refresh_token`, is HttpOnly and Secure, uses `SameSite=None`, and is scoped to `/api/v1/auth`. Required configuration keys are `Keycloak:Authority`, `Keycloak:Realm`, `Keycloak:Audience`, `Keycloak:AdminClientId`, `Keycloak:AdminClientSecret`, `Keycloak:BffClientId`, and `Keycloak:BffClientSecret`; this document intentionally contains no values.
 
@@ -21,20 +20,20 @@ The cookie is named `auditnode.refresh_token`, is HttpOnly and Secure, uses `Sam
 
 | Method | Route | Notes |
 |---|---|---|
-| GET | `/api/v1/servers` | Tenant-filtered list |
+| GET | `/api/v1/servers` | Owner/Label-Grant-filtered list |
 | GET | `/api/v1/servers/{id}` | Single server or 404 |
-| POST | `/api/v1/servers` | Validates IPv4 and same-workspace datacenter; returns 201 |
+| POST | `/api/v1/servers` | Validates IPv4 and same-owner datacenter; returns 201 |
 | PUT | `/api/v1/servers/{id}` | Updates metadata including IP address; returns 204 |
 | DELETE | `/api/v1/servers/{id}` | Permanent purge; returns 204 |
 | GET | `/api/v1/servers/export?ids={id}&ids={id}` | JSON export; de-duplicates IDs |
 
-Duplicate IP addresses in a workspace produce 409. Server responses/export include datacenter data, labels, and application deployments. Each deployed application includes the real `portMappingId` plus application identity, port, and protocol.
+Duplicate IP addresses within one owner catalog produce 409. Server responses/export include datacenter data, labels, and application deployments. Each deployed application includes the real `portMappingId` plus application identity, port, and protocol.
 
 ### Applications, deployments, and labels
 
 | Method | Route | Notes |
 |---|---|---|
-| GET | `/api/v1/applications?labelKey={key}&labelValue={value}` | Tenant-filtered list and optional label filter |
+| GET | `/api/v1/applications?labelKey={key}&labelValue={value}` | Owner/Label-Grant-filtered list and optional label filter |
 | GET | `/api/v1/applications/{id}` | Application, labels, and deployments |
 | POST | `/api/v1/applications` | Creates metadata, labels, and an optional initial deployment atomically |
 | PUT | `/api/v1/applications/{id}` | Updates metadata; omitted `labels` preserves labels, `[]` clears them |
@@ -44,20 +43,34 @@ Duplicate IP addresses in a workspace produce 409. Server responses/export inclu
 | GET | `/api/v1/infrastructure/apps/{id}/dependencies-count` | Dependency count before purge |
 | DELETE | `/api/v1/infrastructure/apps/{id}/purge` | Permanent purge |
 
-Application codes are unique per workspace. Deployment server references must exist in the same workspace, ports must be 1–65535, and a server-port collision returns 409. An application response exposes `labels` and `servers`; each server item contains `portMappingId`, server ID, hostname/IP, port, and protocol.
+Application codes are unique per owner catalog. Deployment server references must belong to the same owner catalog, ports must be 1–65535, and an owner/server/port collision returns 409. An application response exposes `labels` and `servers`; each server item contains `portMappingId`, server ID, hostname/IP, port, and protocol.
+
+### Label Grants and anonymous share links
+
+| Method | Route | Access |
+|---|---|---|
+| GET/POST | `/api/v1/labels/{labelId}/grants` | Label owner; lists or creates direct user grants |
+| PUT/DELETE | `/api/v1/labels/{labelId}/grants/{grantId}` | Label owner; optimistic version conflicts return 409 |
+| GET | `/api/v1/labels/{labelId}/share-options` | Label owner; rate-limited identity lookup |
+| GET/POST | `/api/v1/labels/{labelId}/share-links` | Label owner; lists or creates Viewer share links |
+| DELETE | `/api/v1/labels/{labelId}/share-links/{grantId}?version={version}` | Label owner; revokes a versioned link |
+| POST | `/api/v1/share-links/resolve` | Anonymous; resolves token metadata without disclosing invalid-token details |
+| POST | `/api/v1/share-links/browse` | Anonymous; browses the token-scoped catalog page |
+
+Direct grants accept only Viewer or Editor permissions. Token-backed grants are constrained to Viewer, require expiry, store a token hash rather than the raw token, and can be revoked. Owner labels are protected and represent all resources in that owner's catalog; business labels scope access to their associated resources.
 
 ### Topology and dependencies
 
 | Method | Route | Notes |
 |---|---|---|
 | GET | `/api/v1/topology/tree` | Supports datacenter, labels, `skip`, and `take`; invalid paging returns 400 |
-| GET | `/api/v1/topology/map` | Workspace-scoped topology projection |
-| GET | `/api/v1/topology/status` | Workspace-scoped status summary |
+| GET | `/api/v1/topology/map` | Owner/Label-Grant-scoped topology projection |
+| GET | `/api/v1/topology/status` | Owner/Label-Grant-scoped status summary |
 | GET | `/api/v1/topology/state` | Loads canonical `{nodes, edges}` state |
 | POST/PUT | `/api/v1/topology/state` | Validates and saves the complete state; returns 204 |
 | PUT | `/api/v1/dependencies/sync` | Idempotently synchronizes dependency references |
 
-Topology application nodes use `PortMappingId` as stable node identity and also expose typed `AppId`, `ServerId`, and `PortMappingId`. Server nodes expose `ServerId`. A connection retains `SourceAppId`, `TargetAppId`, `DestinationPortMappingId`, and `DestinationServerId`. State nodes preserve node/frame type, parent, position, size, label, and reference; edges preserve endpoints, handles, type, label, and reference. Validation rejects empty IDs, missing or cross-workspace references, invalid parents, cycles, self-loops, duplicate identities, and destination mappings that do not belong to the destination application. Separate `/frames` and `/topology/sync` routes are not part of the canonical contract.
+Topology application nodes use `PortMappingId` as stable node identity and also expose typed `AppId`, `ServerId`, and `PortMappingId`. Server nodes expose `ServerId`. A connection retains `SourceAppId`, `TargetAppId`, `DestinationPortMappingId`, and `DestinationServerId`. State nodes preserve node/frame type, parent, position, size, label, and reference; edges preserve endpoints, handles, type, label, and reference. Validation rejects empty IDs, missing or cross-owner references, invalid parents, cycles, self-loops, duplicate identities, and destination mappings that do not belong to the destination application. Separate `/frames` and `/topology/sync` routes are not part of the canonical contract.
 
 ### Inventory import, export, and errors
 
@@ -66,9 +79,9 @@ Topology application nodes use `PortMappingId` as stable node identity and also 
 | GET | `/api/v1/inventory/import-template` | Downloads the supported workbook template |
 | POST | `/api/v1/inventory/import` | Accepts one `.xlsx` workbook up to 10 MB |
 
-Imports validate OpenXML content, a worksheet, the exact eight headers (`Server Name`, `IP`, `Environment`, `App Code`, `App Name`, `Owner Team`, `Port`, `Protocol`), canonical IPv4, ports 1–65535, required fields, case-normalized application codes/protocols, case-insensitive duplicate rows/codes, existing conflicts, and tenant-visible datacenter/server references. Validation completes before a single transaction/save; failures roll back without partial commits.
+Imports validate OpenXML content, a worksheet, the exact eight headers (`Server Name`, `IP`, `Environment`, `App Code`, `App Name`, `Owner Team`, `Port`, `Protocol`), canonical IPv4, ports 1–65535, required fields, case-normalized application codes/protocols, case-insensitive duplicate rows/codes, existing conflicts, and owner-consistent datacenter/server references. Validation completes before a single transaction/save; failures roll back without partial commits.
 
-Server and application exports are tenant-filtered JSON. They include finalized datacenter, labels, deployments, and `PortMappingId` data; spreadsheet export generation is not a backend contract.
+Server and application exports are access-filtered JSON. They include finalized datacenter, labels, deployments, and `PortMappingId` data; spreadsheet export generation is not a backend contract.
 
 Unexpected failures use safe Problem Details responses. The response includes a `correlationId` extension and an `X-Correlation-ID` header; exception details are logged server-side and are never returned through `ex.Message`. Expected validation/not-found/conflict failures remain 400/404/409 rather than becoming 500.
 

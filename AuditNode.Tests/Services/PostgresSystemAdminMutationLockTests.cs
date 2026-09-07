@@ -9,6 +9,7 @@ using Xunit;
 
 namespace AuditNode.Tests.Services;
 
+[Trait("Category", "PostgreSQL")]
 public sealed class PostgresSystemAdminMutationLockTests
 {
     [PostgresIntegrationFact]
