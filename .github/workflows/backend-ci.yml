@@ -52,10 +52,10 @@ jobs:
 
       - name: Run fast tests
         run: >-
-          dotnet test AuditNode.slnx
+          dotnet test AuditNode.Tests/AuditNode.Tests.csproj
           --configuration Release
           --no-build
-          --filter "Category!=PostgreSQL"
+          --filter "Category!=PostgreSQL&Category!=ApiIntegration"
           --logger "trx;LogFileName=fast.trx"
           --results-directory TestResults/fast
 
@@ -69,7 +69,7 @@ jobs:
 
       - name: Run required PostgreSQL tests
         run: >-
-          dotnet test AuditNode.slnx
+          dotnet test AuditNode.Tests/AuditNode.Tests.csproj
           --configuration Release
           --no-build
           --filter "Category=PostgreSQL"
@@ -99,10 +99,72 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  api-integration:
+    name: API full-pipeline integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: auditnode_api_ci
+          POSTGRES_USER: auditnode_api_ci
+          POSTGRES_PASSWORD: auditnode_api_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U auditnode_api_ci -d auditnode_api_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AUDITNODE_TEST_POSTGRES: Host=localhost;Port=5432;Database=auditnode_api_ci;Username=auditnode_api_ci;Password=auditnode_api_ci
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore locked dependencies
+        run: dotnet restore AuditNode.slnx --locked-mode
+
+      - name: Build API integration tests
+        run: >-
+          dotnet build AuditNode.API.IntegrationTests/AuditNode.API.IntegrationTests.csproj
+          --configuration Release
+          --no-restore
+
+      - name: Run required API full-pipeline tests
+        run: >-
+          dotnet test AuditNode.API.IntegrationTests/AuditNode.API.IntegrationTests.csproj
+          --configuration Release
+          --no-build
+          --filter "Category=ApiIntegration"
+          --logger "trx;LogFileName=api-integration.trx"
+          --results-directory TestResults/api-integration
+
+      - name: Verify API integration test execution
+        shell: pwsh
+        run: ./scripts/Verify-Trx.ps1 -Path TestResults/api-integration/api-integration.trx
+
+      - name: Upload API integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-integration-${{ github.run_id }}
+          path: TestResults/api-integration/**/*.trx
+          if-no-files-found: error
+          retention-days: 14
+
   publish-image:
     name: Publish verified image
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: verify
+    needs: [verify, api-integration]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

@@ -30,6 +30,8 @@ AuditNode Backend is a comprehensive Infrastructure Management System built on A
 - The React login/register screens authenticate through the backend gateway at `/api/v1/auth`; the application does not require the hosted Keycloak UI.
 - The gateway keeps the refresh token in the secure, HttpOnly `auditnode.refresh_token` cookie scoped to `/api/v1/auth`. API access tokens are still validated as JWT bearer tokens.
 - Configure Keycloak through `Keycloak:Authority`, `Keycloak:Realm`, `Keycloak:Audience`, `Keycloak:AdminClientId`, `Keycloak:AdminClientSecret`, `Keycloak:BffClientId`, and `Keycloak:BffClientSecret`. Supply values through the existing configuration/secret mechanism; never commit them.
+- Every accepted access token must contain `Keycloak:Audience` in its `aud` claim and must have an `azp` claim exactly equal to `Keycloak:BffClientId`, in addition to passing issuer, signature, and lifetime validation. This prevents a token issued to another client in the same realm from being reused against AuditNode.
+- Before deploying this contract, configure an audience mapper on the Keycloak BFF client/client scope so its access tokens include the configured API audience, then verify that Keycloak preserves the BFF client ID as `azp`. Validate a newly issued login token against `/api/v1/auth/me` before promoting the backend. Existing sessions minted under the legacy `ValidateAudience=false` configuration, or realms without the audience mapper, will receive `401`; coordinate the mapper rollout and require users to obtain fresh tokens before switching backend versions.
 - Runtime inventory is a Global Catalog partitioned by authenticated `owner_user_id`; there is no Workspace header or Workspace runtime middleware.
 - Owners can grant Viewer or Editor access to labeled resources through Label Grants. Anonymous share tokens are separate, revocable Viewer capabilities.
 - Canonical API contracts and operational details are documented in [docs/API.md](docs/API.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [docs/DATABASE.md](docs/DATABASE.md).
@@ -41,7 +43,7 @@ Run the fast verification path from the backend directory without changing confi
 ```powershell
 dotnet restore AuditNode.slnx --locked-mode
 dotnet build AuditNode.slnx --configuration Release --no-restore
-dotnet test AuditNode.slnx --configuration Release --no-build --filter "Category!=PostgreSQL"
+dotnet test AuditNode.Tests/AuditNode.Tests.csproj --configuration Release --no-build --filter "Category!=PostgreSQL"
 dotnet ef migrations has-pending-model-changes --project AuditNode.Infrastructure/AuditNode.Infrastructure.csproj --startup-project AuditNode.API/AuditNode.API.csproj --configuration Release --no-build
 ```
 

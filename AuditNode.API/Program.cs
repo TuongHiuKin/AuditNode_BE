@@ -36,7 +36,8 @@ builder.Services.AddOpenApi("v1", options =>
     });
 });
 
-// Configure JWT Bearer Authentication with Keycloak
+// Configure JWT Bearer Authentication with Keycloak.
+// Access tokens must be issued for this API and obtained by the configured BFF client.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -45,7 +46,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidateAudience = false, // Set to false for public client SPA tokens
+            ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true
         };
@@ -56,6 +57,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 return Task.CompletedTask;
             },
             OnTokenValidated = context => {
+                var keycloak = context.HttpContext.RequestServices
+                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<KeycloakRuntimeOptions>>()
+                    .Value;
+                var authorizedParty = context.Principal?.FindFirst("azp")?.Value;
+                if (!string.Equals(authorizedParty, keycloak.BffClientId, StringComparison.Ordinal))
+                {
+                    context.Fail("The token authorized party is not trusted by this API.");
+                    return Task.CompletedTask;
+                }
+
                 Console.WriteLine("[Auth Success] Token is valid.");
                 return Task.CompletedTask;
             },
@@ -147,6 +158,9 @@ builder.Services.AddOptions<KeycloakRuntimeOptions>()
     .Bind(builder.Configuration.GetSection("Keycloak"))
     .Validate(options => options.IsValid(), "Required Keycloak configuration is missing.")
     .ValidateOnStart();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<Microsoft.Extensions.Options.IOptions<KeycloakRuntimeOptions>>((jwt, keycloak) =>
+        jwt.TokenValidationParameters.ValidAudience = keycloak.Value.Audience);
 
 builder.Services.AddHttpClient(KeycloakAuthService.HttpClientName);
 builder.Services.AddTransient<IKeycloakHttpClientFactory, KeycloakHttpClientFactoryAdapter>();
@@ -312,3 +326,5 @@ public sealed class DatabaseReadyHealthCheck(AuditDbContext database) : IHealthC
             : HealthCheckResult.Unhealthy("Required database views are unavailable.");
     }
 }
+
+public partial class Program;
