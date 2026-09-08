@@ -47,9 +47,9 @@ dotnet test AuditNode.Tests/AuditNode.Tests.csproj --configuration Release --no-
 dotnet ef migrations has-pending-model-changes --project AuditNode.Infrastructure/AuditNode.Infrastructure.csproj --startup-project AuditNode.API/AuditNode.API.csproj --configuration Release --no-build
 ```
 
-The nine PostgreSQL transaction/concurrency tests are marked `Category=PostgreSQL`. They require an explicitly configured disposable database via `AUDITNODE_TEST_POSTGRES`; CI migrates PostgreSQL 17, runs only that category, writes TRX, and calls `scripts/Verify-Trx.ps1` so a zero-test, skipped, not-executed, or failed relational run cannot pass.
+The 17 PostgreSQL transaction, concurrency, constraint, and migration tests are marked `Category=PostgreSQL`. They require an explicitly configured disposable database via `AUDITNODE_TEST_POSTGRES`; CI migrates PostgreSQL 17, runs only that category, writes TRX, and calls `scripts/Verify-Trx.ps1` so a zero-test, skipped, not-executed, or failed relational run cannot pass.
 
-> Database warning: the three remediation migrations and the workspace-scoped view SQL described in [docs/DATABASE.md](docs/DATABASE.md) have been generated/reviewed but **have not been applied to a live database**.
+> Database warning: this repository does not assert that any migration has been applied to a production database. The Workspace-to-Global-Catalog cutover is destructive by design and requires the approved backup/reset procedure described in [docs/DATABASE.md](docs/DATABASE.md).
 
 ### Key Features
 

@@ -105,7 +105,7 @@ public class ServersControllerTests
 
 
     [Fact]
-    public async Task Update_returns_bad_request_for_unknown_datacenter_in_workspace()
+    public async Task Update_returns_bad_request_for_unknown_datacenter_in_owner_catalog()
     {
         var id = Guid.NewGuid();
         var dto = ValidUpdate();

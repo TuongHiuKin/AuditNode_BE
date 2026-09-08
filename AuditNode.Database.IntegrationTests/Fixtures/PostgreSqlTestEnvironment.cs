@@ -66,7 +66,7 @@ public static partial class PostgreSqlTestEnvironment
 
     private static bool AllowedHost(string host) => host
         .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-        .All(value => value is "localhost" or "127.0.0.1" or "postgres");
+        .All(value => value is "localhost" or "127.0.0.1" or "postgres" or "host.docker.internal");
 
     private static string QuoteIdentifier(string identifier) =>
         new NpgsqlCommandBuilder().QuoteIdentifier(identifier);

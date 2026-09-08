@@ -29,7 +29,12 @@ The test role must be allowed to create and drop the generated `auditnode_suite_
 
 CI publishes the suite's TRX and verifies that the file contains at least one executed test and zero skipped tests. A missing environment variable, missing TRX, empty suite, or skipped test is therefore a failed required gate rather than a silent pass.
 
-This repository currently has no designated production-release tag/database snapshot, so the fresh-migration test is **not** evidence that a populated previous production database can upgrade to HEAD. Adding a previous-release upgrade fixture remains blocked until an operator designates the release migration and approves a sanitized, reproducible fixture source.
+This repository has no production-release tag or approved production snapshot, and it does not claim that a populated Workspace-era database can upgrade in place. The supported cutover contract is instead generated from the immutable EF migration chain at `20260830090508_GlobalCatalogTransitionalLabelUniqueness`, immediately before `RemoveWorkspaceRuntime`:
+
+- an empty pre-cutover catalog must migrate to HEAD, remove every Workspace relation, recreate the owner-scoped views, and remain idempotent;
+- a populated pre-cutover catalog must fail before schema/data changes, preserve its migration history and rows, and require the explicitly approved backup/reset procedure.
+
+`AuditNode.Database.IntegrationTests/Migrations/LegacyCatalogCutoverMigrationTests.cs` executes both paths on disposable PostgreSQL databases. `AuditNode.Database.IntegrationTests/Fixtures/pre-cutover-baseline.manifest.json` records the baseline source and explicitly sets `productionReleaseClaim` to `false`. If AuditNode later designates a deployed release with a data-preserving upgrade contract, add a separate sanitized snapshot-based test rather than re-labeling this reset fixture.
 
 ### Legacy Workspace remediation snapshot (superseded)
 

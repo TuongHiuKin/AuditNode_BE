@@ -14,7 +14,7 @@ public class ServerServiceTests
 {
     private readonly Mock<IServerRepository> _repository = new();
     [Fact]
-    public async Task Create_rejects_datacenter_not_visible_in_current_workspace()
+    public async Task Create_rejects_datacenter_not_visible_in_current_owner_catalog()
     {
         var dto = ValidCreate();
         _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId, "test-user")).ReturnsAsync(false);
@@ -26,7 +26,7 @@ public class ServerServiceTests
     }
 
     [Fact]
-    public async Task Create_rejects_duplicate_ip_in_current_workspace()
+    public async Task Create_rejects_duplicate_ip_in_current_owner_catalog()
     {
         var dto = ValidCreate();
         _repository.Setup(x => x.DatacenterExistsAsync(dto.DatacenterId, "test-user")).ReturnsAsync(true);

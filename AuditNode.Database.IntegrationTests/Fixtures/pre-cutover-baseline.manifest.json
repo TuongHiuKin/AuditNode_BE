@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "contract": "destructive-workspace-to-owner-catalog-cutover",
+  "baselineMigration": "20260830090508_GlobalCatalogTransitionalLabelUniqueness",
+  "sourceCommit": "1960ef7ff33f807b55e800e95ad6fe91741a5cca",
+  "fixtureSource": "immutable EF Core migration chain",
+  "businessDataPolicy": "must-be-empty-before-cutover",
+  "populatedDatabaseExpectedOutcome": "fail-closed-without-schema-or-data-change",
+  "productionReleaseClaim": false,
+  "notes": "No production release tag or approved sanitized production snapshot exists. This fixture protects the operator-approved reset cutover contract without representing origin/main as a deployed production baseline."
+}
