@@ -10,6 +10,8 @@ The custom `/api/v1/auth` gateway lets the frontend keep its own login/register 
 
 After authentication, the `sub`/name-identifier claim selects the actor. Mutable inventory is partitioned by `owner_user_id`; the runtime has no `WorkspaceMiddleware`, `X-Workspace-Id`, or workspace-membership lookup. Owners can delegate labeled subsets through direct Viewer/Editor Label Grants. Anonymous share tokens are revocable Viewer-only capabilities and do not establish an authenticated owner context. Owner-consistent keys, foreign keys, queries, and service authorization form the persistence boundary.
 
+The API currently registers ASP.NET Core Data Protection without a shared multi-instance key ring. Therefore, catalog cursors are protected and validated within the issuing instance but cross-instance cursor portability is not a supported contract. The distributed test suite intentionally protects the database-backed SystemAdmin invariant only. Before adding backend-A cursor to backend-B regression coverage, deployment architecture must explicitly choose either sticky routing for paged requests or a protected shared Data Protection key store; that security/configuration decision is not made by the test suite.
+
 ### Canonical aggregate flows
 
 - Server create/update validates canonical IPv4, same-owner datacenter references, and owner-unique IP addresses.
