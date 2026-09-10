@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>opencover</Format>
+          <UseSourceLink>true</UseSourceLink>
+          <Exclude>[*.Tests]*,[*.IntegrationTests]*</Exclude>
+          <ExcludeByFile>**/*.Designer.cs,**/*.g.cs,**/*ModelSnapshot.cs</ExcludeByFile>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
