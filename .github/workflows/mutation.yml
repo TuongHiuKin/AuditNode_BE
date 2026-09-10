@@ -1,0 +1,65 @@
+name: Targeted Mutation Analysis
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: targeted-mutation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  label-access:
+    name: Label access mutation pilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build immutable mutation runner
+        run: docker build --file mutation/Dockerfile --tag auditnode-mutation:${{ github.sha }} .
+
+      - name: Run focused test baseline in the runner
+        run: >-
+          docker run --rm
+          --entrypoint dotnet
+          auditnode-mutation:${{ github.sha }}
+          test AuditNode.Tests.csproj
+          --configuration Release
+          --no-restore
+          --filter "FullyQualifiedName~AuditNode.Tests.Services.LabelAccessServiceTests"
+
+      - name: Run report-only LabelAccessService mutation analysis
+        run: |
+          mkdir -p artifacts/mutation/label-access
+          docker run --rm \
+            --cpus=4 \
+            --memory=6g \
+            --volume "$PWD/artifacts/mutation/label-access:/reports" \
+            auditnode-mutation:${{ github.sha }} \
+            --config-file stryker-label-access.json \
+            --output /reports \
+            --skip-version-check
+
+      - name: Verify mutation evidence
+        shell: bash
+        run: |
+          html_report="$(find artifacts/mutation/label-access -name mutation-report.html -type f -print -quit)"
+          json_report="$(find artifacts/mutation/label-access -name mutation-report.json -type f -print -quit)"
+          test -n "$html_report"
+          test -s "$html_report"
+          test -n "$json_report"
+          test -s "$json_report"
+          jq -e '[.files[].mutants[]] | length > 0' "$json_report"
+
+      - name: Upload mutation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: label-access-mutation-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/mutation/label-access/
+          if-no-files-found: warn
+          retention-days: 14

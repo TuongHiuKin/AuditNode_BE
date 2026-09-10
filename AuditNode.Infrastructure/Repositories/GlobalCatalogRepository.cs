@@ -598,16 +598,10 @@ public sealed class GlobalCatalogRepository(
                 link.Label.Key == normalizedLabelKey &&
                 (string.IsNullOrWhiteSpace(normalizedLabelValue) || link.Label.Value == normalizedLabelValue)));
         }
-        var servers = serverEntities
-            .Where(server => server.Hostname.ToLower().Contains(search) || server.IpAddress.ToLower().Contains(search))
-            .Select(server => new SearchRow(
-                server.Id, server.OwnerUserId!, "SERVER", server.Hostname, server.IpAddress,
-                server.Hostname.ToLower().Contains(search) ? "Matched by Server Hostname" : "Matched by Server IP"));
-        var applications = applicationEntities
-            .Where(application => application.AppName.ToLower().Contains(search) || application.AppCode.ToLower().Contains(search))
-            .Select(application => new SearchRow(
-                application.Id, application.OwnerUserId!, "APP", application.AppName, application.AppCode,
-                application.AppName.ToLower().Contains(search) ? "Matched by App Name" : "Matched by App Code"));
+        serverEntities = serverEntities
+            .Where(server => server.Hostname.ToLower().Contains(search) || server.IpAddress.ToLower().Contains(search));
+        applicationEntities = applicationEntities
+            .Where(application => application.AppName.ToLower().Contains(search) || application.AppCode.ToLower().Contains(search));
         if (cursor is not null)
         {
             var type = cursor.SortValues[0];
@@ -615,16 +609,16 @@ public sealed class GlobalCatalogRepository(
             var id = cursor.Id;
             if (type == "APP")
             {
-                applications = applications.Where(result =>
-                    result.Title.CompareTo(title) > 0 ||
-                    (result.Title == title && result.Id.CompareTo(id) > 0));
+                applicationEntities = applicationEntities.Where(application =>
+                    application.AppName.CompareTo(title) > 0 ||
+                    (application.AppName == title && application.Id.CompareTo(id) > 0));
             }
             else if (type == "SERVER")
             {
-                applications = applications.Where(_ => false);
-                servers = servers.Where(result =>
-                    result.Title.CompareTo(title) > 0 ||
-                    (result.Title == title && result.Id.CompareTo(id) > 0));
+                applicationEntities = applicationEntities.Where(_ => false);
+                serverEntities = serverEntities.Where(server =>
+                    server.Hostname.CompareTo(title) > 0 ||
+                    (server.Hostname == title && server.Id.CompareTo(id) > 0));
             }
             else
             {
@@ -634,9 +628,15 @@ public sealed class GlobalCatalogRepository(
 
         // APP sorts before SERVER. Each source's title/id ordering is performed entirely
         // by PostgreSQL, so pagination never compares database collation with .NET collation.
-        var serverRows = await servers.OrderBy(result => result.Title).ThenBy(result => result.Id)
+        var serverRows = await serverEntities.OrderBy(server => server.Hostname).ThenBy(server => server.Id)
+            .Select(server => new SearchRow(
+                server.Id, server.OwnerUserId!, "SERVER", server.Hostname, server.IpAddress,
+                server.Hostname.ToLower().Contains(search) ? "Matched by Server Hostname" : "Matched by Server IP"))
             .Take(query.Limit + 1).ToListAsync(cancellationToken);
-        var applicationRows = await applications.OrderBy(result => result.Title).ThenBy(result => result.Id)
+        var applicationRows = await applicationEntities.OrderBy(application => application.AppName).ThenBy(application => application.Id)
+            .Select(application => new SearchRow(
+                application.Id, application.OwnerUserId!, "APP", application.AppName, application.AppCode,
+                application.AppName.ToLower().Contains(search) ? "Matched by App Name" : "Matched by App Code"))
             .Take(query.Limit + 1).ToListAsync(cancellationToken);
         var rows = applicationRows.Concat(serverRows)
             .Take(query.Limit + 1)

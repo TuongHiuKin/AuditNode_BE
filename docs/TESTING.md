@@ -30,3 +30,9 @@ Initial server-side policy:
 - Coverage and duplication: report only until a stable baseline exists
 
 Do not configure a 100 percent coverage gate or add tests only to increase the metric.
+
+## Targeted mutation pilot
+
+Phase 6 limits mutation analysis to `AuditNode.Infrastructure/Services/LabelAccessService.cs` and the focused `LabelAccessServiceTests` suite. It runs in the immutable Docker runner defined by `mutation/Dockerfile`; source is copied into the image and only reports are mounted back to the host.
+
+The pilot uses Stryker.NET 4.16.0 with `break` set to zero. It is report-only, manual, and must not be treated as a repository-wide mutation score. A survived mutation justifies a new test only when it changes a real security or business outcome such as owner isolation, Mine/Shared separation, revoke/expiry, token exclusion, or Viewer/Editor capabilities.
