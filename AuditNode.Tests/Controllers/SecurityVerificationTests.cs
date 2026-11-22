@@ -1,4 +1,5 @@
 using AuditNode.API.Controllers;
+using AuditNode.API.Security;
 using FluentAssertions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,7 +20,7 @@ public class SecurityVerificationTests
     [InlineData(typeof(InventorySearchController))]
     [InlineData(typeof(ServersController))]
     [InlineData(typeof(TopologyController))]
-    [InlineData(typeof(WorkspacesController))]
+    [InlineData(typeof(AdminUsersController))]
     public void Controller_Should_Have_AuthorizeAttribute(Type controllerType)
     {
         // Assert
@@ -28,33 +29,6 @@ public class SecurityVerificationTests
     }
 
     [Theory]
-    [InlineData(typeof(DatacentersController), nameof(DatacentersController.CreateDatacenter), "Admin")]
-    [InlineData(typeof(ApplicationsController), nameof(ApplicationsController.PostApplication), "Admin,Auditor")]
-    [InlineData(typeof(ApplicationsController), nameof(ApplicationsController.PutApplication), "Admin,Auditor")]
-    [InlineData(typeof(DependenciesController), nameof(DependenciesController.SyncDependencies), "Admin,Auditor")]
-    [InlineData(typeof(InventoryImportController), nameof(InventoryImportController.ImportInventory), "Admin,Auditor")]
-    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.MigrateApp), "Admin,Auditor")]
-    [InlineData(typeof(InfrastructureController), nameof(InfrastructureController.PurgeApp), "Admin,Auditor")]
-    [InlineData(typeof(ServersController), nameof(ServersController.CreateServer), "Admin,Auditor")]
-    [InlineData(typeof(ServersController), nameof(ServersController.UpdateServer), "Admin,Auditor")]
-    [InlineData(typeof(ServersController), nameof(ServersController.DeleteServer), "Admin,Auditor")]
-    [InlineData(typeof(TopologyController), nameof(TopologyController.SaveState), "Admin,Auditor")]
-    public void Mutating_Actions_Should_Require_Specific_Roles(Type controllerType, string methodName, string expectedRoles)
-    {
-        // Arrange
-        var methodInfo = controllerType.GetMethod(methodName);
-        methodInfo.Should().NotBeNull($"Method {methodName} should exist on {controllerType.Name}");
-
-        // Act
-        var authorizeAttr = methodInfo!.GetCustomAttribute<AuthorizeAttribute>();
-
-        // Assert
-        authorizeAttr.Should().NotBeNull($"Method {methodName} on {controllerType.Name} must be decorated with [Authorize]");
-        authorizeAttr!.Roles.Should().Be(expectedRoles, $"Method {methodName} on {controllerType.Name} requires roles '{expectedRoles}'");
-    }
-
-    [Theory]
-    [InlineData(typeof(WorkspacesController), nameof(WorkspacesController.GetWorkspaces))]
     [InlineData(typeof(DatacentersController), nameof(DatacentersController.GetDatacenters))]
     [InlineData(typeof(ServersController), nameof(ServersController.GetServers))]
     [InlineData(typeof(ServersController), nameof(ServersController.ExportServers))]
@@ -81,15 +55,30 @@ public class SecurityVerificationTests
     }
 
     [Fact]
-    public void All_Controllers_In_API_Namespace_Should_Be_Tested()
+    public void Controller_security_is_policy_based_with_an_explicit_anonymous_action_allowlist()
     {
-        // Arrange
-        var assembly = typeof(ApplicationsController).Assembly;
-        var controllerTypes = assembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(ControllerBase)) && !t.IsAbstract)
+        var allowedAnonymousActions = new HashSet<string>(StringComparer.Ordinal)
+        {
+            $"{nameof(AuthController)}.{nameof(AuthController.Login)}",
+            $"{nameof(AuthController)}.{nameof(AuthController.Register)}",
+            $"{nameof(AuthController)}.{nameof(AuthController.Refresh)}",
+            $"{nameof(AuthController)}.{nameof(AuthController.Logout)}",
+            $"{nameof(ShareLinksController)}.{nameof(ShareLinksController.Resolve)}",
+            $"{nameof(ShareLinksController)}.{nameof(ShareLinksController.Browse)}"
+        };
+        var controllerTypes = typeof(ApplicationsController).Assembly.GetTypes()
+            .Where(type => type.IsSubclassOf(typeof(ControllerBase)) && !type.IsAbstract)
             .ToList();
 
-        // Act & Assert
-        controllerTypes.Should().HaveCount(12, "We expect exactly 12 controllers to be protected");
+        controllerTypes.All(type => type.GetCustomAttribute<AuthorizeAttribute>() != null)
+            .Should().BeTrue("every API controller is protected by default");
+
+        var anonymousActions = controllerTypes
+            .SelectMany(type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)
+                .Where(method => method.GetCustomAttribute<AllowAnonymousAttribute>() is not null)
+                .Select(method => $"{type.Name}.{method.Name}"))
+            .ToHashSet(StringComparer.Ordinal);
+        anonymousActions.Should().BeEquivalentTo(allowedAnonymousActions);
     }
+
 }

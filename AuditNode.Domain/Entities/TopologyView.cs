@@ -2,7 +2,6 @@ namespace AuditNode.Domain.Entities;
 
 public class TopologyView
 {
-    public Guid WorkspaceId { get; set; }
     public Guid ServerId { get; set; }
     public string ServerHostname { get; set; } = string.Empty;
     public string ServerIp { get; set; } = string.Empty;
@@ -13,4 +12,5 @@ public class TopologyView
     public string Protocol { get; set; } = string.Empty;
     public string Environment { get; set; } = string.Empty;
     public Guid DatacenterId { get; set; }
+    public string? OwnerUserId { get; set; }
 }

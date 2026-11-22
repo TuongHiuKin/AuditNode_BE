@@ -9,45 +9,254 @@ on:
       - main
 
 jobs:
-  test-and-deploy:
-    name: Test → Build → Push
+  verify:
+    name: Restore, build, and verify
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: auditnode_ci
+          POSTGRES_USER: auditnode_ci
+          POSTGRES_PASSWORD: auditnode_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U auditnode_ci -d auditnode_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AUDITNODE_TEST_POSTGRES: Host=localhost;Port=5432;Database=auditnode_ci;Username=auditnode_ci;Password=auditnode_ci
+      ConnectionStrings__DefaultConnection: Host=localhost;Port=5432;Database=auditnode_ci;Username=auditnode_ci;Password=auditnode_ci
 
     steps:
-      # ── 1. Source ────────────────────────────────────────────────────────
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # ── 2. SDK ───────────────────────────────────────────────────────────
       - name: Set up .NET 10
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.x"
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
 
-      # ── 3. Test ──────────────────────────────────────────────────────────
-      - name: Restore dependencies
-        run: dotnet restore
+      - name: Install pinned EF Core CLI
+        run: dotnet tool install --global dotnet-ef --version 10.0.8
 
-      - name: Run tests
-        run: dotnet test --configuration Release --no-restore --verbosity normal
+      - name: Restore locked dependencies
+        run: dotnet restore AuditNode.slnx --locked-mode
 
-      # ── 4. Docker (push to main ONLY) ────────────────────────────────────
-      - name: Log in to Docker Hub
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v3
+      - name: Build release binaries
+        run: dotnet build AuditNode.slnx --configuration Release --no-restore -bl:backend.binlog
+
+      - name: Run fast tests
+        run: >-
+          dotnet test AuditNode.Tests/AuditNode.Tests.csproj
+          --configuration Release
+          --no-build
+          --filter "Category!=PostgreSQL&Category!=ApiIntegration"
+          --settings coverage.runsettings
+          --collect:"XPlat Code Coverage"
+          --logger "trx;LogFileName=fast.trx"
+          --results-directory TestResults/fast
+
+      - name: Apply migrations to disposable PostgreSQL
+        run: >-
+          dotnet ef database update
+          --project AuditNode.Infrastructure/AuditNode.Infrastructure.csproj
+          --startup-project AuditNode.API/AuditNode.API.csproj
+          --configuration Release
+          --no-build
+
+      - name: Run required PostgreSQL tests
+        run: >-
+          dotnet test AuditNode.Database.IntegrationTests/AuditNode.Database.IntegrationTests.csproj
+          --configuration Release
+          --no-build
+          --filter "Category=PostgreSQL"
+          --settings coverage.runsettings
+          --collect:"XPlat Code Coverage"
+          --logger "trx;LogFileName=postgresql.trx"
+          --results-directory TestResults/postgresql
+
+      - name: Verify PostgreSQL test execution
+        shell: pwsh
+        run: ./scripts/Verify-Trx.ps1 -Path TestResults/postgresql/postgresql.trx
+
+      - name: Verify backend coverage artifacts
+        shell: bash
+        run: |
+          test "$(find TestResults/fast -mindepth 2 -maxdepth 2 -name coverage.opencover.xml -type f | wc -l)" -ge 1
+          test "$(find TestResults/postgresql -mindepth 2 -maxdepth 2 -name coverage.opencover.xml -type f | wc -l)" -ge 1
+
+      - name: Check for pending EF Core model changes
+        run: >-
+          dotnet ef migrations has-pending-model-changes
+          --project AuditNode.Infrastructure/AuditNode.Infrastructure.csproj
+          --startup-project AuditNode.API/AuditNode.API.csproj
+          --configuration Release
+          --no-build
+
+      - name: Upload backend verification artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          name: backend-verification-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            backend.binlog
+            TestResults/**/*.trx
+            TestResults/**/coverage.opencover.xml
+          if-no-files-found: warn
+          retention-days: 14
 
-      - name: Set up Docker Buildx
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/setup-buildx-action@v3
+  api-integration:
+    name: API full-pipeline integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: auditnode_api_ci
+          POSTGRES_USER: auditnode_api_ci
+          POSTGRES_PASSWORD: auditnode_api_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U auditnode_api_ci -d auditnode_api_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      AUDITNODE_TEST_POSTGRES: Host=localhost;Port=5432;Database=auditnode_api_ci;Username=auditnode_api_ci;Password=auditnode_api_ci
 
-      - name: Build and push image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v6
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          context: ./
-          file: ./Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/auditnode-be:latest
+          fetch-depth: 0
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore locked dependencies
+        run: dotnet restore AuditNode.slnx --locked-mode
+
+      - name: Build API integration tests
+        run: >-
+          dotnet build AuditNode.API.IntegrationTests/AuditNode.API.IntegrationTests.csproj
+          --configuration Release
+          --no-restore
+
+      - name: Run required API full-pipeline tests
+        run: >-
+          dotnet test AuditNode.API.IntegrationTests/AuditNode.API.IntegrationTests.csproj
+          --configuration Release
+          --no-build
+          --filter "Category=ApiIntegration"
+          --settings coverage.runsettings
+          --collect:"XPlat Code Coverage"
+          --logger "trx;LogFileName=api-integration.trx"
+          --results-directory TestResults/api-integration
+
+      - name: Verify API integration test execution
+        shell: pwsh
+        run: ./scripts/Verify-Trx.ps1 -Path TestResults/api-integration/api-integration.trx
+
+      - name: Verify API coverage artifact
+        shell: bash
+        run: test "$(find TestResults/api-integration -mindepth 2 -maxdepth 2 -name coverage.opencover.xml -type f | wc -l)" -ge 1
+
+      - name: Upload API integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-integration-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            TestResults/api-integration/**/*.trx
+            TestResults/api-integration/**/coverage.opencover.xml
+          if-no-files-found: error
+          retention-days: 14
+
+  sonar:
+    name: Sonar quality signals
+    if: vars.SONAR_ENABLED == 'true'
+    needs:
+      - verify
+      - api-integration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.x"
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Download backend verification evidence
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}'
+          path: sonar-evidence
+          merge-multiple: true
+
+      - name: Verify Sonar configuration and evidence
+        shell: bash
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          test -n "$SONAR_HOST_URL"
+          test -n "$SONAR_PROJECT_KEY"
+          test -n "$SONAR_TOKEN"
+          for suite in fast postgresql api-integration; do
+            test "$(find "sonar-evidence/TestResults/$suite" -mindepth 2 -maxdepth 2 -name coverage.opencover.xml -type f | wc -l)" -ge 1
+          done
+
+      - name: Install pinned Sonar scanner
+        run: dotnet tool install --global dotnet-sonarscanner --version 11.3.0
+
+      - name: Restore locked dependencies
+        run: dotnet restore AuditNode.slnx --locked-mode
+
+      - name: Begin Sonar analysis
+        shell: bash
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          args=(
+            "/k:$SONAR_PROJECT_KEY"
+            "/d:sonar.host.url=$SONAR_HOST_URL"
+            "/d:sonar.token=$SONAR_TOKEN"
+            "/d:sonar.qualitygate.wait=true"
+            "/d:sonar.cs.opencover.reportsPaths=sonar-evidence/TestResults/*/*/coverage.opencover.xml"
+            "/d:sonar.cs.vstest.reportsPaths=sonar-evidence/**/*.trx"
+            "/d:sonar.coverage.exclusions=**/*Tests*/**,**/Migrations/**,**/*.Designer.cs,**/*.g.cs"
+          )
+          if [ -n "$SONAR_ORGANIZATION" ]; then
+            args+=("/o:$SONAR_ORGANIZATION")
+          fi
+          dotnet sonarscanner begin "${args[@]}"
+
+      - name: Build analyzed backend
+        run: dotnet build AuditNode.slnx --configuration Release --no-restore
+
+      - name: End Sonar analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"

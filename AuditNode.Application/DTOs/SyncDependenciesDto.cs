@@ -1,11 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace AuditNode.Application.DTOs;
 
 public class SyncDependenciesDto
 {
-    public List<DependencyItemDto> Dependencies { get; set; } = new();
+    [Required]
+    public long? Version { get; set; }
+
+    [Required]
+    public List<DependencyItemDto>? Dependencies { get; set; }
 }
 
 public class DependencyItemDto
@@ -22,5 +27,7 @@ public enum DependencySyncStatus
     NotFound,
     SelfLoop,
     Duplicate,
-    DestinationMismatch
+    DestinationMismatch,
+    Forbidden,
+    Conflict
 }

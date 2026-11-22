@@ -1,35 +1,37 @@
 using AuditNode.Application.DTOs;
-using AuditNode.Infrastructure.Data;
+using AuditNode.Application.Exceptions;
+using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace AuditNode.API.Controllers;
 
 [Authorize]
 [ApiController]
+[Route("api/v1/labels")]
 [Route("api/v1/inventory/labels")]
-public class LabelsController : ControllerBase
+public sealed class LabelsController(ILabelCatalogService labels) : ControllerBase
 {
-    private readonly AuditDbContext _context;
-
-    public LabelsController(AuditDbContext context)
-    {
-        _context = context;
-    }
-
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<LabelDto>>> GetLabels()
+    [ProducesResponseType(typeof(CursorPageDto<CatalogLabelDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CursorPageDto<CatalogLabelDto>>> GetLabels(
+        [FromQuery] string? view = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] string? cursor = null,
+        [FromQuery] string? ownerUserId = null,
+        [FromQuery] string? labelKey = null,
+        [FromQuery] string? labelValue = null,
+        CancellationToken cancellationToken = default)
     {
-        var labels = await _context.Labels
-            .Select(l => new LabelDto
-            {
-                Key = l.Key,
-                Value = l.Value
-            })
-            .Distinct()
-            .ToListAsync();
-
-        return Ok(labels);
+        try
+        {
+            return Ok(await labels.GetLabelsAsync(
+                CatalogPageQuery.Parse(view, limit, cursor), ownerUserId, labelKey, labelValue, cancellationToken));
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(new ProblemDetails { Status = 400, Title = exception.Message });
+        }
     }
 }

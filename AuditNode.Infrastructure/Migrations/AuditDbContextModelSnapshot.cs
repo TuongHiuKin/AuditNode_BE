@@ -46,23 +46,25 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("dest_port_id");
 
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
                     b.Property<Guid>("SourceAppId")
                         .HasColumnType("uuid")
                         .HasColumnName("source_app_id");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId");
+                    b.HasAlternateKey("OwnerUserId", "Id");
 
-                    b.HasIndex("WorkspaceId", "DestAppId");
+                    b.HasIndex("OwnerUserId", "DestAppId");
 
-                    b.HasIndex("WorkspaceId", "DestPortId");
+                    b.HasIndex("OwnerUserId", "DestPortId");
 
-                    b.HasIndex("WorkspaceId", "SourceAppId", "DestAppId", "DestPortId")
+                    b.HasIndex("OwnerUserId", "SourceAppId", "DestAppId", "DestPortId")
                         .IsUnique();
 
                     b.ToTable("app_dependencies", (string)null);
@@ -96,6 +98,12 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("character varying(255)")
                         .HasColumnName("owner_team");
 
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
                     b.Property<string>("Risk")
                         .IsRequired()
                         .HasColumnType("text")
@@ -106,13 +114,9 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("tech_stack");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "AppCode")
+                    b.HasIndex("OwnerUserId", "AppCode")
                         .IsUnique();
 
                     b.ToTable("applications", (string)null);
@@ -120,10 +124,6 @@ namespace AuditNode.Infrastructure.Migrations
 
             modelBuilder.Entity("AuditNode.Domain.Entities.ApplicationLabel", b =>
                 {
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.Property<Guid>("ApplicationId")
                         .HasColumnType("uuid")
                         .HasColumnName("application_id");
@@ -132,9 +132,17 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("label_id");
 
-                    b.HasKey("WorkspaceId", "ApplicationId", "LabelId");
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
 
-                    b.HasIndex("WorkspaceId", "LabelId");
+                    b.HasKey("ApplicationId", "LabelId");
+
+                    b.HasIndex("OwnerUserId", "ApplicationId");
+
+                    b.HasIndex("OwnerUserId", "LabelId");
 
                     b.ToTable("application_labels", (string)null);
                 });
@@ -156,13 +164,15 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId");
+                    b.HasIndex("OwnerUserId");
 
                     b.ToTable("datacenters", (string)null);
                 });
@@ -198,12 +208,16 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.Property<string>("DestServerHostname")
                         .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("dest_server_hostname");
+                        .HasColumnType("text");
 
                     b.Property<string>("Environment")
                         .HasColumnType("text")
                         .HasColumnName("environment");
+
+                    b.Property<string>("OwnerUserId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
 
                     b.Property<string>("SourceAppCode")
                         .IsRequired()
@@ -219,10 +233,6 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("source_app_name");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.ToTable((string)null);
 
                     b.ToView("v_dependency_graph", (string)null);
@@ -235,25 +245,167 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<bool>("IsProtected")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("is_protected");
+
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("key");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("business")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
 
                     b.Property<string>("Value")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("value");
 
-                    b.Property<Guid>("WorkspaceId")
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId")
+                        .IsUnique()
+                        .HasFilter("kind = 'owner' AND owner_user_id IS NOT NULL");
+
+                    b.HasIndex("OwnerUserId", "Kind");
+
+                    b.HasIndex("OwnerUserId", "Key", "Value")
+                        .IsUnique();
+
+                    b.ToTable("labels", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_labels_kind", "kind IN ('owner', 'business')");
+
+                            t.HasCheckConstraint("ck_labels_owner_protected", "kind <> 'owner' OR is_protected");
+                        });
+                });
+
+            modelBuilder.Entity("AuditNode.Domain.Entities.LabelGrant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("created_by_user_id");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("GranteeUserId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("grantee_user_id");
+
+                    b.Property<Guid>("LabelId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("label_id");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<string>("Permission")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("permission");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("TokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "Key", "Value");
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
 
-                    b.ToTable("labels", (string)null);
+                    b.HasIndex("LabelId", "GranteeUserId")
+                        .IsUnique()
+                        .HasFilter("revoked_at IS NULL AND grantee_user_id IS NOT NULL");
+
+                    b.HasIndex("OwnerUserId", "LabelId", "RevokedAt");
+
+                    b.HasIndex("GranteeUserId", "RevokedAt", "ExpiresAt", "LabelId");
+
+                    b.ToTable("label_grants", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_label_grants_anonymous_viewer", "token_hash IS NULL OR permission = 'viewer'");
+
+                            t.HasCheckConstraint("ck_label_grants_permission", "permission IN ('viewer', 'editor')");
+
+                            t.HasCheckConstraint("ck_label_grants_subject", "(grantee_user_id IS NOT NULL AND token_hash IS NULL) OR (grantee_user_id IS NULL AND token_hash IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_label_grants_token_expiry", "token_hash IS NULL OR expires_at IS NOT NULL");
+                        });
+                });
+
+            modelBuilder.Entity("AuditNode.Domain.Entities.OwnerCatalogState", b =>
+                {
+                    b.Property<string>("OwnerUserId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<long>("TopologyVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("topology_version");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("OwnerUserId");
+
+                    b.ToTable("owner_catalog_states", (string)null);
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.PortMapping", b =>
@@ -266,6 +418,12 @@ namespace AuditNode.Infrastructure.Migrations
                     b.Property<Guid>("AppId")
                         .HasColumnType("uuid")
                         .HasColumnName("app_id");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
 
                     b.Property<int>("PortNumber")
                         .HasColumnType("integer")
@@ -280,15 +438,11 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("server_id");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "AppId");
+                    b.HasIndex("OwnerUserId", "AppId");
 
-                    b.HasIndex("WorkspaceId", "ServerId", "PortNumber")
+                    b.HasIndex("OwnerUserId", "ServerId", "PortNumber")
                         .IsUnique();
 
                     b.ToTable("port_mappings", (string)null);
@@ -325,20 +479,22 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("os_type");
 
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("status");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "DatacenterId");
+                    b.HasIndex("OwnerUserId", "DatacenterId");
 
-                    b.HasIndex("WorkspaceId", "IpAddress")
+                    b.HasIndex("OwnerUserId", "IpAddress")
                         .IsUnique();
 
                     b.ToTable("servers", (string)null);
@@ -346,10 +502,6 @@ namespace AuditNode.Infrastructure.Migrations
 
             modelBuilder.Entity("AuditNode.Domain.Entities.ServerLabel", b =>
                 {
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.Property<Guid>("ServerId")
                         .HasColumnType("uuid")
                         .HasColumnName("server_id");
@@ -358,9 +510,17 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("label_id");
 
-                    b.HasKey("WorkspaceId", "ServerId", "LabelId");
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
 
-                    b.HasIndex("WorkspaceId", "LabelId");
+                    b.HasKey("ServerId", "LabelId");
+
+                    b.HasIndex("OwnerUserId", "LabelId");
+
+                    b.HasIndex("OwnerUserId", "ServerId");
 
                     b.ToTable("server_labels", (string)null);
                 });
@@ -381,6 +541,12 @@ namespace AuditNode.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("label");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
 
                     b.Property<Guid?>("ReferenceId")
                         .HasColumnType("uuid")
@@ -404,15 +570,13 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("target_node_id");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId", "TargetNodeId");
+                    b.HasAlternateKey("OwnerUserId", "Id");
 
-                    b.HasIndex("WorkspaceId", "SourceNodeId", "TargetNodeId", "SourceHandle", "TargetHandle")
+                    b.HasIndex("OwnerUserId", "TargetNodeId");
+
+                    b.HasIndex("OwnerUserId", "SourceNodeId", "TargetNodeId", "SourceHandle", "TargetHandle")
                         .IsUnique();
 
                     b.ToTable("topology_edges", (string)null);
@@ -439,6 +603,12 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("node_type");
 
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
                     b.Property<Guid?>("ParentNodeId")
                         .HasColumnType("uuid")
                         .HasColumnName("parent_node_id");
@@ -451,10 +621,6 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("width");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.Property<double>("X")
                         .HasColumnType("double precision")
                         .HasColumnName("x");
@@ -465,9 +631,9 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("WorkspaceId");
+                    b.HasIndex("OwnerUserId");
 
-                    b.HasIndex("WorkspaceId", "ParentNodeId");
+                    b.HasIndex("OwnerUserId", "ParentNodeId");
 
                     b.ToTable("topology_nodes", (string)null);
                 });
@@ -497,6 +663,11 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("environment");
 
+                    b.Property<string>("OwnerUserId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
                     b.Property<int>("PortNumber")
                         .HasColumnType("integer")
                         .HasColumnName("port_number");
@@ -520,123 +691,31 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("text")
                         .HasColumnName("server_ip");
 
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
                     b.ToTable((string)null);
 
                     b.ToView("v_topology_map", (string)null);
                 });
 
-            modelBuilder.Entity("AuditNode.Domain.Entities.Workspace", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("description");
-
-                    b.Property<bool>("IsPersonal")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_personal");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(160)
-                        .HasColumnType("character varying(160)")
-                        .HasColumnName("name");
-
-                    b.Property<string>("OwnerUserId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("owner_user_id");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("OwnerUserId")
-                        .IsUnique()
-                        .HasFilter("is_personal = true");
-
-                    b.ToTable("workspaces", (string)null);
-                });
-
-            modelBuilder.Entity("AuditNode.Domain.Entities.WorkspaceMember", b =>
-                {
-                    b.Property<Guid>("WorkspaceId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("workspace_id");
-
-                    b.Property<string>("UserId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("user_id");
-
-                    b.Property<string>("InvitedByUserId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("invited_by_user_id");
-
-                    b.Property<DateTime>("JoinedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("joined_at");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
-                        .HasColumnName("role");
-
-                    b.HasKey("WorkspaceId", "UserId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("workspace_members", null, t =>
-                        {
-                            t.HasCheckConstraint("ck_workspace_members_role", "role IN ('workspace_admin', 'editor', 'auditor', 'viewer')");
-                        });
-                });
-
             modelBuilder.Entity("AuditNode.Domain.Entities.AppDependency", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("AuditNode.Domain.Entities.Application", "DestinationApplication")
                         .WithMany("DestinationDependencies")
-                        .HasForeignKey("WorkspaceId", "DestAppId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "DestAppId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.PortMapping", "DestinationPort")
                         .WithMany("AppDependencies")
-                        .HasForeignKey("WorkspaceId", "DestPortId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "DestPortId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Application", "SourceApplication")
                         .WithMany("SourceDependencies")
-                        .HasForeignKey("WorkspaceId", "SourceAppId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "SourceAppId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -645,207 +724,125 @@ namespace AuditNode.Infrastructure.Migrations
                     b.Navigation("DestinationPort");
 
                     b.Navigation("SourceApplication");
-
-                    b.Navigation("Workspace");
-                });
-
-            modelBuilder.Entity("AuditNode.Domain.Entities.Application", b =>
-                {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.ApplicationLabel", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("AuditNode.Domain.Entities.Application", "Application")
                         .WithMany("ApplicationLabels")
-                        .HasForeignKey("WorkspaceId", "ApplicationId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "ApplicationId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Label", "Label")
                         .WithMany("ApplicationLabels")
-                        .HasForeignKey("WorkspaceId", "LabelId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "LabelId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Application");
 
                     b.Navigation("Label");
-
-                    b.Navigation("Workspace");
                 });
 
-            modelBuilder.Entity("AuditNode.Domain.Entities.Datacenter", b =>
+            modelBuilder.Entity("AuditNode.Domain.Entities.LabelGrant", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                    b.HasOne("AuditNode.Domain.Entities.Label", "Label")
+                        .WithMany("Grants")
+                        .HasForeignKey("OwnerUserId", "LabelId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Workspace");
-                });
-
-            modelBuilder.Entity("AuditNode.Domain.Entities.Label", b =>
-                {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Workspace");
+                    b.Navigation("Label");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.PortMapping", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("AuditNode.Domain.Entities.Application", "Application")
                         .WithMany("PortMappings")
-                        .HasForeignKey("WorkspaceId", "AppId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "AppId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Server", "Server")
                         .WithMany("PortMappings")
-                        .HasForeignKey("WorkspaceId", "ServerId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "ServerId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Application");
 
                     b.Navigation("Server");
-
-                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.Server", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("AuditNode.Domain.Entities.Datacenter", "Datacenter")
                         .WithMany("Servers")
-                        .HasForeignKey("WorkspaceId", "DatacenterId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "DatacenterId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Datacenter");
-
-                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.ServerLabel", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("AuditNode.Domain.Entities.Label", "Label")
                         .WithMany("ServerLabels")
-                        .HasForeignKey("WorkspaceId", "LabelId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "LabelId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.Server", "Server")
                         .WithMany("ServerLabels")
-                        .HasForeignKey("WorkspaceId", "ServerId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "ServerId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Label");
 
                     b.Navigation("Server");
-
-                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.TopologyEdge", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("AuditNode.Domain.Entities.TopologyNode", "SourceNode")
                         .WithMany()
-                        .HasForeignKey("WorkspaceId", "SourceNodeId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "SourceNodeId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("AuditNode.Domain.Entities.TopologyNode", "TargetNode")
                         .WithMany()
-                        .HasForeignKey("WorkspaceId", "TargetNodeId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "TargetNodeId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("SourceNode");
 
                     b.Navigation("TargetNode");
-
-                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.TopologyNode", b =>
                 {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany()
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
                     b.HasOne("AuditNode.Domain.Entities.TopologyNode", "ParentNode")
                         .WithMany("ChildNodes")
-                        .HasForeignKey("WorkspaceId", "ParentNodeId")
-                        .HasPrincipalKey("WorkspaceId", "Id")
+                        .HasForeignKey("OwnerUserId", "ParentNodeId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
                         .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("ParentNode");
-
-                    b.Navigation("Workspace");
-                });
-
-            modelBuilder.Entity("AuditNode.Domain.Entities.WorkspaceMember", b =>
-                {
-                    b.HasOne("AuditNode.Domain.Entities.Workspace", "Workspace")
-                        .WithMany("Members")
-                        .HasForeignKey("WorkspaceId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Workspace");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.Application", b =>
@@ -868,6 +865,8 @@ namespace AuditNode.Infrastructure.Migrations
                 {
                     b.Navigation("ApplicationLabels");
 
+                    b.Navigation("Grants");
+
                     b.Navigation("ServerLabels");
                 });
 
@@ -886,11 +885,6 @@ namespace AuditNode.Infrastructure.Migrations
             modelBuilder.Entity("AuditNode.Domain.Entities.TopologyNode", b =>
                 {
                     b.Navigation("ChildNodes");
-                });
-
-            modelBuilder.Entity("AuditNode.Domain.Entities.Workspace", b =>
-                {
-                    b.Navigation("Members");
                 });
 #pragma warning restore 612, 618
         }

@@ -2,6 +2,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Security;
 
 namespace AuditNode.API.Controllers;
 
@@ -18,13 +19,14 @@ public class InfrastructureController : ControllerBase
     }
 
     [HttpGet("apps/{id:guid}/dependencies-count")]
-    public async Task<ActionResult<int>> GetDependenciesCount(Guid id)
+    public async Task<ActionResult<int>> GetDependenciesCount(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             return BadRequest(Problem(400, "A non-empty application identifier is required."));
         try
         {
-            return Ok(await _infrastructureService.GetDependenciesCountAsync(id));
+            var count = await _infrastructureService.GetDependenciesCountCatalogAsync(id, cancellationToken);
+            return count.HasValue ? Ok(count.Value) : NotFound(Problem(404, "Application was not found."));
         }
         catch (Exception)
         {
@@ -32,7 +34,6 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
     [HttpPut("apps/migrate")]
     public async Task<IActionResult> MigrateApp([FromBody] MigrateAppDto migrateDto)
     {
@@ -47,9 +48,10 @@ public class InfrastructureController : ControllerBase
                 DeploymentOperationStatus.NotFound =>
                     NotFound(Problem(404, "Deployment was not found.")),
                 DeploymentOperationStatus.ServerNotFound =>
-                    BadRequest(Problem(400, "Target server was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Target server was not found in the resource owner's catalog.")),
                 DeploymentOperationStatus.PortCollision =>
                     Conflict(Problem(409, "The target server port is already assigned.")),
+                DeploymentOperationStatus.Forbidden => Forbid(),
                 _ => Failure("Deployment could not be migrated.")
             };
         }
@@ -59,7 +61,6 @@ public class InfrastructureController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
     [HttpDelete("apps/{id:guid}/purge")]
     public async Task<IActionResult> PurgeApp(Guid id)
     {
@@ -78,13 +79,16 @@ public class InfrastructureController : ControllerBase
     }
 
     [HttpGet("servers/{id:guid}/deployed-apps")]
-    public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id)
+    public async Task<ActionResult<IEnumerable<DeployedAppDto>>> GetDeployedAppsByServer(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             return BadRequest(Problem(400, "A non-empty server identifier is required."));
         try
         {
-            return Ok(await _infrastructureService.GetDeployedAppsByServerAsync(id));
+            var applications = await _infrastructureService.GetDeployedAppsByServerCatalogAsync(id, cancellationToken);
+            return applications is null
+                ? NotFound(Problem(404, "Server was not found."))
+                : Ok(applications);
         }
         catch (Exception)
         {

@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
 
@@ -19,13 +20,25 @@ public class ApplicationsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> GetApplications(
+    [ProducesResponseType(typeof(CursorPageDto<ApplicationResponseDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CursorPageDto<ApplicationResponseDto>>> GetApplications(
         [FromQuery] string? labelKey = null,
-        [FromQuery] string? labelValue = null)
+        [FromQuery] string? labelValue = null,
+        [FromQuery] string? ownerUserId = null,
+        [FromQuery] string? view = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] string? cursor = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            return Ok(await _applicationService.GetAllAsync(labelKey, labelValue));
+            var query = CatalogPageQuery.Parse(view, limit, cursor);
+            return Ok(await _applicationService.GetCatalogPageAsync(query, labelKey, labelValue, ownerUserId, cancellationToken));
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(Problem(400, exception.Message));
         }
         catch (Exception)
         {
@@ -34,14 +47,21 @@ public class ApplicationsController : ControllerBase
     }
 
     [HttpGet("export")]
-    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> ExportApplications([FromQuery] List<Guid> ids)
+    public async Task<ActionResult<IEnumerable<ApplicationResponseDto>>> ExportApplications(
+        [FromQuery] List<Guid> ids,
+        [FromQuery] string? view = null,
+        CancellationToken cancellationToken = default)
     {
         if (ids is null || ids.Count == 0 || ids.Any(id => id == Guid.Empty))
             return BadRequest(Problem(400, "Non-empty application identifiers are required."));
 
         try
         {
-            return Ok(await _applicationService.GetByIdsAsync(ids));
+            return Ok(await _applicationService.ExportCatalogAsync(ids, CatalogPageQuery.Parse(view, 25, null).View, cancellationToken));
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(Problem(400, exception.Message));
         }
         catch (Exception)
         {
@@ -50,14 +70,14 @@ public class ApplicationsController : ControllerBase
     }
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<ApplicationResponseDto>> GetApplication(Guid id)
+    public async Task<ActionResult<ApplicationResponseDto>> GetApplication(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
             return BadRequest(Problem(400, "A non-empty application identifier is required."));
 
         try
         {
-            var result = await _applicationService.GetByIdAsync(id);
+            var result = await _applicationService.GetCatalogDetailAsync(id, cancellationToken);
             return result is null
                 ? NotFound(Problem(404, "Application was not found."))
                 : Ok(result);
@@ -68,7 +88,6 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
     [HttpPost]
     public async Task<ActionResult<ApplicationResponseDto>> PostApplication([FromBody] CreateApplicationDto appDto)
     {
@@ -80,13 +99,14 @@ public class ApplicationsController : ControllerBase
                 ApplicationOperationStatus.Success when result.Application is not null =>
                     CreatedAtAction(nameof(GetApplication), new { id = result.Application.Id }, result.Application),
                 ApplicationOperationStatus.DuplicateAppCode =>
-                    Conflict(Problem(409, "An application with this code already exists in the current workspace.")),
+                    Conflict(Problem(409, "An application with this code already exists in your catalog.")),
                 ApplicationOperationStatus.ServerNotFound =>
-                    BadRequest(Problem(400, "Deployment server was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Deployment server was not found in your catalog.")),
                 ApplicationOperationStatus.PortCollision =>
                     Conflict(Problem(409, "The target server port is already assigned.")),
-                ApplicationOperationStatus.InvalidRequest or ApplicationOperationStatus.InvalidWorkspace =>
-                    BadRequest(Problem(400, "Application data is invalid for the current workspace.")),
+                ApplicationOperationStatus.InvalidRequest =>
+                    BadRequest(Problem(400, "Application data is invalid for your catalog.")),
+                ApplicationOperationStatus.Forbidden => Forbid(),
                 _ => Failure(500, "Application could not be created.")
             };
         }
@@ -96,7 +116,6 @@ public class ApplicationsController : ControllerBase
         }
     }
 
-    [Authorize(Roles = "Admin,Auditor")]
     [HttpPut("{id:guid}")]
     public async Task<IActionResult> PutApplication(Guid id, [FromBody] UpdateApplicationDto updateDto)
     {
@@ -113,11 +132,12 @@ public class ApplicationsController : ControllerBase
                 ApplicationOperationStatus.DeploymentNotFound =>
                     NotFound(Problem(404, "Deployment was not found for this application.")),
                 ApplicationOperationStatus.ServerNotFound =>
-                    BadRequest(Problem(400, "Deployment server was not found in the current workspace.")),
+                    BadRequest(Problem(400, "Deployment server was not found in the resource owner's catalog.")),
                 ApplicationOperationStatus.PortCollision =>
                     Conflict(Problem(409, "The target server port is already assigned.")),
-                ApplicationOperationStatus.InvalidRequest or ApplicationOperationStatus.InvalidWorkspace =>
-                    BadRequest(Problem(400, "Application data is invalid for the current workspace.")),
+                ApplicationOperationStatus.InvalidRequest =>
+                    BadRequest(Problem(400, "Application data is invalid for the resource owner's catalog.")),
+                ApplicationOperationStatus.Forbidden => Forbid(),
                 _ => Failure(500, "Application could not be updated.")
             };
         }

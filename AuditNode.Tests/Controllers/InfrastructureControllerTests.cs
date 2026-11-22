@@ -24,7 +24,7 @@ public class InfrastructureControllerTests
     {
         // Arrange
         var appId = Guid.NewGuid();
-        _mockService.Setup(s => s.GetDependenciesCountAsync(appId)).ReturnsAsync(5);
+        _mockService.Setup(s => s.GetDependenciesCountCatalogAsync(appId, It.IsAny<CancellationToken>())).ReturnsAsync(5);
 
         // Act
         var result = await _controller.GetDependenciesCount(appId);
@@ -96,7 +96,7 @@ public class InfrastructureControllerTests
         // Arrange
         var serverId = Guid.NewGuid();
         var mockApps = new List<DeployedAppDto> { new DeployedAppDto { AppName = "App1" } };
-        _mockService.Setup(s => s.GetDeployedAppsByServerAsync(serverId)).ReturnsAsync(mockApps);
+        _mockService.Setup(s => s.GetDeployedAppsByServerCatalogAsync(serverId, It.IsAny<CancellationToken>())).ReturnsAsync(mockApps);
 
         // Act
         var result = await _controller.GetDeployedAppsByServer(serverId);
@@ -104,5 +104,19 @@ public class InfrastructureControllerTests
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
         okResult.Value.Should().BeEquivalentTo(mockApps);
+    }
+
+    [Fact]
+    public async Task Related_reads_return_non_disclosing_not_found_when_catalog_access_is_denied()
+    {
+        var id = Guid.NewGuid();
+        _mockService.Setup(service => service.GetDependenciesCountCatalogAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((int?)null);
+        _mockService.Setup(service => service.GetDeployedAppsByServerCatalogAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<DeployedAppDto>?)null);
+
+        var count = await _controller.GetDependenciesCount(id);
+        var deployed = await _controller.GetDeployedAppsByServer(id);
+
+        count.Result.Should().BeOfType<NotFoundObjectResult>();
+        deployed.Result.Should().BeOfType<NotFoundObjectResult>();
     }
 }

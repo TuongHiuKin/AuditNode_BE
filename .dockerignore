@@ -14,6 +14,7 @@
 **/TestResults/
 **/*.nupkg
 **/*.snupkg
+**/*.dump
 
 # ------ Frontend / Node -------------------------------------
 **/node_modules/

@@ -3,13 +3,13 @@ namespace AuditNode.Application.DTOs;
 public enum ApplicationOperationStatus
 {
     Success,
-    InvalidWorkspace,
     InvalidRequest,
     NotFound,
     ServerNotFound,
     DeploymentNotFound,
     DuplicateAppCode,
-    PortCollision
+    PortCollision,
+    Forbidden
 }
 
 public sealed record ApplicationOperationResult(
@@ -22,5 +22,6 @@ public enum DeploymentOperationStatus
     InvalidRequest,
     NotFound,
     ServerNotFound,
-    PortCollision
+    PortCollision,
+    Forbidden
 }

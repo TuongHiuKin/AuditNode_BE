@@ -10,46 +10,65 @@ namespace AuditNode.Infrastructure.Services;
 public class ServerService : IServerService
 {
     private readonly IServerRepository _repository;
-    private readonly ITenantProvider _tenantProvider;
+    private readonly ILabelAccessService _labelAccess;
+    private readonly ILabelMutationCoordinator _mutationCoordinator;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly IOwnerLabelService _ownerLabels;
+    private readonly TimeProvider _timeProvider;
 
-    public ServerService(IServerRepository repository, ITenantProvider tenantProvider)
+    public ServerService(IServerRepository repository, ILabelAccessService labelAccess, ILabelMutationCoordinator mutationCoordinator, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, IOwnerLabelService ownerLabels, TimeProvider timeProvider)
     {
         _repository = repository;
-        _tenantProvider = tenantProvider;
+        _labelAccess = labelAccess;
+        _mutationCoordinator = mutationCoordinator;
+        _currentUser = currentUser;
+        _catalog = catalog;
+        _ownerLabels = ownerLabels;
+        _timeProvider = timeProvider;
     }
 
-    public async Task<IEnumerable<ServerResponseDto>> GetServersAsync()
-    {
-        if (!HasWorkspace())
-            return Array.Empty<ServerResponseDto>();
+    public Task<CursorPageDto<ServerResponseDto>> GetCatalogPageAsync(CatalogPageQuery query, string? ownerUserId = null, string? labelKey = null, string? labelValue = null, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult(new CursorPageDto<ServerResponseDto>([], null, false))
+            : _catalog.GetServersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, ownerUserId, labelKey, labelValue, cancellationToken);
 
-        return await _repository.GetAllWithAppsAsync();
-    }
+    public Task<ServerResponseDto?> GetCatalogDetailAsync(Guid id, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<ServerResponseDto?>(null)
+            : _catalog.GetServerAsync(_currentUser.UserId!, id, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+
+    public Task<IReadOnlyList<ServerResponseDto>> ExportCatalogAsync(IReadOnlyCollection<Guid> ids, CatalogView view, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult<IReadOnlyList<ServerResponseDto>>([])
+            : _catalog.ExportServersAsync(_currentUser.UserId!, view, ids, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
+
+    public async Task<IEnumerable<ServerResponseDto>> GetServersAsync() =>
+        (await GetCatalogPageAsync(new CatalogPageQuery(CatalogView.Mine, 100))).Items;
 
     public async Task<ServerResponseDto?> GetServerAsync(Guid id)
     {
-        if (!HasWorkspace() || id == Guid.Empty)
-            return null;
-
-        var server = await _repository.GetByIdAsync(id);
-        return server is null ? null : Map(server);
+        return id == Guid.Empty ? null : await GetCatalogDetailAsync(id);
     }
 
     public async Task<ServerOperationResult> CreateServerAsync(CreateServerDto dto)
     {
-        if (!HasWorkspace())
-            return new(ServerOperationStatus.InvalidWorkspace);
+        var actor = _currentUser.UserId;
+        if (string.IsNullOrWhiteSpace(actor)) return new(ServerOperationStatus.Forbidden);
 
-        if (!await _repository.DatacenterExistsAsync(dto.DatacenterId))
+        if (!await _repository.DatacenterExistsAsync(dto.DatacenterId, actor))
             return new(ServerOperationStatus.DatacenterNotFound);
 
         var normalizedIp = NormalizeIp(dto.IpAddress);
-        if (await _repository.IpAddressExistsAsync(normalizedIp, null))
+        if (await _repository.IpAddressExistsAsync(normalizedIp, actor, null))
             return new(ServerOperationStatus.DuplicateIp);
+
+        await _ownerLabels.EnsureAsync(actor);
 
         var server = new Server
         {
             Id = Guid.NewGuid(),
+            OwnerUserId = actor,
             DatacenterId = dto.DatacenterId,
             IpAddress = normalizedIp,
             Hostname = dto.Hostname,
@@ -71,33 +90,41 @@ public class ServerService : IServerService
 
     public async Task<ServerOperationResult> UpdateServerAsync(Guid id, UpdateServerDto dto)
     {
-        if (!HasWorkspace())
-            return new(ServerOperationStatus.InvalidWorkspace);
-
         if (id == Guid.Empty)
             return new(ServerOperationStatus.NotFound);
 
         var server = await _repository.GetByIdAsync(id);
         if (server is null)
             return new(ServerOperationStatus.NotFound);
+        var access = await _labelAccess.GetServerAccessAsync(id);
+        if (access is null) return new(ServerOperationStatus.NotFound);
+        if (!access.Capabilities.CanEditProperties) return new(ServerOperationStatus.Forbidden);
+        if (dto.Labels is not null && !access.Capabilities.CanChangeLabels) return new(ServerOperationStatus.Forbidden);
 
-        if (!await _repository.DatacenterExistsAsync(dto.DatacenterId))
+        if (!await _repository.DatacenterExistsAsync(dto.DatacenterId, access.OwnerUserId))
             return new(ServerOperationStatus.DatacenterNotFound);
 
         var normalizedIp = NormalizeIp(dto.IpAddress);
-        if (await _repository.IpAddressExistsAsync(normalizedIp, id))
+        if (await _repository.IpAddressExistsAsync(normalizedIp, access.OwnerUserId, id))
             return new(ServerOperationStatus.DuplicateIp);
-
-        server.DatacenterId = dto.DatacenterId;
-        server.IpAddress = normalizedIp;
-        server.Hostname = dto.Hostname;
-        server.OsType = dto.OsType;
-        server.Environment = dto.Environment;
-        server.Status = dto.Status;
 
         try
         {
-            await _repository.UpdateAsync(server, dto.Labels);
+            var authorized = await _mutationCoordinator.ExecuteAsync(
+                access.OwnerUserId,
+                [id],
+                [],
+                async _ =>
+                {
+                    server.DatacenterId = dto.DatacenterId;
+                    server.IpAddress = normalizedIp;
+                    server.Hostname = dto.Hostname;
+                    server.OsType = dto.OsType;
+                    server.Environment = dto.Environment;
+                    server.Status = dto.Status;
+                    await _repository.UpdateAsync(server, dto.Labels);
+                });
+            if (!authorized) return new(ServerOperationStatus.Forbidden);
             return new(ServerOperationStatus.Success, Map(server));
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
@@ -108,30 +135,22 @@ public class ServerService : IServerService
 
     public async Task<ServerOperationStatus> PurgeServerAsync(Guid id)
     {
-        if (!HasWorkspace())
-            return ServerOperationStatus.InvalidWorkspace;
-
         if (id == Guid.Empty)
             return ServerOperationStatus.NotFound;
 
         var server = await _repository.GetByIdAsync(id);
         if (server is null)
             return ServerOperationStatus.NotFound;
+        var access = await _labelAccess.GetServerAccessAsync(id);
+        if (access is null) return ServerOperationStatus.NotFound;
+        if (!access.Capabilities.CanDelete) return ServerOperationStatus.Forbidden;
 
         await _repository.DeleteAsync(server);
         return ServerOperationStatus.Success;
     }
 
-    public async Task<IEnumerable<ServerResponseDto>> ExportServersAsync(List<Guid> ids)
-    {
-        if (!HasWorkspace())
-            return Array.Empty<ServerResponseDto>();
-
-        return await _repository.GetByIdsAsync(ids.Where(id => id != Guid.Empty).Distinct());
-    }
-
-    private bool HasWorkspace() { Console.WriteLine("HasWorkspace called. WorkspaceId: " + _tenantProvider.WorkspaceId); return
-        _tenantProvider.WorkspaceId.HasValue; }
+    public async Task<IEnumerable<ServerResponseDto>> ExportServersAsync(List<Guid> ids) =>
+        await ExportCatalogAsync(ids.Where(id => id != Guid.Empty).Distinct().ToList(), CatalogView.Mine);
 
     private static string NormalizeIp(string ipAddress) => IPAddress.Parse(ipAddress).ToString();
 
@@ -165,6 +184,9 @@ public class ServerService : IServerService
         {
             Key = label.Key,
             Value = label.Value
-        }).ToList()
+        }).ToList(),
+        OwnerUserId = server.OwnerUserId ?? string.Empty,
+        EffectivePermission = LabelEffectivePermission.Owner,
+        Capabilities = CatalogCapabilities.Owner
     };
 }

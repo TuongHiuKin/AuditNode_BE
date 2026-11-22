@@ -2,6 +2,8 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Errors;
+using AuditNode.Application.DTOs;
+using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
 
@@ -18,12 +20,16 @@ public class AnalyticsController : ControllerBase
     }
 
     [HttpGet("topology")]
-    public async Task<ActionResult> GetTopology([FromQuery] string? environment, [FromQuery] Guid? datacenterId)
+    public async Task<ActionResult> GetTopology([FromQuery] string? environment, [FromQuery] Guid? datacenterId, [FromQuery] string? view = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var topologyData = await _analyticsRepository.GetTopologyAsync(environment, datacenterId);
+            var topologyData = await _analyticsRepository.GetTopologyCatalogAsync(CatalogPageQuery.Parse(view, 25, null).View, environment, datacenterId, cancellationToken);
             return Ok(topologyData);
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(ApiProblem.Create(ControllerContext.HttpContext, 400, exception.Message));
         }
         catch (Exception)
         {
@@ -32,12 +38,16 @@ public class AnalyticsController : ControllerBase
     }
 
     [HttpGet("dependencies")]
-    public async Task<ActionResult> GetDependencies([FromQuery] string? environment, [FromQuery] Guid? datacenterId)
+    public async Task<ActionResult> GetDependencies([FromQuery] string? environment, [FromQuery] Guid? datacenterId, [FromQuery] string? view = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            var dependencyData = await _analyticsRepository.GetDependenciesAsync(environment, datacenterId);
+            var dependencyData = await _analyticsRepository.GetDependenciesCatalogAsync(CatalogPageQuery.Parse(view, 25, null).View, environment, datacenterId, cancellationToken);
             return Ok(dependencyData);
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(ApiProblem.Create(ControllerContext.HttpContext, 400, exception.Message));
         }
         catch (Exception)
         {

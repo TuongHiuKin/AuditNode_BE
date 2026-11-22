@@ -2,6 +2,7 @@ using AuditNode.API.Errors;
 using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using AuditNode.API.Security;
 
 namespace AuditNode.API.Controllers;
 
@@ -23,7 +24,6 @@ public class InventoryImportController : ControllerBase
     public IActionResult DownloadTemplate() =>
         File(_importService.GenerateTemplate(), ExcelContentType, "Inventory_Import_Template.xlsx");
 
-    [Authorize(Roles = "Admin,Auditor")]
     [HttpPost("import")]
     [RequestSizeLimit(MaxImportBytes)]
     [RequestFormLimits(MultipartBodyLengthLimit = MaxImportBytes)]

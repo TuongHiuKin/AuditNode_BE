@@ -1,0 +1,2 @@
+workspace_id,user_id,role,scope_mode,target_id,approved_by
+11111111-1111-1111-1111-111111111111,fixture-auditor,auditor,frames,aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,fixture-reviewer

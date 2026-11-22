@@ -1,4 +1,3 @@
-using AuditNode.API.Middleware;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
@@ -14,11 +13,18 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Threading.RateLimiting;
+using AuditNode.API.Services;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.DataProtection;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container
-builder.Services.AddScoped<ITenantProvider, TenantProvider>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddDataProtection();
 builder.Services.AddOpenApi("v1", options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
@@ -30,7 +36,8 @@ builder.Services.AddOpenApi("v1", options =>
     });
 });
 
-// Configure JWT Bearer Authentication with Keycloak
+// Configure JWT Bearer Authentication with Keycloak.
+// Access tokens must be issued for this API and obtained by the configured BFF client.
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -39,7 +46,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidateAudience = false, // Set to false for public client SPA tokens
+            ValidateAudience = true,
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true
         };
@@ -50,6 +57,16 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 return Task.CompletedTask;
             },
             OnTokenValidated = context => {
+                var keycloak = context.HttpContext.RequestServices
+                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<KeycloakRuntimeOptions>>()
+                    .Value;
+                var authorizedParty = context.Principal?.FindFirst("azp")?.Value;
+                if (!string.Equals(authorizedParty, keycloak.BffClientId, StringComparison.Ordinal))
+                {
+                    context.Fail("The token authorized party is not trusted by this API.");
+                    return Task.CompletedTask;
+                }
+
                 Console.WriteLine("[Auth Success] Token is valid.");
                 return Task.CompletedTask;
             },
@@ -60,7 +77,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options => options.AddPolicy("SystemAdminOnly", policy => policy.RequireRole("SystemAdmin")));
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
@@ -70,6 +87,17 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = (context, _) =>
+    {
+        var logger = context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("AuditNode.Security.RateLimit");
+        logger.LogWarning(
+            "Rate limit rejected request {Path} for actor {ActorId}; correlation {CorrelationId}",
+            context.HttpContext.Request.Path,
+            context.HttpContext.User.FindFirst("sub")?.Value ?? "anonymous",
+            context.HttpContext.TraceIdentifier);
+        return ValueTask.CompletedTask;
+    };
     options.AddPolicy("auth", httpContext =>
         RateLimitPartition.GetFixedWindowLimiter(
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
@@ -80,16 +108,65 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.AddPolicy("share-options", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst("sub")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("share-link-create", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.User.FindFirst("sub")?.Value
+                ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 10,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("share-link-resolve", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("share-link-browse", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
 });
 
 builder.Services.AddOptions<KeycloakRuntimeOptions>()
     .Bind(builder.Configuration.GetSection("Keycloak"))
     .Validate(options => options.IsValid(), "Required Keycloak configuration is missing.")
     .ValidateOnStart();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<Microsoft.Extensions.Options.IOptions<KeycloakRuntimeOptions>>((jwt, keycloak) =>
+        jwt.TokenValidationParameters.ValidAudience = keycloak.Value.Audience);
 
 builder.Services.AddHttpClient(KeycloakAuthService.HttpClientName);
 builder.Services.AddTransient<IKeycloakHttpClientFactory, KeycloakHttpClientFactoryAdapter>();
+builder.Services.AddScoped<ISystemAdminMutationLock, PostgresSystemAdminMutationLock>();
 builder.Services.AddScoped<IIdentityAuthService, KeycloakAuthService>();
+builder.Services.AddScoped<IIdentityAdminService, KeycloakAuthService>();
 
 // Register Keycloak Role Claims Transformation for RBAC
 builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
@@ -98,6 +175,9 @@ builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransform
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<AuditDbContext>(options =>
     options.UseNpgsql(connectionString));
+builder.Services.AddHealthChecks()
+    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+    .AddCheck<DatabaseReadyHealthCheck>("database", tags: ["ready"]);
 
 // Register Repositories
 builder.Services.AddScoped<IServerRepository, ServerRepository>();
@@ -105,29 +185,42 @@ builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IAnalyticsRepository, AnalyticsRepository>();
 builder.Services.AddScoped<ITopologyRepository, TopologyRepository>();
 builder.Services.AddScoped<IDatacenterRepository, DatacenterRepository>();
-builder.Services.AddScoped<IWorkspaceRepository, WorkspaceRepository>();
+builder.Services.AddScoped<IGlobalCatalogRepository, GlobalCatalogRepository>();
+builder.Services.AddScoped<IOwnerLabelService, OwnerLabelService>();
+builder.Services.AddSingleton<ICatalogCursorProtector, DataProtectionCatalogCursorProtector>();
+builder.Services.AddSingleton<ICatalogCursorCodec, CatalogCursorCodec>();
 
 // Register Services
 builder.Services.AddScoped<IApplicationService, AuditNode.Infrastructure.Services.ApplicationService>();
 builder.Services.AddScoped<IServerService, AuditNode.Infrastructure.Services.ServerService>();
-builder.Services.AddScoped<IWorkspaceService, AuditNode.Infrastructure.Services.WorkspaceService>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
+builder.Services.AddScoped<ITopologyCommandService, TopologyCommandService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
+builder.Services.AddScoped<ILabelCatalogService, LabelCatalogService>();
+builder.Services.AddScoped<IShareCatalogService, ShareCatalogService>();
 builder.Services.AddScoped<IInfrastructureService, AuditNode.Infrastructure.Services.InfrastructureService>();
+builder.Services.AddScoped<ILabelAccessService, LabelAccessService>();
+builder.Services.AddScoped<IOwnerGraphAccessService, OwnerGraphAccessService>();
+builder.Services.AddScoped<ILabelMutationCoordinator, LabelMutationCoordinator>();
+builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();
+builder.Services.AddScoped<IShareTokenService, ShareTokenService>();
+builder.Services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();
 
 // Register FluentValidation
 builder.Services.AddFluentValidationAutoValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateServerDtoValidator>();
 
 // Add CORS policy
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? ["http://localhost:5173", "http://localhost:3000"];
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReact", policyBuilder =>
     {
         policyBuilder
-            .WithOrigins("http://localhost:5173", "http://localhost:3000")
+            .WithOrigins(allowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -142,6 +235,14 @@ builder.Services.AddControllers()
     });
 
 var app = builder.Build();
+
+if (args.Contains("--migrate-only", StringComparer.Ordinal))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var database = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
+    await database.Database.MigrateAsync();
+    return;
+}
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
@@ -169,14 +270,20 @@ app.UseRouting();
 // Enable CORS early in the pipeline
 app.UseCors("AllowReact");
 
-app.UseRateLimiter();
-
 // Authentication MUST run before Authorization
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
-// Workspace isolation middleware
-app.UseMiddleware<WorkspaceMiddleware>();
+// Deliberately anonymous: probes expose only process/dependency availability.
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("live")
+}).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = registration => registration.Tags.Contains("ready")
+}).AllowAnonymous();
 
 // Map controllers
 app.MapControllers();
@@ -195,3 +302,29 @@ public sealed class KeycloakHttpClientFactoryAdapter : IKeycloakHttpClientFactor
     public HttpClient CreateClient() =>
         _httpClientFactory.CreateClient(KeycloakAuthService.HttpClientName);
 }
+
+public sealed class DatabaseReadyHealthCheck(AuditDbContext database) : IHealthCheck
+{
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await database.Database.CanConnectAsync(cancellationToken))
+            return HealthCheckResult.Unhealthy("Database is unavailable.");
+
+        var requiredViews = await database.Database.SqlQueryRaw<string>(
+                """
+                SELECT viewname AS "Value"
+                FROM pg_catalog.pg_views
+                WHERE schemaname = 'public'
+                  AND viewname IN ('v_topology_map', 'v_dependency_graph')
+                """)
+            .ToListAsync(cancellationToken);
+
+        return requiredViews.Count == 2
+            ? HealthCheckResult.Healthy()
+            : HealthCheckResult.Unhealthy("Required database views are unavailable.");
+    }
+}
+
+public partial class Program;

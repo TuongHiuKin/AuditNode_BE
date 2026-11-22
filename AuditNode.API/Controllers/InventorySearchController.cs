@@ -3,6 +3,7 @@ using AuditNode.Application.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using AuditNode.API.Errors;
+using AuditNode.Application.Exceptions;
 
 namespace AuditNode.API.Controllers;
 
@@ -19,12 +20,33 @@ public class InventorySearchController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<IEnumerable<SearchResultDto>>> Search([FromQuery] string? keyword)
+    [ProducesResponseType(typeof(CursorPageDto<SearchResultDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<CursorPageDto<SearchResultDto>>> Search(
+        [FromQuery] string? q = null,
+        [FromQuery] string? view = null,
+        [FromQuery] int? limit = null,
+        [FromQuery] string? cursor = null,
+        [FromQuery(Name = "keyword")] string? legacyKeyword = null,
+        [FromQuery] string? ownerUserId = null,
+        [FromQuery] string? labelKey = null,
+        [FromQuery] string? labelValue = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var results = await _searchService.SearchAsync(keyword ?? string.Empty);
+            var results = await _searchService.SearchAsync(
+                q ?? legacyKeyword ?? string.Empty,
+                CatalogPageQuery.Parse(view, limit, cursor),
+                ownerUserId,
+                labelKey,
+                labelValue,
+                cancellationToken);
             return Ok(results);
+        }
+        catch (CatalogQueryValidationException exception)
+        {
+            return BadRequest(ApiProblem.Create(ControllerContext.HttpContext, 400, exception.Message));
         }
         catch (Exception)
         {

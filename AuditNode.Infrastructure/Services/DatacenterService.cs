@@ -9,28 +9,37 @@ namespace AuditNode.Infrastructure.Services;
 public class DatacenterService : IDatacenterService
 {
     private readonly AuditDbContext _context;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IGlobalCatalogRepository _catalog;
+    private readonly IOwnerLabelService _ownerLabels;
+    private readonly TimeProvider _timeProvider;
 
-    public DatacenterService(AuditDbContext context)
+    public DatacenterService(AuditDbContext context, ICurrentUserService currentUser, IGlobalCatalogRepository catalog, IOwnerLabelService ownerLabels, TimeProvider timeProvider)
     {
         _context = context;
+        _currentUser = currentUser;
+        _catalog = catalog;
+        _ownerLabels = ownerLabels;
+        _timeProvider = timeProvider;
     }
 
-    public async Task<IEnumerable<DatacenterDto>> GetDatacentersAsync()
-    {
-        var datacenters = await _context.Datacenters.ToListAsync();
-        return datacenters.Select(d => new DatacenterDto
-        {
-            Id = d.Id,
-            Name = d.Name,
-            Location = d.Location
-        });
-    }
+    public Task<CursorPageDto<DatacenterDto>> GetCatalogPageAsync(CatalogPageQuery query, string? ownerUserId = null, CancellationToken cancellationToken = default) =>
+        string.IsNullOrWhiteSpace(_currentUser.UserId)
+            ? Task.FromResult(new CursorPageDto<DatacenterDto>([], null, false))
+            : _catalog.GetDatacentersAsync(_currentUser.UserId!, query, _timeProvider.GetUtcNow().UtcDateTime, ownerUserId, cancellationToken);
+
+    public async Task<IEnumerable<DatacenterDto>> GetDatacentersAsync() =>
+        (await GetCatalogPageAsync(new CatalogPageQuery(CatalogView.Mine, 100))).Items;
 
     public async Task<DatacenterDto> CreateDatacenterAsync(CreateDatacenterDto dto)
     {
+        var actor = _currentUser.UserId;
+        if (string.IsNullOrWhiteSpace(actor)) throw new UnauthorizedAccessException();
+        await _ownerLabels.EnsureAsync(actor);
         var datacenter = new Datacenter
         {
             Id = Guid.NewGuid(),
+            OwnerUserId = actor,
             Name = dto.Name,
             Location = dto.Location
         };
@@ -42,7 +51,10 @@ public class DatacenterService : IDatacenterService
         {
             Id = datacenter.Id,
             Name = datacenter.Name,
-            Location = datacenter.Location
+            Location = datacenter.Location,
+            OwnerUserId = datacenter.OwnerUserId ?? string.Empty,
+            EffectivePermission = LabelEffectivePermission.Owner,
+            Capabilities = CatalogCapabilities.Owner
         };
     }
 }

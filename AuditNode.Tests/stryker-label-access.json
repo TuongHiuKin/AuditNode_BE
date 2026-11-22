@@ -1,0 +1,28 @@
+{
+  "stryker-config": {
+    "solution": "../AuditNode.slnx",
+    "project": "AuditNode.Infrastructure.csproj",
+    "mutate": [
+      "Services/LabelAccessService.cs"
+    ],
+    "test-case-filter": "FullyQualifiedName~AuditNode.Tests.Services.LabelAccessServiceTests",
+    "test-runner": "vstest",
+    "target-framework": "net10.0",
+    "configuration": "Release",
+    "mutation-level": "Standard",
+    "coverage-analysis": "perTest",
+    "concurrency": 2,
+    "additional-timeout": 5000,
+    "reporters": [
+      "progress",
+      "html",
+      "json"
+    ],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 0
+    },
+    "break-on-initial-test-failure": true
+  }
+}

@@ -11,7 +11,16 @@ namespace AuditNode.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("DROP TABLE IF EXISTS server_labels CASCADE; DROP TABLE IF EXISTS labels CASCADE;");
+            migrationBuilder.Sql(
+                """
+                DO $$
+                BEGIN
+                    IF to_regclass('public.labels') IS NOT NULL
+                       OR to_regclass('public.server_labels') IS NOT NULL THEN
+                        RAISE EXCEPTION 'Untracked labels schema detected. Refusing destructive adoption; follow the migration preflight/adoption runbook.';
+                    END IF;
+                END $$;
+                """);
 
             migrationBuilder.CreateTable(
                 name: "labels",

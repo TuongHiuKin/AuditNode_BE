@@ -38,21 +38,38 @@ public class ApplicationsControllerTests
     }
 
     [Fact]
+    public async Task Update_returns_not_found_when_resource_is_absent_or_outside_read_scope()
+    {
+        var id = Guid.NewGuid();
+        var dto = new UpdateApplicationDto();
+        _service.Setup(x => x.UpdateAsync(id, dto))
+            .ReturnsAsync(new ApplicationOperationResult(ApplicationOperationStatus.NotFound));
+
+        var result = await Controller().PutApplication(id, dto);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
+    }
+
+    [Fact]
     public async Task Get_passes_label_filters_to_service()
     {
-        _service.Setup(x => x.GetAllAsync("tier", "critical"))
-            .ReturnsAsync(Array.Empty<ApplicationResponseDto>());
+        _service.Setup(x => x.GetCatalogPageAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25),
+                "tier", "critical", null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<ApplicationResponseDto>([], null, false));
 
         await Controller().GetApplications("tier", "critical");
 
-        _service.Verify(x => x.GetAllAsync("tier", "critical"), Times.Once);
+        _service.Verify(x => x.GetCatalogPageAsync(
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25),
+            "tier", "critical", null, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
     public async Task Unexpected_error_returns_safe_500()
     {
         const string secret = "database password";
-        _service.Setup(x => x.GetByIdAsync(It.IsAny<Guid>()))
+        _service.Setup(x => x.GetCatalogDetailAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException(secret));
 
         var result = await Controller().GetApplication(Guid.NewGuid());

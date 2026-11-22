@@ -50,7 +50,19 @@ public class ServerRepository : IServerRepository
         return await MapToResponseDto(query).ToListAsync();
     }
 
-    private IQueryable<ServerResponseDto> MapToResponseDto(IQueryable<Server> query)
+    public async Task<IEnumerable<ServerResponseDto>> GetScopedAsync(IReadOnlySet<Guid>? serverIds, IReadOnlySet<Guid>? applicationIds, IEnumerable<Guid>? requestedIds = null)
+    {
+        var query = _dbContext.Servers.AsQueryable();
+        if (serverIds is not null) query = query.Where(server => serverIds.Contains(server.Id));
+        if (requestedIds is not null)
+        {
+            var ids = requestedIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+            query = query.Where(server => ids.Contains(server.Id));
+        }
+        return await MapToResponseDto(query, applicationIds).ToListAsync();
+    }
+
+    private IQueryable<ServerResponseDto> MapToResponseDto(IQueryable<Server> query, IReadOnlySet<Guid>? allowedApplicationIds = null)
     {
         return query.Select(s => new ServerResponseDto
         {
@@ -62,7 +74,7 @@ public class ServerRepository : IServerRepository
             Environment = s.Environment,
             Datacenter = s.Datacenter != null ? s.Datacenter.Name : string.Empty,
             Status = s.Status,
-            Applications = s.PortMappings.Select(pm => new ApplicationOnServerDto
+            Applications = s.PortMappings.Where(pm => allowedApplicationIds == null || allowedApplicationIds.Contains(pm.AppId)).Select(pm => new ApplicationOnServerDto
             {
                 PortMappingId = pm.Id,
                 Id = pm.Application!.Id,
@@ -90,15 +102,15 @@ public class ServerRepository : IServerRepository
             .FirstOrDefaultAsync(s => s.Id == id);
     }
 
-    public Task<bool> DatacenterExistsAsync(Guid id)
+    public Task<bool> DatacenterExistsAsync(Guid id, string ownerUserId)
     {
-        return _dbContext.Datacenters.AnyAsync(datacenter => datacenter.Id == id);
+        return _dbContext.Datacenters.AnyAsync(datacenter => datacenter.Id == id && datacenter.OwnerUserId == ownerUserId);
     }
 
-    public Task<bool> IpAddressExistsAsync(string ipAddress, Guid? excludeServerId = null)
+    public Task<bool> IpAddressExistsAsync(string ipAddress, string ownerUserId, Guid? excludeServerId = null)
     {
         return _dbContext.Servers.AnyAsync(server =>
-            server.IpAddress == ipAddress &&
+            server.OwnerUserId == ownerUserId && server.IpAddress == ipAddress &&
             (!excludeServerId.HasValue || server.Id != excludeServerId.Value));
     }
 
@@ -146,13 +158,14 @@ public class ServerRepository : IServerRepository
             var normalizedKey = value.Key.ToUpperInvariant();
             var normalizedValue = value.Value.ToUpperInvariant();
             var label = await _dbContext.Labels.FirstOrDefaultAsync(existing =>
+                existing.OwnerUserId == server.OwnerUserId &&
                 existing.Key.ToUpper() == normalizedKey && existing.Value.ToUpper() == normalizedValue);
             if (label is null)
             {
                 label = new Label
                 {
                     Id = Guid.NewGuid(),
-                    WorkspaceId = server.WorkspaceId,
+                    OwnerUserId = server.OwnerUserId,
                     Key = value.Key,
                     Value = value.Value
                 };
@@ -164,7 +177,7 @@ public class ServerRepository : IServerRepository
             {
                 _dbContext.ServerLabels.Add(new ServerLabel
                 {
-                    WorkspaceId = server.WorkspaceId,
+                    OwnerUserId = server.OwnerUserId,
                     ServerId = server.Id,
                     LabelId = label.Id,
                     Server = server,

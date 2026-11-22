@@ -39,22 +39,37 @@ public class ApplicationRepository : IApplicationRepository
             .ToListAsync();
     }
 
+    public async Task<IEnumerable<ApplicationResponseDto>> GetScopedAsync(IReadOnlySet<Guid>? applicationIds, IReadOnlySet<Guid>? serverIds, IEnumerable<Guid>? requestedIds = null, string? labelKey = null, string? labelValue = null)
+    {
+        var query = ReadQuery();
+        if (applicationIds is not null) query = query.Where(application => applicationIds.Contains(application.Id));
+        if (requestedIds is not null)
+        {
+            var ids = requestedIds.Where(id => id != Guid.Empty).Distinct().ToArray();
+            query = query.Where(application => ids.Contains(application.Id));
+        }
+        if (!string.IsNullOrWhiteSpace(labelKey))
+            query = query.Where(application => application.ApplicationLabels.Any(link => link.Label != null && link.Label.Key == labelKey && (string.IsNullOrWhiteSpace(labelValue) || link.Label.Value == labelValue)));
+        return await MapToResponseDto(query, serverIds).ToListAsync();
+    }
+
     public Task<AppEntity?> GetByIdAsync(Guid id) => ReadQuery().FirstOrDefaultAsync(application => application.Id == id);
 
-    public Task<bool> AppCodeExistsAsync(string appCode, Guid? excludeApplicationId = null) =>
+    public Task<bool> AppCodeExistsAsync(string appCode, string ownerUserId, Guid? excludeApplicationId = null) =>
         _dbContext.Applications.AnyAsync(application =>
-            application.AppCode == appCode &&
+            application.OwnerUserId == ownerUserId && application.AppCode == appCode &&
             (!excludeApplicationId.HasValue || application.Id != excludeApplicationId.Value));
 
-    public Task<bool> ServerExistsAsync(Guid serverId) =>
-        _dbContext.Servers.AnyAsync(server => server.Id == serverId);
+    public Task<bool> ServerExistsAsync(Guid serverId, string ownerUserId) =>
+        _dbContext.Servers.AnyAsync(server => server.Id == serverId && server.OwnerUserId == ownerUserId);
 
     public Task<bool> PortCollisionExistsAsync(
         Guid serverId,
         int portNumber,
+        string ownerUserId,
         Guid? excludePortMappingId = null) =>
         _dbContext.PortMappings.AnyAsync(mapping =>
-            mapping.ServerId == serverId &&
+            mapping.OwnerUserId == ownerUserId && mapping.ServerId == serverId &&
             mapping.PortNumber == portNumber &&
             (!excludePortMappingId.HasValue || mapping.Id != excludePortMappingId.Value));
 
@@ -82,14 +97,17 @@ public class ApplicationRepository : IApplicationRepository
         IReadOnlyCollection<LabelDto>? labels,
         PortMapping? deployment)
     {
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        await using var transaction = _dbContext.Database.CurrentTransaction is null
+            ? await _dbContext.Database.BeginTransactionAsync()
+            : null;
         if (labels is not null)
             await ReplaceLabelsAsync(application, labels);
         if (deployment is not null)
             _dbContext.PortMappings.Update(deployment);
 
         await _dbContext.SaveChangesAsync();
-        await transaction.CommitAsync();
+        if (transaction is not null)
+            await transaction.CommitAsync();
     }
 
     private IQueryable<AppEntity> ReadQuery() => _dbContext.Applications
@@ -116,16 +134,17 @@ public class ApplicationRepository : IApplicationRepository
         foreach (var value in normalized)
         {
             var label = await _dbContext.Labels.FirstOrDefaultAsync(existing =>
+                existing.OwnerUserId == application.OwnerUserId &&
                 existing.Key == value.Key && existing.Value == value.Value);
             if (label is null)
             {
-                label = new Label { Id = Guid.NewGuid(), WorkspaceId = application.WorkspaceId, Key = value.Key, Value = value.Value };
+                label = new Label { Id = Guid.NewGuid(), OwnerUserId = application.OwnerUserId, Key = value.Key, Value = value.Value };
                 _dbContext.Labels.Add(label);
             }
 
             _dbContext.ApplicationLabels.Add(new ApplicationLabel
             {
-                WorkspaceId = application.WorkspaceId,
+                OwnerUserId = application.OwnerUserId,
                 ApplicationId = application.Id,
                 LabelId = label.Id,
                 Application = application,
@@ -134,7 +153,7 @@ public class ApplicationRepository : IApplicationRepository
         }
     }
 
-    private static IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query) =>
+    private static IQueryable<ApplicationResponseDto> MapToResponseDto(IQueryable<AppEntity> query, IReadOnlySet<Guid>? allowedServerIds = null) =>
         query.Select(application => new ApplicationResponseDto
         {
             Id = application.Id,
@@ -144,7 +163,7 @@ public class ApplicationRepository : IApplicationRepository
             Risk = application.Risk,
             Icon = application.Icon,
             TechStack = application.TechStack,
-            Servers = application.PortMappings.Select(mapping => new ServerOnApplicationDto
+            Servers = application.PortMappings.Where(mapping => allowedServerIds == null || allowedServerIds.Contains(mapping.ServerId)).Select(mapping => new ServerOnApplicationDto
             {
                 PortMappingId = mapping.Id,
                 Id = mapping.ServerId,

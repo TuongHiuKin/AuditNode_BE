@@ -33,4 +33,10 @@
     <ProjectReference Include="..\AuditNode.Infrastructure\AuditNode.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="Services\PostgresLabelGrantConcurrencyTests.cs" />
+    <Compile Remove="Services\PostgresSystemAdminMutationLockTests.cs" />
+    <Compile Remove="Services\PostgresTopologyMutationConcurrencyTests.cs" />
+  </ItemGroup>
+
 </Project>

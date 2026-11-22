@@ -11,12 +11,14 @@ namespace AuditNode.Tests.Controllers;
 public class TopologyControllerTests
 {
     private readonly Mock<ITopologyRepository> _mockRepo;
+    private readonly Mock<ITopologyCommandService> _mockCommandService;
     private readonly TopologyController _controller;
 
     public TopologyControllerTests()
     {
         _mockRepo = new Mock<ITopologyRepository>();
-        _controller = new TopologyController(_mockRepo.Object);
+        _mockCommandService = new Mock<ITopologyCommandService>();
+        _controller = new TopologyController(_mockRepo.Object, _mockCommandService.Object);
     }
 
     [Fact]
@@ -139,10 +141,13 @@ public class TopologyControllerTests
         // Arrange
         var state = new SaveTopologyStateDto
         {
+            Version = 0,
             Nodes = new List<TopologyNodeDto>
             {
                 new TopologyNodeDto { Id = Guid.NewGuid(), Label = "Node 1" }
-            }
+            },
+            Edges = [],
+            Dependencies = []
         };
 
         _mockRepo.Setup(repo => repo.SaveTopologyStateAsync(state))
@@ -164,6 +169,20 @@ public class TopologyControllerTests
 
         // Assert
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task SaveState_ShouldRejectMissingVersionOrDependencies()
+    {
+        var result = await _controller.SaveState(new SaveTopologyStateDto
+        {
+            Nodes = [],
+            Edges = [],
+            Dependencies = null
+        });
+
+        result.Should().BeOfType<BadRequestObjectResult>();
+        _mockRepo.Verify(repo => repo.SaveTopologyStateAsync(It.IsAny<SaveTopologyStateDto>()), Times.Never);
     }
 
     [Fact]
@@ -202,5 +221,45 @@ public class TopologyControllerTests
         var okResult = result.Result.As<OkObjectResult>();
         okResult.Should().NotBeNull();
         _mockRepo.Verify(repo => repo.GetDependencyMapAsync(null, null, labels), Times.Once);
+    }
+
+    [Fact]
+    public async Task SaveState_ShouldReturnConflict_WhenVersionIsStale()
+    {
+        var state = new SaveTopologyStateDto { Version = 3, Nodes = [], Edges = [], Dependencies = [] };
+        _mockRepo.Setup(repo => repo.SaveTopologyStateAsync(state)).ReturnsAsync(TopologyStateStatus.Conflict);
+
+        var result = await _controller.SaveState(state);
+
+        result.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Theory]
+    [InlineData(TopologyCommandStatus.Conflict, typeof(ConflictObjectResult))]
+    [InlineData(TopologyCommandStatus.Forbidden, typeof(ObjectResult))]
+    [InlineData(TopologyCommandStatus.InvalidRequest, typeof(BadRequestObjectResult))]
+    public async Task ExecuteCommands_ShouldMapFailureStatus(TopologyCommandStatus status, Type resultType)
+    {
+        var batch = new TopologyCommandBatchDto(1, [new TopologyCommandDto { Type = "moveNode" }]);
+        _mockCommandService.Setup(service => service.ExecuteAsync(batch, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TopologyCommandResult(status, 2, "failure"));
+
+        var result = await _controller.ExecuteCommands(batch, CancellationToken.None);
+
+        result.Should().BeOfType(resultType);
+        if (status == TopologyCommandStatus.Forbidden)
+            result.As<ObjectResult>().StatusCode.Should().Be(403);
+    }
+
+    [Fact]
+    public async Task ExecuteCommands_ShouldReturnNewVersion()
+    {
+        var batch = new TopologyCommandBatchDto(1, [new TopologyCommandDto { Type = "moveNode" }]);
+        _mockCommandService.Setup(service => service.ExecuteAsync(batch, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TopologyCommandResult(TopologyCommandStatus.Success, 2));
+
+        var result = await _controller.ExecuteCommands(batch, CancellationToken.None);
+
+        result.Should().BeOfType<OkObjectResult>();
     }
 }

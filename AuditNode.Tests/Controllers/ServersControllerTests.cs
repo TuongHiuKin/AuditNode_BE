@@ -13,6 +13,49 @@ public class ServersControllerTests
     private readonly Mock<IServerService> _service = new();
 
     [Fact]
+    public async Task List_defaults_to_mine_and_does_not_request_shared()
+    {
+        _service.Setup(service => service.GetCatalogPageAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine && query.Limit == 25 && query.Cursor == null),
+                null, null, null,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<ServerResponseDto>([], null, false));
+
+        var result = await Controller().GetServers();
+
+        ResultOf(result).Should().BeOfType<OkObjectResult>();
+        _service.Verify(service => service.GetCatalogPageAsync(
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Mine), null, null, null, It.IsAny<CancellationToken>()), Times.Once);
+        _service.Verify(service => service.GetCatalogPageAsync(
+            It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task List_passes_owner_and_label_filters_to_service()
+    {
+        _service.Setup(service => service.GetCatalogPageAsync(
+                It.Is<CatalogPageQuery>(query => query.View == CatalogView.Shared),
+                "owner-a", "env", "prod", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CursorPageDto<ServerResponseDto>([], null, false));
+
+        await Controller().GetServers(view: "shared", ownerUserId: "owner-a", labelKey: "env", labelValue: "prod");
+
+        _service.VerifyAll();
+    }
+
+    [Theory]
+    [InlineData("all", 25)]
+    [InlineData("mine", 0)]
+    [InlineData("shared", 101)]
+    public async Task List_rejects_invalid_view_or_limit(string view, int limit)
+    {
+        var result = await Controller().GetServers(view, limit);
+
+        ResultOf(result).Should().BeOfType<BadRequestObjectResult>();
+        _service.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Get_by_id_returns_bad_request_for_empty_id()
     {
         var result = await Controller().GetServer(Guid.Empty);
@@ -25,7 +68,7 @@ public class ServersControllerTests
     public async Task Get_by_id_returns_not_found_when_server_is_not_visible_to_tenant()
     {
         var id = Guid.NewGuid();
-        _service.Setup(x => x.GetServerAsync(id)).ReturnsAsync((ServerResponseDto?)null);
+        _service.Setup(x => x.GetCatalogDetailAsync(id, It.IsAny<CancellationToken>())).ReturnsAsync((ServerResponseDto?)null);
 
         var result = await Controller().GetServer(id);
 
@@ -62,7 +105,7 @@ public class ServersControllerTests
 
 
     [Fact]
-    public async Task Update_returns_bad_request_for_unknown_datacenter_in_workspace()
+    public async Task Update_returns_bad_request_for_unknown_datacenter_in_owner_catalog()
     {
         var id = Guid.NewGuid();
         var dto = ValidUpdate();
@@ -72,6 +115,19 @@ public class ServersControllerTests
         var result = await Controller().UpdateServer(id, dto);
 
         result.Should().BeOfType<BadRequestObjectResult>();
+    }
+
+    [Fact]
+    public async Task Update_returns_not_found_when_resource_is_absent_or_outside_read_scope()
+    {
+        var id = Guid.NewGuid();
+        var dto = ValidUpdate();
+        _service.Setup(x => x.UpdateServerAsync(id, dto))
+            .ReturnsAsync(new ServerOperationResult(ServerOperationStatus.NotFound));
+
+        var result = await Controller().UpdateServer(id, dto);
+
+        result.Should().BeOfType<NotFoundObjectResult>();
     }
 
     [Fact]
@@ -89,7 +145,7 @@ public class ServersControllerTests
     public async Task Unexpected_exception_returns_safe_500_without_exception_message()
     {
         const string secretMessage = "database host and password";
-        _service.Setup(x => x.GetServerAsync(It.IsAny<Guid>()))
+        _service.Setup(x => x.GetCatalogDetailAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException(secretMessage));
 
         var result = await Controller().GetServer(Guid.NewGuid());
