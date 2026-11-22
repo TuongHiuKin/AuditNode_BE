@@ -42,26 +42,25 @@ TestResults/
 .DS_Store
 Thumbs.db
 
-<<<<<<< HEAD
 # Gemini CLI / Agent Specific
 .gemini/
 MEMORY.md
 
 # Node & JS artifacts
 node_modules/
-package-lock.json
-package.json
-=======
 # --- AUTO-DISCOVERED SECURITY RULES ---
 # Environment files
 .env
 .env.*
+!.env.example
 
 # Local databases and backups
 *.db
 *.sqlite
 *.bak
-*.sql
+*.dump
+*.backup
+*.code-workspace
 !AuditNode.Infrastructure/Sql/20260826_rbac_scope_preflight.sql
 !AuditNode.Infrastructure/Sql/20260826_rbac_scope_backfill.sql
 !AuditNode.Infrastructure/Sql/20260828_global_catalog_owner_views.sql
@@ -76,4 +75,3 @@ package.json
 
 /build_infra.txt
 /create_architecture.ps1
->>>>>>> origin/main
