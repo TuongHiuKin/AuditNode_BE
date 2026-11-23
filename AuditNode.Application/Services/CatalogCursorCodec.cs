@@ -4,7 +4,7 @@ using AuditNode.Application.DTOs;
 using AuditNode.Application.Exceptions;
 using AuditNode.Application.Interfaces;
 
-namespace AuditNode.Infrastructure.Services;
+namespace AuditNode.Application.Services;
 
 public sealed class CatalogCursorCodec(ICatalogCursorProtector protector) : ICatalogCursorCodec
 {

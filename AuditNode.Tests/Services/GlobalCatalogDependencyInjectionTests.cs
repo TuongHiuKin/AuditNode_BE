@@ -1,3 +1,4 @@
+using AuditNode.Application.Services;
 using AuditNode.Application.Interfaces;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;

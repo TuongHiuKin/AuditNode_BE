@@ -1,4 +1,5 @@
 using AuditNode.Application.DTOs;
+using AuditNode.Application.Services;
 using AuditNode.Application.Exceptions;
 using AuditNode.Application.Interfaces;
 using AuditNode.Domain.Entities;

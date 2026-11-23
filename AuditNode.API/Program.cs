@@ -1,4 +1,5 @@
 using AuditNode.Application.Interfaces;
+using AuditNode.Application.Services;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
 using AuditNode.Infrastructure.Services;
@@ -42,7 +43,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.Authority = builder.Configuration["Keycloak:Authority"];
-        options.RequireHttpsMetadata = false; // Set to true in production
+        // Only relax TLS metadata validation for a local development authority.
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
@@ -53,7 +55,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         options.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context => {
-                Console.WriteLine($"[Auth Failed] {context.Exception.GetType().Name}");
+                context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("AuditNode.Security.JwtBearer")
+                    .LogWarning(context.Exception, "Token validation failed for {Path}", context.Request.Path);
                 return Task.CompletedTask;
             },
             OnTokenValidated = context => {
@@ -67,11 +72,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                     return Task.CompletedTask;
                 }
 
-                Console.WriteLine("[Auth Success] Token is valid.");
                 return Task.CompletedTask;
             },
             OnChallenge = context => {
-                Console.WriteLine($"[Auth Challenge] 401/403 about to be sent. Error: {context.Error}, Description: {context.ErrorDescription}");
+                context.HttpContext.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("AuditNode.Security.JwtBearer")
+                    .LogInformation(
+                        "Rejected {Path} with {StatusCode}: {Error} {Description}",
+                        context.Request.Path,
+                        StatusCodes.Status401Unauthorized,
+                        context.Error,
+                        context.ErrorDescription);
                 return Task.CompletedTask;
             }
         };

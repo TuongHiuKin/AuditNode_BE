@@ -1,7 +1,7 @@
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Interfaces;
 
-namespace AuditNode.Infrastructure.Services;
+namespace AuditNode.Application.Services;
 
 public sealed class ShareCatalogService(
     IShareTokenService shareTokens,

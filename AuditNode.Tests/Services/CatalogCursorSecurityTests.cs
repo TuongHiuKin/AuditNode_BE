@@ -1,6 +1,7 @@
 using AuditNode.API.Security;
 using AuditNode.Application.DTOs;
 using AuditNode.Application.Exceptions;
+using AuditNode.Application.Services;
 using AuditNode.Infrastructure.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.DataProtection;

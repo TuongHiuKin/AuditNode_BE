@@ -38,26 +38,6 @@ public class InfrastructureService : IInfrastructureService
             ? Task.FromResult<IReadOnlyList<DeployedAppDto>?>(null)
             : _catalog.GetDeployedApplicationsAsync(_currentUser.UserId!, serverId, _timeProvider.GetUtcNow().UtcDateTime, cancellationToken);
 
-    public async Task<int> GetDependenciesCountAsync(Guid appId)
-    {
-        if (!await CanReadAsync("application", appId)) return 0;
-        _logger.LogInformation("Checking dependency count for application {AppId}", appId);
-
-        // 1. Get all port mapping IDs for this specific app
-        var portMappingIds = await _context.PortMappings
-            .Where(pm => pm.AppId == appId)
-            .Select(pm => pm.Id)
-            .ToListAsync();
-
-        // 2. Count connections where this app is either the caller (Source) OR the receiver (Inbound)
-        var count = await _context.AppDependencies
-            .CountAsync(ad => ad.SourceAppId == appId || 
-                             ad.DestAppId == appId || 
-                             portMappingIds.Contains(ad.DestPortId));
-
-        return count;
-    }
-
     public async Task<DeploymentOperationStatus> MigrateAppAsync(MigrateAppDto migrateDto)
     {
         _logger.LogInformation("Starting migration for PortMapping {PortMappingId}...", migrateDto.PortMappingId);
@@ -206,15 +186,4 @@ public class InfrastructureService : IInfrastructureService
             throw;
         }
     }
-
-    public async Task<IEnumerable<DeployedAppDto>> GetDeployedAppsByServerAsync(Guid serverId)
-    {
-        _logger.LogInformation("Fetching deployed applications for server {ServerId}", serverId);
-
-        return await GetDeployedAppsByServerCatalogAsync(serverId) ?? [];
-    }
-
-    private async Task<bool> CanReadAsync(string type, Guid id) => type == "server"
-        ? (await _labelAccess.GetServerAccessAsync(id))?.Capabilities.CanRead == true
-        : (await _labelAccess.GetApplicationAccessAsync(id))?.Capabilities.CanRead == true;
 }
