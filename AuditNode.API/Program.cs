@@ -219,6 +219,8 @@ builder.Services.AddScoped<ILabelMutationCoordinator, LabelMutationCoordinator>(
 builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();
 builder.Services.AddScoped<IShareTokenService, ShareTokenService>();
 builder.Services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();
+builder.Services.AddScoped<IAnalyticsService, AuditNode.Application.Services.AnalyticsService>();
+builder.Services.AddScoped<ITopologyQueryService, AuditNode.Application.Services.TopologyQueryService>();
 
 // Register FluentValidation
 builder.Services.AddFluentValidationAutoValidation();
