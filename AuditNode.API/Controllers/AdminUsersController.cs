@@ -1,8 +1,6 @@
 using AuditNode.Application.Interfaces;
-using AuditNode.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using AuditNode.Application.DTOs;
 
 namespace AuditNode.API.Controllers;

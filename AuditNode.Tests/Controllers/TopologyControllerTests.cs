@@ -10,13 +10,13 @@ namespace AuditNode.Tests.Controllers;
 
 public class TopologyControllerTests
 {
-    private readonly Mock<ITopologyRepository> _mockRepo;
+    private readonly Mock<ITopologyQueryService> _mockRepo;
     private readonly Mock<ITopologyCommandService> _mockCommandService;
     private readonly TopologyController _controller;
 
     public TopologyControllerTests()
     {
-        _mockRepo = new Mock<ITopologyRepository>();
+        _mockRepo = new Mock<ITopologyQueryService>();
         _mockCommandService = new Mock<ITopologyCommandService>();
         _controller = new TopologyController(_mockRepo.Object, _mockCommandService.Object);
     }
@@ -48,7 +48,7 @@ public class TopologyControllerTests
             }
         };
 
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
+        _mockRepo.Setup(repo => repo.GetTreeAsync(null, 0, 100, null))
             .ReturnsAsync(mockTree);
 
         // Act
@@ -65,14 +65,14 @@ public class TopologyControllerTests
     {
         // Arrange
         int take = 50;
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, take, null))
+        _mockRepo.Setup(repo => repo.GetTreeAsync(null, 0, take, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
         await _controller.GetTree(null, 0, take, null);
 
         // Assert
-        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, take, null), Times.Once);
+        _mockRepo.Verify(repo => repo.GetTreeAsync(null, 0, take, null), Times.Once);
     }
 
     [Fact]
@@ -80,14 +80,14 @@ public class TopologyControllerTests
     {
         // Arrange
         int largeTake = 500;
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
+        _mockRepo.Setup(repo => repo.GetTreeAsync(null, 0, 100, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
         await _controller.GetTree(null, 0, largeTake, null);
 
         // Assert
-        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100, null), Times.Once);
+        _mockRepo.Verify(repo => repo.GetTreeAsync(null, 0, 100, null), Times.Once);
     }
 
     [Theory]
@@ -106,7 +106,7 @@ public class TopologyControllerTests
     public async Task GetTree_WhenEmpty_ShouldReturnEmptyList()
     {
         // Arrange
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, null))
+        _mockRepo.Setup(repo => repo.GetTreeAsync(null, 0, 100, null))
             .ReturnsAsync(new List<TopologyTreeDto>());
 
         // Act
@@ -150,7 +150,7 @@ public class TopologyControllerTests
             Dependencies = []
         };
 
-        _mockRepo.Setup(repo => repo.SaveTopologyStateAsync(state))
+        _mockRepo.Setup(repo => repo.SaveStateAsync(state))
             .ReturnsAsync(TopologyStateStatus.Success);
 
         // Act
@@ -158,7 +158,7 @@ public class TopologyControllerTests
 
         // Assert
         result.Should().BeOfType<NoContentResult>();
-        _mockRepo.Verify(repo => repo.SaveTopologyStateAsync(state), Times.Once);
+        _mockRepo.Verify(repo => repo.SaveStateAsync(state), Times.Once);
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public class TopologyControllerTests
         });
 
         result.Should().BeOfType<BadRequestObjectResult>();
-        _mockRepo.Verify(repo => repo.SaveTopologyStateAsync(It.IsAny<SaveTopologyStateDto>()), Times.Never);
+        _mockRepo.Verify(repo => repo.SaveStateAsync(It.IsAny<SaveTopologyStateDto>()), Times.Never);
     }
 
     [Fact]
@@ -192,7 +192,7 @@ public class TopologyControllerTests
         var labels = new List<string> { "env:prod", "tier:db" };
         var mockTree = new List<TopologyTreeDto>();
 
-        _mockRepo.Setup(repo => repo.GetTopologyTreeAsync(null, 0, 100, labels))
+        _mockRepo.Setup(repo => repo.GetTreeAsync(null, 0, 100, labels))
             .ReturnsAsync(mockTree);
 
         // Act
@@ -201,7 +201,7 @@ public class TopologyControllerTests
         // Assert
         var okResult = result.Result.As<OkObjectResult>();
         okResult.Should().NotBeNull();
-        _mockRepo.Verify(repo => repo.GetTopologyTreeAsync(null, 0, 100, labels), Times.Once);
+        _mockRepo.Verify(repo => repo.GetTreeAsync(null, 0, 100, labels), Times.Once);
     }
 
     [Fact]
@@ -227,7 +227,7 @@ public class TopologyControllerTests
     public async Task SaveState_ShouldReturnConflict_WhenVersionIsStale()
     {
         var state = new SaveTopologyStateDto { Version = 3, Nodes = [], Edges = [], Dependencies = [] };
-        _mockRepo.Setup(repo => repo.SaveTopologyStateAsync(state)).ReturnsAsync(TopologyStateStatus.Conflict);
+        _mockRepo.Setup(repo => repo.SaveStateAsync(state)).ReturnsAsync(TopologyStateStatus.Conflict);
 
         var result = await _controller.SaveState(state);
 

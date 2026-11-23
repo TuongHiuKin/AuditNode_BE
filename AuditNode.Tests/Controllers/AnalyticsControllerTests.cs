@@ -11,13 +11,13 @@ namespace AuditNode.Tests.Controllers;
 
 public class AnalyticsControllerTests
 {
-    private readonly Mock<IAnalyticsRepository> _mockRepo;
+    private readonly Mock<IAnalyticsService> _mockService;
     private readonly AnalyticsController _controller;
 
     public AnalyticsControllerTests()
     {
-        _mockRepo = new Mock<IAnalyticsRepository>();
-        _controller = new AnalyticsController(_mockRepo.Object);
+        _mockService = new Mock<IAnalyticsService>();
+        _controller = new AnalyticsController(_mockService.Object);
     }
 
     [Fact]
@@ -25,7 +25,7 @@ public class AnalyticsControllerTests
     {
         // Arrange
         var mockData = new List<TopologyView> { new TopologyView { ServerHostname = "srv1" } };
-        _mockRepo.Setup(r => r.GetTopologyCatalogAsync(CatalogView.Mine, null, null, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetTopologyAsync(CatalogView.Mine, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockData);
 
         // Act
@@ -41,7 +41,7 @@ public class AnalyticsControllerTests
     public async Task GetTopology_ShouldReturnSafe500_OnException()
     {
         // Arrange
-        _mockRepo.Setup(r => r.GetTopologyCatalogAsync(It.IsAny<CatalogView>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetTopologyAsync(It.IsAny<CatalogView>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Test error"));
 
         // Act
@@ -59,7 +59,7 @@ public class AnalyticsControllerTests
     {
         // Arrange
         var mockData = new List<DependencyView> { new DependencyView { SourceAppName = "App1" } };
-        _mockRepo.Setup(r => r.GetDependenciesCatalogAsync(CatalogView.Mine, null, null, It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetDependenciesAsync(CatalogView.Mine, null, null, It.IsAny<CancellationToken>()))
             .ReturnsAsync(mockData);
 
         // Act
@@ -75,7 +75,7 @@ public class AnalyticsControllerTests
     public async Task GetDependencies_ShouldReturnSafe500_OnException()
     {
         // Arrange
-        _mockRepo.Setup(r => r.GetDependenciesCatalogAsync(It.IsAny<CatalogView>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
+        _mockService.Setup(s => s.GetDependenciesAsync(It.IsAny<CatalogView>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new Exception("Test error"));
 
         // Act

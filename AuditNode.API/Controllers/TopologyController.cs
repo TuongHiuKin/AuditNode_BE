@@ -11,12 +11,12 @@ namespace AuditNode.API.Controllers;
 [Route("api/v1/[controller]")]
 public class TopologyController : ControllerBase
 {
-    private readonly ITopologyRepository _topologyRepository;
+    private readonly ITopologyQueryService _topologyQueryService;
     private readonly ITopologyCommandService _topologyCommandService;
 
-    public TopologyController(ITopologyRepository topologyRepository, ITopologyCommandService topologyCommandService)
+    public TopologyController(ITopologyQueryService topologyQueryService, ITopologyCommandService topologyCommandService)
     {
-        _topologyRepository = topologyRepository;
+        _topologyQueryService = topologyQueryService;
         _topologyCommandService = topologyCommandService;
     }
 
@@ -35,7 +35,7 @@ public class TopologyController : ControllerBase
 
         try
         {
-            return Ok(await _topologyRepository.GetTopologyTreeAsync(datacenterId, skip, pageSize, labels, ownerUserId));
+            return Ok(await _topologyQueryService.GetTreeAsync(datacenterId, skip, pageSize, labels, ownerUserId));
         }
         catch (Exception)
         {
@@ -52,7 +52,7 @@ public class TopologyController : ControllerBase
     {
         try
         {
-            return Ok(await _topologyRepository.GetDependencyMapAsync(environment, datacenterId, labels, ownerUserId));
+            return Ok(await _topologyQueryService.GetDependencyMapAsync(environment, datacenterId, labels, ownerUserId));
         }
         catch (Exception)
         {
@@ -65,7 +65,7 @@ public class TopologyController : ControllerBase
     {
         try
         {
-            return Ok(await _topologyRepository.GetApplicationStatusAsync(ownerUserId));
+            return Ok(await _topologyQueryService.GetStatusAsync(ownerUserId));
         }
         catch (Exception)
         {
@@ -78,7 +78,7 @@ public class TopologyController : ControllerBase
     {
         try
         {
-            return Ok(await _topologyRepository.GetTopologyStateAsync(ownerUserId));
+            return Ok(await _topologyQueryService.GetStateAsync(ownerUserId));
         }
         catch (Exception)
         {
@@ -95,7 +95,7 @@ public class TopologyController : ControllerBase
 
         try
         {
-            var status = await _topologyRepository.SaveTopologyStateAsync(state);
+            var status = await _topologyQueryService.SaveStateAsync(state);
             return status switch
             {
                 TopologyStateStatus.Success => NoContent(),

@@ -12,11 +12,11 @@ namespace AuditNode.API.Controllers;
 [Route("api/v1/[controller]")]
 public class AnalyticsController : ControllerBase
 {
-    private readonly IAnalyticsRepository _analyticsRepository;
+    private readonly IAnalyticsService _analyticsService;
 
-    public AnalyticsController(IAnalyticsRepository analyticsRepository)
+    public AnalyticsController(IAnalyticsService analyticsService)
     {
-        _analyticsRepository = analyticsRepository;
+        _analyticsService = analyticsService;
     }
 
     [HttpGet("topology")]
@@ -24,7 +24,7 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var topologyData = await _analyticsRepository.GetTopologyCatalogAsync(CatalogPageQuery.Parse(view, 25, null).View, environment, datacenterId, cancellationToken);
+            var topologyData = await _analyticsService.GetTopologyAsync(CatalogPageQuery.Parse(view, 25, null).View, environment, datacenterId, cancellationToken);
             return Ok(topologyData);
         }
         catch (CatalogQueryValidationException exception)
@@ -42,7 +42,7 @@ public class AnalyticsController : ControllerBase
     {
         try
         {
-            var dependencyData = await _analyticsRepository.GetDependenciesCatalogAsync(CatalogPageQuery.Parse(view, 25, null).View, environment, datacenterId, cancellationToken);
+            var dependencyData = await _analyticsService.GetDependenciesAsync(CatalogPageQuery.Parse(view, 25, null).View, environment, datacenterId, cancellationToken);
             return Ok(dependencyData);
         }
         catch (CatalogQueryValidationException exception)
