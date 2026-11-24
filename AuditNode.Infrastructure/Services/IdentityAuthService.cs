@@ -8,8 +8,8 @@ using Microsoft.AspNetCore.Identity;
 namespace AuditNode.Infrastructure.Services;
 
 /// <summary>
-/// Local identity implementation. Replaces the Keycloak-backed service so the
-/// application runs with nothing but PostgreSQL.
+/// Local identity implementation. The application runs with nothing but PostgreSQL:
+/// no external identity provider is involved.
 ///
 /// Access tokens are self-signed JWTs; refresh tokens are opaque values persisted
 /// as hashes and rotated on every refresh.
