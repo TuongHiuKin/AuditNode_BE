@@ -9,12 +9,12 @@ All routes below require a valid bearer access token unless marked anonymous. Au
 | Method | Route | Access | Result |
 |---|---|---|---|
 | POST | `/api/v1/auth/login` | Anonymous, rate limited | Returns access-token metadata and sets the refresh cookie |
-| POST | `/api/v1/auth/register` | Anonymous, rate limited | Creates the Keycloak user and returns 201 |
+| POST | `/api/v1/auth/register` | Anonymous, rate limited | Creates the local identity user and returns 201 |
 | POST | `/api/v1/auth/refresh` | Anonymous, rate limited | Uses the refresh cookie and rotates the session |
 | POST | `/api/v1/auth/logout` | Authenticated | Clears the local cookie and returns 204 |
 | GET | `/api/v1/auth/me` | Authenticated | Returns the authenticated user projection |
 
-The cookie is named `auditnode.refresh_token`, is HttpOnly and Secure, uses `SameSite=None`, and is scoped to `/api/v1/auth`. Required configuration keys are `Keycloak:Authority`, `Keycloak:Realm`, `Keycloak:Audience`, `Keycloak:AdminClientId`, `Keycloak:AdminClientSecret`, `Keycloak:BffClientId`, and `Keycloak:BffClientSecret`; this document intentionally contains no values.
+The cookie is named `auditnode.refresh_token`, is HttpOnly and Secure, uses `SameSite=None`, and is scoped to `/api/v1/auth`. Required configuration keys are `Identity:Issuer`, `Identity:Audience`, and `Identity:SigningKey` (at least 32 bytes). Optional first-run keys are `Identity:BootstrapAdmin:Username`, `Identity:BootstrapAdmin:Email`, and `Identity:BootstrapAdmin:Password`; this document intentionally contains no values.
 
 ### Servers
 
@@ -96,7 +96,7 @@ The material below is retained only as a historical snapshot. Its unversioned ro
 - **HTTP:** `http://localhost:5000`
 
 ## Authentication & Security
-The API is secured using **Keycloak Identity Provider** via **JWT Bearer Authentication**.
+The API is secured using **ASP.NET Core Identity** via **JWT Bearer Authentication**. Access tokens are signed by this API with a symmetric key; refresh tokens are opaque, stored hashed, and rotated on every use.
 - **Issuer/Authority:** `http://localhost:8080/realms/AuditNode-Realm`
 - **Mechanism:** Bearer Token in `Authorization` header.
 - **Requirement:** ALL endpoints (except OpenApi/Scalar) require a valid JWT token issued by the AuditNode-Realm.

@@ -1,8 +1,13 @@
 using AuditNode.Application.Interfaces;
 using AuditNode.Application.Services;
+using AuditNode.Domain.Entities;
+using AuditNode.Infrastructure.Identity;
 using AuditNode.Infrastructure.Data;
 using AuditNode.Infrastructure.Repositories;
 using AuditNode.Infrastructure.Services;
+using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.Identity;
 
 using AuditNode.Application.Validators;
 using Microsoft.EntityFrameworkCore;
@@ -37,41 +42,43 @@ builder.Services.AddOpenApi("v1", options =>
     });
 });
 
-// Configure JWT Bearer Authentication with Keycloak.
-// Access tokens must be issued for this API and obtained by the configured BFF client.
+// Configure JWT Bearer Authentication against locally issued tokens.
+// Access tokens are signed by this API (see IdentityTokenIssuer) with the
+// Identity:SigningKey symmetric key; validation uses the same options object.
+builder.Services.AddOptions<IdentityRuntimeOptions>()
+    .Bind(builder.Configuration.GetSection("Identity"))
+    .Validate(options => options.IsValid(),
+        "Identity:Issuer, Identity:Audience and a SigningKey of at least 32 bytes are required.")
+    .ValidateOnStart();
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+    .AddJwtBearer();
+builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+    .Configure<Microsoft.Extensions.Options.IOptions<IdentityRuntimeOptions>>((jwt, identity) =>
     {
-        options.Authority = builder.Configuration["Keycloak:Authority"];
-        // Only relax TLS metadata validation for a local development authority.
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-        options.TokenValidationParameters = new TokenValidationParameters
+        var key = identity.Value.SigningKey;
+        if (string.IsNullOrWhiteSpace(key)) return; // validated at startup
+
+        jwt.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
             ValidateAudience = true,
             ValidateLifetime = true,
-            ValidateIssuerSigningKey = true
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = identity.Value.Issuer,
+            ValidAudience = identity.Value.Audience,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+            ClockSkew = TimeSpan.FromSeconds(30),
+            RoleClaimType = ClaimTypes.Role,
+            NameClaimType = ClaimTypes.Name,
         };
-        options.Events = new JwtBearerEvents
+        jwt.Events = new JwtBearerEvents
         {
             OnAuthenticationFailed = context => {
                 context.HttpContext.RequestServices
                     .GetRequiredService<ILoggerFactory>()
                     .CreateLogger("AuditNode.Security.JwtBearer")
                     .LogWarning(context.Exception, "Token validation failed for {Path}", context.Request.Path);
-                return Task.CompletedTask;
-            },
-            OnTokenValidated = context => {
-                var keycloak = context.HttpContext.RequestServices
-                    .GetRequiredService<Microsoft.Extensions.Options.IOptions<KeycloakRuntimeOptions>>()
-                    .Value;
-                var authorizedParty = context.Principal?.FindFirst("azp")?.Value;
-                if (!string.Equals(authorizedParty, keycloak.BffClientId, StringComparison.Ordinal))
-                {
-                    context.Fail("The token authorized party is not trusted by this API.");
-                    return Task.CompletedTask;
-                }
-
                 return Task.CompletedTask;
             },
             OnChallenge = context => {
@@ -166,22 +173,24 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
-builder.Services.AddOptions<KeycloakRuntimeOptions>()
-    .Bind(builder.Configuration.GetSection("Keycloak"))
-    .Validate(options => options.IsValid(), "Required Keycloak configuration is missing.")
-    .ValidateOnStart();
-builder.Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
-    .Configure<Microsoft.Extensions.Options.IOptions<KeycloakRuntimeOptions>>((jwt, keycloak) =>
-        jwt.TokenValidationParameters.ValidAudience = keycloak.Value.Audience);
+builder.Services.AddIdentityCore<AppUser>(options =>
+    {
+        options.User.RequireUniqueEmail = true;
+        options.Password.RequiredLength = 8;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Lockout.AllowedForNewUsers = true;
+        options.Lockout.MaxFailedAccessAttempts = 10;
+    })
+    .AddRoles<IdentityRole>()
+    .AddEntityFrameworkStores<AuditDbContext>()
+    .AddDefaultTokenProviders();
 
-builder.Services.AddHttpClient(KeycloakAuthService.HttpClientName);
-builder.Services.AddTransient<IKeycloakHttpClientFactory, KeycloakHttpClientFactoryAdapter>();
 builder.Services.AddScoped<ISystemAdminMutationLock, PostgresSystemAdminMutationLock>();
-builder.Services.AddScoped<IIdentityAuthService, KeycloakAuthService>();
-builder.Services.AddScoped<IIdentityAdminService, KeycloakAuthService>();
-
-// Register Keycloak Role Claims Transformation for RBAC
-builder.Services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
+builder.Services.AddScoped<IIdentityTokenIssuer, IdentityTokenIssuer>();
+builder.Services.AddScoped<IRefreshTokenStore, RefreshTokenStore>();
+builder.Services.AddScoped<IdentityAuthService>();
+builder.Services.AddScoped<IIdentityAuthService>(provider => provider.GetRequiredService<IdentityAuthService>());
+builder.Services.AddScoped<IIdentityAdminService>(provider => provider.GetRequiredService<IdentityAuthService>());
 
 // Register DbContext with PostgreSQL provider
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
@@ -250,12 +259,32 @@ builder.Services.AddControllers()
 
 var app = builder.Build();
 
-if (args.Contains("--migrate-only", StringComparer.Ordinal))
+await using (var startupScope = app.Services.CreateAsyncScope())
 {
-    await using var scope = app.Services.CreateAsyncScope();
-    var database = scope.ServiceProvider.GetRequiredService<AuditDbContext>();
-    await database.Database.MigrateAsync();
-    return;
+    var database = startupScope.ServiceProvider.GetRequiredService<AuditDbContext>();
+
+    if (args.Contains("--migrate-only", StringComparer.Ordinal))
+    {
+        await database.Database.MigrateAsync();
+        return;
+    }
+
+    // The bootstrap administrator is a first-run convenience: it only exists when
+    // explicit credentials are configured. In that case the schema is created too,
+    // because otherwise the seeder has no tables to write to.
+    var hasBootstrapAdmin =
+        !string.IsNullOrWhiteSpace(app.Configuration[IdentitySeeder.UsernameKey]) &&
+        !string.IsNullOrWhiteSpace(app.Configuration[IdentitySeeder.PasswordKey]);
+
+    if (hasBootstrapAdmin)
+    {
+        await database.Database.MigrateAsync();
+
+        await IdentitySeeder.SeedAsync(
+            startupScope.ServiceProvider,
+            app.Configuration,
+            startupScope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("AuditNode.Identity"));
+    }
 }
 
 // Configure the HTTP request pipeline
@@ -303,19 +332,6 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 app.MapControllers();
 
 app.Run();
-
-public sealed class KeycloakHttpClientFactoryAdapter : IKeycloakHttpClientFactory
-{
-    private readonly IHttpClientFactory _httpClientFactory;
-
-    public KeycloakHttpClientFactoryAdapter(IHttpClientFactory httpClientFactory)
-    {
-        _httpClientFactory = httpClientFactory;
-    }
-
-    public HttpClient CreateClient() =>
-        _httpClientFactory.CreateClient(KeycloakAuthService.HttpClientName);
-}
 
 public sealed class DatabaseReadyHealthCheck(AuditDbContext database) : IHealthCheck
 {

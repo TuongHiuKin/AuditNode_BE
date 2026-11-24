@@ -145,11 +145,11 @@ public sealed class AuthController : ControllerBase
         }
         catch (IdentityAuthenticationException)
         {
-            // The local session is still cleared when the upstream session is already invalid.
+            // Already-invalid sessions are a no-op; the cookie is cleared either way.
         }
         catch (IdentityUpstreamUnavailableException)
         {
-            // Logout remains locally effective when Keycloak is temporarily unavailable.
+            // Logout stays locally effective if the identity store is unavailable.
         }
         catch (IdentityConfigurationException)
         {

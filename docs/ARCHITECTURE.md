@@ -6,7 +6,7 @@ The backend preserves Clean Architecture boundaries: domain entities and invaria
 
 ### Authentication and catalog boundary
 
-The custom `/api/v1/auth` gateway lets the frontend keep its own login/register UI. The gateway exchanges credentials with Keycloak, returns short-lived access-token metadata, and stores the refresh token only in the secure HttpOnly `auditnode.refresh_token` cookie. JWT bearer validation still protects application APIs. Configuration is supplied through the existing `Keycloak:*` keys; secrets are never documented or hard-coded.
+The custom `/api/v1/auth` gateway lets the frontend keep its own login/register UI. Identity is now owned by the API itself (ASP.NET Core Identity): the gateway verifies credentials against the local user store, issues self-signed short-lived access tokens, and stores the refresh token only in the secure HttpOnly `auditnode.refresh_token` cookie. JWT bearer validation still protects application APIs. Configuration is supplied through the `Identity:*` keys; secrets are never documented or hard-coded.
 
 After authentication, the `sub`/name-identifier claim selects the actor. Mutable inventory is partitioned by `owner_user_id`; the runtime has no `WorkspaceMiddleware`, `X-Workspace-Id`, or workspace-membership lookup. Owners can delegate labeled subsets through direct Viewer/Editor Label Grants. Anonymous share tokens are revocable Viewer-only capabilities and do not establish an authenticated owner context. Owner-consistent keys, foreign keys, queries, and service authorization form the persistence boundary.
 

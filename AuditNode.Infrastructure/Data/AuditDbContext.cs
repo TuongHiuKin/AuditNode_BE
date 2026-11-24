@@ -1,10 +1,14 @@
 using AuditNode.Domain.Entities;
+using AuditNode.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using AppEntity = AuditNode.Domain.Entities.Application;
 
 namespace AuditNode.Infrastructure.Data;
 
-public class AuditDbContext(DbContextOptions<AuditDbContext> options) : DbContext(options)
+public class AuditDbContext(DbContextOptions<AuditDbContext> options)
+    : IdentityDbContext<AppUser, IdentityRole, string>(options)
 {
     public DbSet<Datacenter> Datacenters => Set<Datacenter>();
     public DbSet<Server> Servers => Set<Server>();
@@ -20,10 +24,100 @@ public class AuditDbContext(DbContextOptions<AuditDbContext> options) : DbContex
     public DbSet<ApplicationLabel> ApplicationLabels => Set<ApplicationLabel>();
     public DbSet<LabelGrant> LabelGrants => Set<LabelGrant>();
     public DbSet<OwnerCatalogState> OwnerCatalogStates => Set<OwnerCatalogState>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        // Identity tables keep their default schema but use snake_case names so the
+        // database stays consistent with the catalog tables.
+        modelBuilder.Entity<AppUser>(entity =>
+        {
+            entity.ToTable("app_users");
+            entity.Property(user => user.Id).HasColumnName("id");
+            entity.Property(user => user.UserName).HasColumnName("user_name");
+            entity.Property(user => user.NormalizedUserName).HasColumnName("normalized_user_name");
+            entity.Property(user => user.Email).HasColumnName("email");
+            entity.Property(user => user.NormalizedEmail).HasColumnName("normalized_email");
+            entity.Property(user => user.EmailConfirmed).HasColumnName("email_confirmed");
+            entity.Property(user => user.PasswordHash).HasColumnName("password_hash");
+            entity.Property(user => user.SecurityStamp).HasColumnName("security_stamp");
+            entity.Property(user => user.ConcurrencyStamp).HasColumnName("concurrency_stamp");
+            entity.Property(user => user.PhoneNumber).HasColumnName("phone_number");
+            entity.Property(user => user.PhoneNumberConfirmed).HasColumnName("phone_number_confirmed");
+            entity.Property(user => user.TwoFactorEnabled).HasColumnName("two_factor_enabled");
+            entity.Property(user => user.LockoutEnd).HasColumnName("lockout_end");
+            entity.Property(user => user.LockoutEnabled).HasColumnName("lockout_enabled");
+            entity.Property(user => user.AccessFailedCount).HasColumnName("access_failed_count");
+        });
+
+        modelBuilder.Entity<IdentityRole>(entity =>
+        {
+            entity.ToTable("app_roles");
+            entity.Property(role => role.Id).HasColumnName("id");
+            entity.Property(role => role.Name).HasColumnName("name");
+            entity.Property(role => role.NormalizedName).HasColumnName("normalized_name");
+            entity.Property(role => role.ConcurrencyStamp).HasColumnName("concurrency_stamp");
+        });
+
+        modelBuilder.Entity<IdentityUserRole<string>>(entity =>
+        {
+            entity.ToTable("app_user_roles");
+            entity.Property(link => link.UserId).HasColumnName("user_id");
+            entity.Property(link => link.RoleId).HasColumnName("role_id");
+        });
+
+        modelBuilder.Entity<IdentityUserClaim<string>>(entity =>
+        {
+            entity.ToTable("app_user_claims");
+            entity.Property(claim => claim.Id).HasColumnName("id");
+            entity.Property(claim => claim.UserId).HasColumnName("user_id");
+            entity.Property(claim => claim.ClaimType).HasColumnName("claim_type");
+            entity.Property(claim => claim.ClaimValue).HasColumnName("claim_value");
+        });
+
+        modelBuilder.Entity<IdentityUserLogin<string>>(entity =>
+        {
+            entity.ToTable("app_user_logins");
+            entity.Property(login => login.LoginProvider).HasColumnName("login_provider");
+            entity.Property(login => login.ProviderKey).HasColumnName("provider_key");
+            entity.Property(login => login.ProviderDisplayName).HasColumnName("provider_display_name");
+            entity.Property(login => login.UserId).HasColumnName("user_id");
+        });
+
+        modelBuilder.Entity<IdentityRoleClaim<string>>(entity =>
+        {
+            entity.ToTable("app_role_claims");
+            entity.Property(claim => claim.Id).HasColumnName("id");
+            entity.Property(claim => claim.RoleId).HasColumnName("role_id");
+            entity.Property(claim => claim.ClaimType).HasColumnName("claim_type");
+            entity.Property(claim => claim.ClaimValue).HasColumnName("claim_value");
+        });
+
+        modelBuilder.Entity<IdentityUserToken<string>>(entity =>
+        {
+            entity.ToTable("app_user_tokens");
+            entity.Property(token => token.UserId).HasColumnName("user_id");
+            entity.Property(token => token.LoginProvider).HasColumnName("login_provider");
+            entity.Property(token => token.Name).HasColumnName("name");
+            entity.Property(token => token.Value).HasColumnName("value");
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.ToTable("refresh_tokens");
+            entity.HasKey(token => token.Id);
+            entity.Property(token => token.Id).HasColumnName("id");
+            entity.Property(token => token.UserId).HasColumnName("user_id").HasMaxLength(100).IsRequired();
+            entity.Property(token => token.TokenHash).HasColumnName("token_hash").HasMaxLength(64).IsRequired();
+            entity.Property(token => token.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(token => token.ExpiresAt).HasColumnName("expires_at").IsRequired();
+            entity.Property(token => token.RevokedAt).HasColumnName("revoked_at");
+            entity.Property(token => token.ReplacedByTokenHash).HasColumnName("replaced_by_token_hash").HasMaxLength(64);
+            entity.HasIndex(token => token.TokenHash).IsUnique();
+            entity.HasIndex(token => new { token.UserId, token.RevokedAt, token.ExpiresAt });
+        });
 
         modelBuilder.Entity<Datacenter>(entity =>
         {

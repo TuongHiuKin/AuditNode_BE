@@ -140,7 +140,7 @@ public sealed class LabelGrantService(
             .SingleOrDefaultAsync(cancellationToken);
         if (granteeUserId is null) return Denied();
 
-        // Keycloak cannot participate in the PostgreSQL transaction. Validate first, then lock
+        // The identity store cannot participate in this PostgreSQL transaction. Validate first, then lock
         // and re-check every database invariant before applying the mutation.
         var identity = await identities.GetUserAsync(granteeUserId, cancellationToken);
         if (identity is null || !identity.Enabled) return Invalid();

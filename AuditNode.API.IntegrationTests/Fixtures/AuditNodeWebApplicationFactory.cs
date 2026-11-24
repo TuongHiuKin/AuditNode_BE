@@ -42,13 +42,9 @@ public sealed class AuditNodeWebApplicationFactory : WebApplicationFactory<Progr
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:DefaultConnection"] = connectionString,
-                ["Keycloak:Authority"] = TestJwtIssuer.Issuer,
-                ["Keycloak:Realm"] = "AuditNode-Test",
-                ["Keycloak:Audience"] = TestJwtIssuer.Audience,
-                ["Keycloak:AdminClientId"] = "test-admin-client",
-                ["Keycloak:AdminClientSecret"] = "test-only-not-a-secret",
-                ["Keycloak:BffClientId"] = TestJwtIssuer.AuthorizedParty,
-                ["Keycloak:BffClientSecret"] = "test-only-not-a-secret",
+                ["Identity:Issuer"] = TestJwtIssuer.Issuer,
+                ["Identity:Audience"] = TestJwtIssuer.Audience,
+                ["Identity:SigningKey"] = TestJwtIssuer.SigningKey,
                 ["Cors:AllowedOrigins:0"] = "https://allowed.auditnode.test"
             });
         });
@@ -69,8 +65,6 @@ public sealed class AuditNodeWebApplicationFactory : WebApplicationFactory<Progr
             services.AddSingleton(Identities);
             services.AddSingleton<IIdentityAuthService>(Identities);
             services.AddSingleton<IIdentityAdminService>(Identities);
-            services.AddSingleton<IPostConfigureOptions<JwtBearerOptions>>(
-                new TestJwtBearerPostConfigureOptions(Tokens));
         });
     }
 
@@ -91,20 +85,5 @@ public sealed class AuditNodeWebApplicationFactory : WebApplicationFactory<Progr
     {
         Tokens.Dispose();
         await base.DisposeAsync();
-    }
-
-    private sealed class TestJwtBearerPostConfigureOptions(TestJwtIssuer tokens)
-        : IPostConfigureOptions<JwtBearerOptions>
-    {
-        public void PostConfigure(string? name, JwtBearerOptions options)
-        {
-            if (name != JwtBearerDefaults.AuthenticationScheme)
-                return;
-
-            var metadata = new OpenIdConnectConfiguration { Issuer = TestJwtIssuer.Issuer };
-            metadata.SigningKeys.Add(tokens.SecurityKey);
-            options.ConfigurationManager = new StaticConfigurationManager<OpenIdConnectConfiguration>(metadata);
-            options.RequireHttpsMetadata = false;
-        }
     }
 }
