@@ -27,11 +27,11 @@ AuditNode Backend is a comprehensive Infrastructure Management System built on A
 
 ## Current security and catalog baseline
 
-- The React login/register screens authenticate through the backend gateway at `/api/v1/auth`; the application does not require the hosted Keycloak UI.
-- The gateway keeps the refresh token in the secure, HttpOnly `auditnode.refresh_token` cookie scoped to `/api/v1/auth`. API access tokens are still validated as JWT bearer tokens.
-- Configure Keycloak through `Keycloak:Authority`, `Keycloak:Realm`, `Keycloak:Audience`, `Keycloak:AdminClientId`, `Keycloak:AdminClientSecret`, `Keycloak:BffClientId`, and `Keycloak:BffClientSecret`. Supply values through the existing configuration/secret mechanism; never commit them.
-- Every accepted access token must contain `Keycloak:Audience` in its `aud` claim and must have an `azp` claim exactly equal to `Keycloak:BffClientId`, in addition to passing issuer, signature, and lifetime validation. This prevents a token issued to another client in the same realm from being reused against AuditNode.
-- Before deploying this contract, configure an audience mapper on the Keycloak BFF client/client scope so its access tokens include the configured API audience, then verify that Keycloak preserves the BFF client ID as `azp`. Validate a newly issued login token against `/api/v1/auth/me` before promoting the backend. Existing sessions minted under the legacy `ValidateAudience=false` configuration, or realms without the audience mapper, will receive `401`; coordinate the mapper rollout and require users to obtain fresh tokens before switching backend versions.
+- The React login/register screens authenticate through the backend gateway at `/api/v1/auth`. Identity is owned by the API itself (ASP.NET Core Identity); no external identity provider is required.
+- The gateway keeps the refresh token in the secure, HttpOnly `auditnode.refresh_token` cookie scoped to `/api/v1/auth`. Access tokens are self-signed JWTs (HMAC-SHA256) validated by the same API.
+- Configure identity through `Identity:Issuer`, `Identity:Audience`, and `Identity:SigningKey`. The signing key must be at least 32 bytes and is supplied through environment variables or an untracked settings file; never commit it. Startup fails fast when it is missing or too short.
+- Refresh tokens are opaque values stored as SHA-256 hashes and rotated on every use, so a leaked database read cannot replay a session. Disabling a user revokes their outstanding refresh tokens.
+- The first administrator is created from `Identity:BootstrapAdmin:Username|Email|Password` when those keys are configured. Leave them unset to manage seeding yourself.
 - Runtime inventory is a Global Catalog partitioned by authenticated `owner_user_id`; there is no Workspace header or Workspace runtime middleware.
 - Owners can grant Viewer or Editor access to labeled resources through Label Grants. Anonymous share tokens are separate, revocable Viewer capabilities.
 - Canonical API contracts and operational details are documented in [docs/API.md](docs/API.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and [docs/DATABASE.md](docs/DATABASE.md).
@@ -127,7 +127,7 @@ For detailed information, please refer to the following:
 ## 🚀 Current Progress (September 2026)
 
 - **Test Suite**: Fast and PostgreSQL suites are separately selected and reported; required PostgreSQL execution is checked from TRX rather than inferred from the test command's exit code.
-- **Identity Management**: Custom backend login/register/refresh/logout gateway with Keycloak JWT bearer validation and a secure refresh cookie.
+- **Identity Management**: Custom backend login/register/refresh/logout gateway backed by ASP.NET Core Identity, with self-signed JWTs and a secure refresh cookie.
 - **Catalog Authorization**: Owner-partitioned resources, direct Label Grants, and revocable anonymous Viewer share tokens; no Workspace runtime header is used.
 - **Backend Architecture**: Implemented **Clean Architecture** patterns for Server and Application management, decoupling API from data access.
 - **Universal Search**: Implemented unified results across servers and apps with hosting context.

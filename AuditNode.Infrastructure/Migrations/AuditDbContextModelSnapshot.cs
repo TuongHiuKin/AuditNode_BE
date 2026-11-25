@@ -38,13 +38,17 @@ namespace AuditNode.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<Guid>("DestAppId")
+                    b.Property<Guid?>("DestAppId")
                         .HasColumnType("uuid")
                         .HasColumnName("dest_app_id");
 
-                    b.Property<Guid>("DestPortId")
+                    b.Property<Guid?>("DestPortId")
                         .HasColumnType("uuid")
                         .HasColumnName("dest_port_id");
+
+                    b.Property<Guid?>("ExternalServiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("external_service_id");
 
                     b.Property<string>("OwnerUserId")
                         .IsRequired()
@@ -64,10 +68,19 @@ namespace AuditNode.Infrastructure.Migrations
 
                     b.HasIndex("OwnerUserId", "DestPortId");
 
+                    b.HasIndex("OwnerUserId", "ExternalServiceId");
+
+                    b.HasIndex("OwnerUserId", "SourceAppId", "ExternalServiceId")
+                        .IsUnique()
+                        .HasFilter("external_service_id IS NOT NULL");
+
                     b.HasIndex("OwnerUserId", "SourceAppId", "DestAppId", "DestPortId")
                         .IsUnique();
 
-                    b.ToTable("app_dependencies", (string)null);
+                    b.ToTable("app_dependencies", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_app_dependencies_single_destination", "(dest_app_id IS NOT NULL AND dest_port_id IS NOT NULL AND external_service_id IS NULL) OR (dest_app_id IS NULL AND dest_port_id IS NULL AND external_service_id IS NOT NULL)");
+                        });
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.Application", b =>
@@ -236,6 +249,77 @@ namespace AuditNode.Infrastructure.Migrations
                     b.ToTable((string)null);
 
                     b.ToView("v_dependency_graph", (string)null);
+                });
+
+            modelBuilder.Entity("AuditNode.Domain.Entities.ExternalService", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Endpoint")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("endpoint");
+
+                    b.Property<string>("Environment")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("environment");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("notes");
+
+                    b.Property<string>("OwnerUserId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("owner_user_id");
+
+                    b.Property<int?>("Port")
+                        .HasColumnType("integer")
+                        .HasColumnName("port");
+
+                    b.Property<string>("Protocol")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("protocol");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("provider");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("external_services", (string)null);
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.Label", b =>
@@ -981,15 +1065,19 @@ namespace AuditNode.Infrastructure.Migrations
                         .WithMany("DestinationDependencies")
                         .HasForeignKey("OwnerUserId", "DestAppId")
                         .HasPrincipalKey("OwnerUserId", "Id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("AuditNode.Domain.Entities.PortMapping", "DestinationPort")
                         .WithMany("AppDependencies")
                         .HasForeignKey("OwnerUserId", "DestPortId")
                         .HasPrincipalKey("OwnerUserId", "Id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("AuditNode.Domain.Entities.ExternalService", "ExternalService")
+                        .WithMany("IncomingDependencies")
+                        .HasForeignKey("OwnerUserId", "ExternalServiceId")
+                        .HasPrincipalKey("OwnerUserId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.HasOne("AuditNode.Domain.Entities.Application", "SourceApplication")
                         .WithMany("SourceDependencies")
@@ -1001,6 +1089,8 @@ namespace AuditNode.Infrastructure.Migrations
                     b.Navigation("DestinationApplication");
 
                     b.Navigation("DestinationPort");
+
+                    b.Navigation("ExternalService");
 
                     b.Navigation("SourceApplication");
                 });
@@ -1189,6 +1279,11 @@ namespace AuditNode.Infrastructure.Migrations
             modelBuilder.Entity("AuditNode.Domain.Entities.Datacenter", b =>
                 {
                     b.Navigation("Servers");
+                });
+
+            modelBuilder.Entity("AuditNode.Domain.Entities.ExternalService", b =>
+                {
+                    b.Navigation("IncomingDependencies");
                 });
 
             modelBuilder.Entity("AuditNode.Domain.Entities.Label", b =>

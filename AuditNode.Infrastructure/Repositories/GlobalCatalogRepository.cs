@@ -180,7 +180,9 @@ public sealed class GlobalCatalogRepository(
         var readableApplications = ReadableApplications(userId, utcNow);
         var readable = await readableApplications.AnyAsync(application => application.Id == applicationId, cancellationToken);
         if (!readable) return null;
-        var portIds = context.PortMappings.IgnoreQueryFilters().Where(mapping => mapping.AppId == applicationId).Select(mapping => mapping.Id);
+        var portIds = context.PortMappings.IgnoreQueryFilters()
+            .Where(mapping => mapping.AppId == applicationId)
+            .Select(mapping => (Guid?)mapping.Id);
         return await context.AppDependencies.IgnoreQueryFilters().CountAsync(dependency =>
             readableApplications.Any(application => application.Id == dependency.SourceAppId) &&
             readableApplications.Any(application => application.Id == dependency.DestAppId) &&

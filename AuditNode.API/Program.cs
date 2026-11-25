@@ -216,6 +216,7 @@ builder.Services.AddScoped<IApplicationService, AuditNode.Infrastructure.Service
 builder.Services.AddScoped<IServerService, AuditNode.Infrastructure.Services.ServerService>();
 builder.Services.AddScoped<IDatacenterService, AuditNode.Infrastructure.Services.DatacenterService>();
 builder.Services.AddScoped<IDependencyService, AuditNode.Infrastructure.Services.DependencyService>();
+builder.Services.AddScoped<IExternalServiceService, ExternalServiceService>();
 builder.Services.AddScoped<ITopologyCommandService, TopologyCommandService>();
 builder.Services.AddScoped<IInventoryImportService, AuditNode.Infrastructure.Services.InventoryImportService>();
 builder.Services.AddScoped<IInventorySearchService, AuditNode.Infrastructure.Services.InventorySearchService>();
