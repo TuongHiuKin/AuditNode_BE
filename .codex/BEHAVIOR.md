@@ -20,7 +20,7 @@ This file is loaded by `../AGENTS.md` at the start of every prompt in AuditNode.
 - Use `dotnet-clean-architecture` for layer boundaries, controllers, classes, or project references.
 - Use `dotnet-di-registration` when an injected dependency changes.
 - Use `efcore-postgresql` for entities, DbContext, views, migrations, or database structure.
-- Use `keycloak-backend` for authorization, authentication, Keycloak, JWT, CORS, or backend login flows.
+- Use `identity-backend` for authorization, authentication, ASP.NET Core Identity, JWT, CORS, or backend login flows.
 
 ## Boundaries and verification
 

@@ -137,7 +137,7 @@ public class InfrastructureService : IInfrastructureService
             var dependenciesToDelete = await _context.AppDependencies
                 .Where(ad => ad.SourceAppId == appId || 
                              ad.DestAppId == appId || 
-                             portMappingIds.Contains(ad.DestPortId))
+                             (ad.DestPortId != null && portMappingIds.Contains(ad.DestPortId.Value)))
                 .ToListAsync();
             
             if (dependenciesToDelete.Any())

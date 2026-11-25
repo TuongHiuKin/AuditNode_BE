@@ -643,13 +643,15 @@ public class TopologyRepository : ITopologyRepository
         var connections = await _context.AppDependencies.IgnoreQueryFilters()
             .AsNoTracking()
             .Where(ad => ad.OwnerUserId == scope.OwnerUserId &&
-                         (allowedApps.Contains(ad.SourceAppId) || allowedApps.Contains(ad.DestAppId)))
+                         ad.DestAppId != null && ad.DestPortId != null &&
+                         (allowedApps.Contains(ad.SourceAppId) ||
+                          allowedApps.Contains(ad.DestAppId.Value)))
             .Select(ad => new ConnectionDto
             {
                 Id = ad.Id,
                 SourceAppId = ad.SourceAppId,
-                TargetAppId = ad.DestAppId,
-                DestinationPortMappingId = ad.DestPortId,
+                TargetAppId = ad.DestAppId!.Value,
+                DestinationPortMappingId = ad.DestPortId!.Value,
                 DestinationServerId = ad.DestinationPort!.ServerId,
                 ConnectionType = ad.ConnectionType
             })
@@ -731,8 +733,9 @@ public class TopologyRepository : ITopologyRepository
         var ownedDependencies = _context.AppDependencies.IgnoreQueryFilters()
             .AsNoTracking()
             .Where(item => item.OwnerUserId == scope.OwnerUserId);
+        // DestAppId is null for external-service dependencies; they contribute no app id.
         var mappedAppIds = await ownedDependencies.Select(ad => ad.SourceAppId)
-            .Union(ownedDependencies.Select(ad => ad.DestAppId))
+            .Union(ownedDependencies.Where(ad => ad.DestAppId != null).Select(ad => ad.DestAppId!.Value))
             .Distinct()
             .ToListAsync();
 

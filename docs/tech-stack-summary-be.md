@@ -17,9 +17,9 @@ Hệ thống sử dụng **Entity Framework Core 10** kết hợp với **Postgr
 
 ## 3. Khả năng phục hồi và Bảo mật (Resilience & Security)
 - **Cơ chế bảo vệ phân trang (Pagination Guards)**: Tại `TopologyController`, tham số `take` được giới hạn cứng ở mức tối đa **100 node**. Điều này ngăn chặn các cuộc tấn công từ chối dịch vụ (DoS) vô tình hoặc hữu ý bằng cách yêu cầu toàn bộ dữ liệu hạ tầng khổng lồ trong một yêu cầu JSON duy nhất.
-- **Tích hợp Keycloak OAuth2**:
-  - Thực thể `Application` đã được thiết lập trường `OwnerId` (kiểu VARCHAR) để ánh xạ linh hoạt với User ID từ Keycloak hoặc các hệ thống định danh khác.
-  - Cấu hình `JwtBearer` sẵn sàng cho việc xác thực tập trung thông qua container Keycloak, đảm bảo an toàn dữ liệu theo tiêu chuẩn công nghiệp.
+- **Xác thực nội bộ (ASP.NET Core Identity)**:
+  - Thực thể `Application` dùng trường `OwnerUserId` (VARCHAR 100) trỏ tới `app_users.id` trong cùng database, nên không phụ thuộc hệ thống định danh bên ngoài.
+  - Access token là JWT tự ký HMAC-SHA256; refresh token lưu dạng SHA-256 và xoay vòng mỗi lần dùng.
 
 ## 4. Bộ kiểm thử xUnit (xUnit Test Suite)
 Hệ thống duy trì độ tin cậy cao thông qua bộ kiểm thử tự động:

@@ -25,6 +25,7 @@ public class AuditDbContext(DbContextOptions<AuditDbContext> options)
     public DbSet<LabelGrant> LabelGrants => Set<LabelGrant>();
     public DbSet<OwnerCatalogState> OwnerCatalogStates => Set<OwnerCatalogState>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<ExternalService> ExternalServices => Set<ExternalService>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -255,12 +256,22 @@ public class AuditDbContext(DbContextOptions<AuditDbContext> options)
             entity.Property(e => e.Id).HasColumnName("id");
             entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100).IsRequired();
             entity.Property(e => e.SourceAppId).HasColumnName("source_app_id").IsRequired();
-            entity.Property(e => e.DestAppId).HasColumnName("dest_app_id").IsRequired();
-            entity.Property(e => e.DestPortId).HasColumnName("dest_port_id").IsRequired();
+            entity.Property(e => e.DestAppId).HasColumnName("dest_app_id");
+            entity.Property(e => e.DestPortId).HasColumnName("dest_port_id");
+            entity.Property(e => e.ExternalServiceId).HasColumnName("external_service_id");
             entity.Property(e => e.ConnectionType).HasColumnName("connection_type").IsRequired();
             entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
             entity.HasAlternateKey(e => new { e.OwnerUserId, e.Id });
             entity.HasIndex(e => new { e.OwnerUserId, e.SourceAppId, e.DestAppId, e.DestPortId }).IsUnique();
+            entity.HasIndex(e => new { e.OwnerUserId, e.SourceAppId, e.ExternalServiceId })
+                .IsUnique()
+                .HasFilter("external_service_id IS NOT NULL");
+            // Exactly one destination: an internal deployment pair, or an external service.
+            // Enforced here because the application layer is not the only writer.
+            entity.ToTable(table => table.HasCheckConstraint(
+                "ck_app_dependencies_single_destination",
+                "(dest_app_id IS NOT NULL AND dest_port_id IS NOT NULL AND external_service_id IS NULL)"
+                + " OR (dest_app_id IS NULL AND dest_port_id IS NULL AND external_service_id IS NOT NULL)"));
             entity.HasOne(e => e.SourceApplication).WithMany(e => e.SourceDependencies)
                 .HasForeignKey(e => new { e.OwnerUserId, e.SourceAppId })
                 .HasPrincipalKey(e => new { e.OwnerUserId, e.Id })
@@ -273,6 +284,31 @@ public class AuditDbContext(DbContextOptions<AuditDbContext> options)
                 .HasForeignKey(e => new { e.OwnerUserId, e.DestPortId })
                 .HasPrincipalKey(e => new { e.OwnerUserId, e.Id })
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(e => e.ExternalService).WithMany(e => e.IncomingDependencies)
+                .HasForeignKey(e => new { e.OwnerUserId, e.ExternalServiceId })
+                .HasPrincipalKey(e => new { e.OwnerUserId, e.Id })
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ExternalService>(entity =>
+        {
+            entity.ToTable("external_services");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasColumnName("id");
+            entity.Property(e => e.OwnerUserId).HasColumnName("owner_user_id").HasMaxLength(100).IsRequired();
+            entity.Property(e => e.Name).HasColumnName("name").HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Kind).HasColumnName("kind").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Endpoint).HasColumnName("endpoint").HasMaxLength(500);
+            entity.Property(e => e.Provider).HasColumnName("provider").HasMaxLength(200);
+            entity.Property(e => e.Protocol).HasColumnName("protocol").HasMaxLength(20);
+            entity.Property(e => e.Port).HasColumnName("port");
+            entity.Property(e => e.Environment).HasColumnName("environment").HasMaxLength(50).IsRequired();
+            entity.Property(e => e.Notes).HasColumnName("notes").HasMaxLength(1000);
+            entity.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
+            entity.Property(e => e.UpdatedAt).HasColumnName("updated_at").IsRequired();
+            entity.HasAlternateKey(e => new { e.OwnerUserId, e.Id });
+            // One owner cannot record the same name twice; different owners can each record theirs.
+            entity.HasIndex(e => new { e.OwnerUserId, e.Name }).IsUnique();
         });
 
         modelBuilder.Entity<TopologyNode>(entity =>
