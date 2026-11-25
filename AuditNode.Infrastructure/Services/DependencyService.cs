@@ -35,17 +35,26 @@ public class DependencyService : IDependencyService
         await using var transaction = _dbContext.Database.IsRelational()
             ? await _dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted)
             : null;
-        if (payload.Any(item =>
-                item.SourceAppId == Guid.Empty || item.DestAppId == Guid.Empty || item.DestinationPortMappingId == Guid.Empty))
+        if (payload.Any(item => item.SourceAppId == Guid.Empty))
             return DependencySyncStatus.InvalidRequest;
-        if (payload.Any(item => item.SourceAppId == item.DestAppId))
+
+        // Exactly one destination per item: an internal deployment pair, or an external service.
+        if (payload.Any(item => !HasExactlyOneDestination(item)))
+            return DependencySyncStatus.InvalidRequest;
+
+        if (payload.Any(item => item.DestAppId is not null && item.SourceAppId == item.DestAppId.Value))
             return DependencySyncStatus.SelfLoop;
 
         var keys = payload.Select(Key).ToArray();
         if (keys.Distinct().Count() != keys.Length)
             return DependencySyncStatus.Duplicate;
 
-        var appIds = payload.SelectMany(item => new[] { item.SourceAppId, item.DestAppId }).Distinct().ToArray();
+        var appIds = payload
+            .SelectMany(item => item.DestAppId is null
+                ? new[] { item.SourceAppId }
+                : new[] { item.SourceAppId, item.DestAppId.Value })
+            .Distinct()
+            .ToArray();
         string ownerUserId;
         if (appIds.Length == 0)
         {
@@ -73,15 +82,36 @@ public class DependencyService : IDependencyService
         var ownerState = await LockOwnerStateAsync(ownerUserId);
         if (ownerState.TopologyVersion != dto.Version.Value) return DependencySyncStatus.Conflict;
 
-        var destinationPortIds = payload.Select(item => item.DestinationPortMappingId).Distinct().ToArray();
+        var destinationPortIds = payload
+            .Where(item => item.DestinationPortMappingId is not null)
+            .Select(item => item.DestinationPortMappingId!.Value)
+            .Distinct()
+            .ToArray();
         var destinationPorts = await _dbContext.PortMappings.IgnoreQueryFilters()
             .Where(mapping => mapping.OwnerUserId == ownerUserId && destinationPortIds.Contains(mapping.Id))
             .Select(mapping => new { mapping.Id, mapping.AppId })
             .ToDictionaryAsync(mapping => mapping.Id);
         if (destinationPorts.Count != destinationPortIds.Length)
             return DependencySyncStatus.NotFound;
-        if (payload.Any(item => destinationPorts[item.DestinationPortMappingId].AppId != item.DestAppId))
+        if (payload.Any(item => item.DestinationPortMappingId is not null &&
+                                destinationPorts[item.DestinationPortMappingId.Value].AppId != item.DestAppId))
             return DependencySyncStatus.DestinationMismatch;
+
+        var externalServiceIds = payload
+            .Where(item => item.ExternalServiceId is not null)
+            .Select(item => item.ExternalServiceId!.Value)
+            .Distinct()
+            .ToArray();
+        if (externalServiceIds.Length > 0)
+        {
+            // An external destination must exist and belong to the same owner.
+            var ownedExternalIds = await _dbContext.ExternalServices.IgnoreQueryFilters().AsNoTracking()
+                .Where(service => service.OwnerUserId == ownerUserId && externalServiceIds.Contains(service.Id))
+                .Select(service => service.Id)
+                .ToListAsync();
+            if (ownedExternalIds.Count != externalServiceIds.Length)
+                return DependencySyncStatus.NotFound;
+        }
 
         var existing = await _dbContext.AppDependencies.IgnoreQueryFilters()
             .Where(item => item.OwnerUserId == ownerUserId).ToListAsync();
@@ -100,6 +130,7 @@ public class DependencyService : IDependencyService
                 SourceAppId = item.SourceAppId,
                 DestAppId = item.DestAppId,
                 DestPortId = item.DestinationPortMappingId,
+                ExternalServiceId = item.ExternalServiceId,
                 ConnectionType = "Automatic",
                 CreatedAt = DateTime.UtcNow
             }).ToList();
@@ -144,9 +175,34 @@ public class DependencyService : IDependencyService
         return state;
     }
 
+    /// <summary>
+    /// A dependency must point at exactly one destination: an internal deployment
+    /// (app + port) or an external service. Both or neither is invalid.
+    /// </summary>
+    private static bool HasExactlyOneDestination(DependencyItemDto item)
+    {
+        var internalDestination = item.DestAppId is not null || item.DestinationPortMappingId is not null;
+        var externalDestination = item.ExternalServiceId is not null;
+
+        if (internalDestination && externalDestination) return false;
+        if (!internalDestination && !externalDestination) return false;
+        // An internal destination needs both halves of the pair.
+        if (internalDestination)
+            return item.DestAppId is not null
+                && item.DestinationPortMappingId is not null
+                && item.DestAppId.Value != Guid.Empty
+                && item.DestinationPortMappingId.Value != Guid.Empty;
+
+        return item.ExternalServiceId!.Value != Guid.Empty;
+    }
+
     private static string Key(DependencyItemDto item) =>
-        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestinationPortMappingId:N}";
+        item.ExternalServiceId is { } externalId
+            ? $"{item.SourceAppId:N}|ext|{externalId:N}"
+            : $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestinationPortMappingId:N}";
 
     private static string Key(AppDependency item) =>
-        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestPortId:N}";
+        item.ExternalServiceId is { } externalId
+            ? $"{item.SourceAppId:N}|ext|{externalId:N}"
+            : $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestPortId:N}";
 }

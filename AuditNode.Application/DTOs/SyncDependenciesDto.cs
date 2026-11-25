@@ -16,8 +16,15 @@ public class SyncDependenciesDto
 public class DependencyItemDto
 {
     public Guid SourceAppId { get; set; }
-    public Guid DestAppId { get; set; }
-    public Guid DestinationPortMappingId { get; set; }
+
+    /// <summary>Set for an internal destination; null when the dependency is external.</summary>
+    public Guid? DestAppId { get; set; }
+
+    /// <summary>Set together with <see cref="DestAppId"/>.</summary>
+    public Guid? DestinationPortMappingId { get; set; }
+
+    /// <summary>Set for a third-party destination; null when the dependency is internal.</summary>
+    public Guid? ExternalServiceId { get; set; }
 }
 
 public enum DependencySyncStatus
