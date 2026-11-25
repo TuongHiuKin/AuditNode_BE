@@ -103,6 +103,10 @@ builder.Services.AddProblemDetails(options =>
         context.ProblemDetails.Extensions["correlationId"] = context.HttpContext.TraceIdentifier;
 });
 
+// Full-stack E2E signs in as six actors from one address, so the login budget has to
+// be configurable. Absent configuration the production value of 20 applies.
+var authPermitLimit = builder.Configuration.GetValue("RateLimiting:AuthPermitLimit", 20);
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -122,7 +126,9 @@ builder.Services.AddRateLimiter(options =>
             httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 20,
+                // Overridable so a full-stack suite that signs in as several actors from
+                // one address does not exhaust the budget mid-run. Production keeps 20.
+                PermitLimit = authPermitLimit,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true

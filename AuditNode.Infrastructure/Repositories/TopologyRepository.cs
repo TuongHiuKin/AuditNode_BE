@@ -283,27 +283,54 @@ public class TopologyRepository : ITopologyRepository
         string ownerUserId)
     {
         var payload = state.Dependencies;
-        if (payload is null || payload.Any(item =>
-                item.SourceAppId == Guid.Empty || item.DestAppId == Guid.Empty ||
-                item.DestinationPortMappingId == Guid.Empty || item.SourceAppId == item.DestAppId))
+        if (payload is null || payload.Any(item => item.SourceAppId == Guid.Empty))
+            return TopologyStateStatus.InvalidDependency;
+        // Exactly one destination per item: an internal deployment pair, or an external service.
+        if (payload.Any(item => !HasExactlyOneDestination(item)))
+            return TopologyStateStatus.InvalidDependency;
+        if (payload.Any(item => item.DestAppId is not null && item.SourceAppId == item.DestAppId.Value))
             return TopologyStateStatus.InvalidDependency;
         var keys = payload.Select(DependencyKey).ToArray();
         if (keys.Distinct(StringComparer.Ordinal).Count() != keys.Length)
             return TopologyStateStatus.InvalidDependency;
 
-        var appIds = payload.SelectMany(item => new[] { item.SourceAppId, item.DestAppId }).Distinct().ToArray();
+        var appIds = payload
+            .SelectMany(item => item.DestAppId is null
+                ? new[] { item.SourceAppId }
+                : new[] { item.SourceAppId, item.DestAppId.Value })
+            .Distinct()
+            .ToArray();
         var validAppCount = await _context.Applications.IgnoreQueryFilters()
             .CountAsync(item => item.OwnerUserId == ownerUserId &&
                                 appIds.Contains(item.Id));
         if (validAppCount != appIds.Length) return TopologyStateStatus.InvalidDependency;
-        var destinationPortIds = payload.Select(item => item.DestinationPortMappingId).Distinct().ToArray();
+
+        var externalIds = payload
+            .Where(item => item.ExternalServiceId is not null)
+            .Select(item => item.ExternalServiceId!.Value)
+            .Distinct()
+            .ToArray();
+        if (externalIds.Length > 0)
+        {
+            var ownedExternalCount = await _context.ExternalServices.IgnoreQueryFilters()
+                .CountAsync(item => item.OwnerUserId == ownerUserId && externalIds.Contains(item.Id));
+            if (ownedExternalCount != externalIds.Length) return TopologyStateStatus.InvalidDependency;
+        }
+
+        var destinationPortIds = payload
+            .Where(item => item.DestinationPortMappingId is not null)
+            .Select(item => item.DestinationPortMappingId!.Value)
+            .Distinct()
+            .ToArray();
         var destinationPorts = await _context.PortMappings.IgnoreQueryFilters()
             .Where(item => item.OwnerUserId == ownerUserId &&
                            destinationPortIds.Contains(item.Id))
             .Select(item => new { item.Id, item.AppId })
             .ToDictionaryAsync(item => item.Id, item => item.AppId);
-        if (destinationPorts.Count != destinationPortIds.Length ||
-            payload.Any(item => destinationPorts[item.DestinationPortMappingId] != item.DestAppId))
+        if (destinationPorts.Count != destinationPortIds.Length)
+            return TopologyStateStatus.InvalidDependency;
+        if (payload.Any(item => item.DestinationPortMappingId is not null &&
+                                destinationPorts[item.DestinationPortMappingId.Value] != item.DestAppId))
             return TopologyStateStatus.InvalidDependency;
 
         var existing = await _context.AppDependencies.IgnoreQueryFilters()
@@ -327,6 +354,7 @@ public class TopologyRepository : ITopologyRepository
                 SourceAppId = item.SourceAppId,
                 DestAppId = item.DestAppId,
                 DestPortId = item.DestinationPortMappingId,
+                ExternalServiceId = item.ExternalServiceId,
                 ConnectionType = "Manual",
                 CreatedAt = DateTime.UtcNow
             }).ToList();
@@ -366,10 +394,31 @@ public class TopologyRepository : ITopologyRepository
     }
 
     private static string DependencyKey(DependencyItemDto item) =>
-        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestinationPortMappingId:N}";
+        item.ExternalServiceId is { } externalId
+            ? $"{item.SourceAppId:N}|ext|{externalId:N}"
+            : $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestinationPortMappingId:N}";
 
     private static string DependencyKey(AppDependency item) =>
-        $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestPortId:N}";
+        item.ExternalServiceId is { } externalId
+            ? $"{item.SourceAppId:N}|ext|{externalId:N}"
+            : $"{item.SourceAppId:N}|{item.DestAppId:N}|{item.DestPortId:N}";
+
+    /// <summary>
+    /// A dependency must point at exactly one destination: an internal deployment
+    /// (app + port) or an external service. Both or neither is invalid.
+    /// </summary>
+    private static bool HasExactlyOneDestination(DependencyItemDto item)
+    {
+        var internalDestination = item.DestAppId is not null || item.DestinationPortMappingId is not null;
+        var externalDestination = item.ExternalServiceId is not null;
+        if (internalDestination == externalDestination) return false;
+        if (internalDestination)
+            return item.DestAppId is not null
+                && item.DestinationPortMappingId is not null
+                && item.DestAppId.Value != Guid.Empty
+                && item.DestinationPortMappingId.Value != Guid.Empty;
+        return item.ExternalServiceId!.Value != Guid.Empty;
+    }
 
     private async Task<TopologyStateStatus> ValidateStateAsync(SaveTopologyStateDto? state, string ownerUserId)
     {
@@ -411,7 +460,7 @@ public class TopologyRepository : ITopologyRepository
 
         var supportedTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            "frame", "group", "server", "application"
+            "frame", "group", "server", "application", "external"
         };
         if (state.Nodes.Any(node =>
                 !supportedTypes.Contains(node.NodeType) ||
@@ -444,14 +493,30 @@ public class TopologyRepository : ITopologyRepository
         var deploymentReferences = state.Nodes
             .Where(node => node.NodeType.Equals("application", StringComparison.OrdinalIgnoreCase))
             .Select(node => node.ReferenceId).ToArray();
+        var externalReferences = state.Nodes
+            .Where(node => node.NodeType.Equals("external", StringComparison.OrdinalIgnoreCase))
+            .Select(node => node.ReferenceId).ToArray();
         if (serverReferences.Any(reference => !reference.HasValue || reference == Guid.Empty) ||
             deploymentReferences.Any(reference => !reference.HasValue || reference == Guid.Empty) ||
+            externalReferences.Any(reference => !reference.HasValue || reference == Guid.Empty) ||
             serverReferences.Where(reference => reference.HasValue).Distinct().Count() != serverReferences.Length ||
             deploymentReferences.Where(reference => reference.HasValue).Distinct().Count() != deploymentReferences.Length ||
+            externalReferences.Where(reference => reference.HasValue).Distinct().Count() != externalReferences.Length ||
             state.Nodes.Any(node =>
                 (node.NodeType.Equals("frame", StringComparison.OrdinalIgnoreCase) ||
                  node.NodeType.Equals("group", StringComparison.OrdinalIgnoreCase)) && node.ReferenceId.HasValue))
             return TopologyStateStatus.InvalidReference;
+
+        if (externalReferences.Length > 0)
+        {
+            // An external node may only reference a service this owner recorded.
+            var ownedExternalIds = await _context.ExternalServices.IgnoreQueryFilters()
+                .Where(service => service.OwnerUserId == ownerUserId &&
+                                  externalReferences.Contains(service.Id))
+                .Select(service => service.Id).ToListAsync();
+            if (ownedExternalIds.Count != externalReferences.Length)
+                return TopologyStateStatus.InvalidReference;
+        }
 
         var serverIds = await _context.Servers.IgnoreQueryFilters()
             .Where(server => server.OwnerUserId == ownerUserId &&
