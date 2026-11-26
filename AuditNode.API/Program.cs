@@ -233,6 +233,7 @@ builder.Services.AddScoped<ILabelAccessService, LabelAccessService>();
 builder.Services.AddScoped<IOwnerGraphAccessService, OwnerGraphAccessService>();
 builder.Services.AddScoped<ILabelMutationCoordinator, LabelMutationCoordinator>();
 builder.Services.AddScoped<ILabelGrantService, LabelGrantService>();
+builder.Services.AddScoped<IAdminCatalogService, AdminCatalogService>();
 builder.Services.AddScoped<IShareTokenService, ShareTokenService>();
 builder.Services.AddScoped<ILabelShareOptionsService, LabelShareOptionsService>();
 builder.Services.AddScoped<IAnalyticsService, AuditNode.Application.Services.AnalyticsService>();

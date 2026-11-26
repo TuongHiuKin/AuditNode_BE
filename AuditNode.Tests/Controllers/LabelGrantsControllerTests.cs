@@ -61,7 +61,7 @@ public sealed class LabelGrantsControllerTests
     public async Task List_maps_missing_and_forbidden_to_the_same_non_disclosing_response()
     {
         var grants = new Mock<ILabelGrantService>();
-        grants.Setup(service => service.ListAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+        grants.Setup(service => service.ListAsync(It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((IReadOnlyList<LabelGrantDto>?)null);
 
         var result = await Controller(grants.Object).List(Guid.NewGuid());
@@ -79,7 +79,7 @@ public sealed class LabelGrantsControllerTests
     {
         var grants = new Mock<ILabelGrantService>();
         grants.Setup(service => service.CreateAsync(
-                It.IsAny<Guid>(), It.IsAny<CreateLabelGrantDto>(), It.IsAny<CancellationToken>()))
+                It.IsAny<Guid>(), It.IsAny<CreateLabelGrantDto>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LabelGrantMutationResult(status));
 
         var result = await Controller(grants.Object).Create(
@@ -96,7 +96,7 @@ public sealed class LabelGrantsControllerTests
         var dto = new LabelGrantDto(Guid.NewGuid(), labelId, "user", "editor", null, null, 1);
         var grants = new Mock<ILabelGrantService>();
         grants.Setup(service => service.CreateAsync(
-                labelId, It.IsAny<CreateLabelGrantDto>(), It.IsAny<CancellationToken>()))
+                labelId, It.IsAny<CreateLabelGrantDto>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LabelGrantMutationResult(LabelGrantMutationStatus.Success, dto));
 
         var result = await Controller(grants.Object).Create(
@@ -112,7 +112,7 @@ public sealed class LabelGrantsControllerTests
     {
         var grants = new Mock<ILabelGrantService>();
         grants.Setup(service => service.UpdateAsync(
-                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UpdateLabelGrantDto>(), It.IsAny<CancellationToken>()))
+                It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<UpdateLabelGrantDto>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LabelGrantMutationResult(LabelGrantMutationStatus.Conflict));
 
         var result = await Controller(grants.Object).Update(
@@ -126,7 +126,7 @@ public sealed class LabelGrantsControllerTests
     {
         var grants = new Mock<ILabelGrantService>();
         grants.Setup(service => service.RevokeAsync(
-                It.IsAny<Guid>(), It.IsAny<Guid>(), 1, It.IsAny<CancellationToken>()))
+                It.IsAny<Guid>(), It.IsAny<Guid>(), 1, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new LabelGrantMutationResult(LabelGrantMutationStatus.Success));
         var controller = Controller(grants.Object);
 
