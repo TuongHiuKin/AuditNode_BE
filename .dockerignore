@@ -42,6 +42,9 @@
 .env
 .env.*
 !.env.example
+**/appsettings.json
+**/appsettings.*.json
+!**/appsettings.example.json
 **/*.pfx
 **/*.p12
 **/*.pem

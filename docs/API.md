@@ -59,6 +59,18 @@ Application codes are unique per owner catalog. Deployment server references mus
 
 Direct grants accept only Viewer or Editor permissions. Token-backed grants are constrained to Viewer, require expiry, store a token hash rather than the raw token, and can be revoked. Owner labels are protected and represent all resources in that owner's catalog; business labels scope access to their associated resources.
 
+### External services
+
+| Method | Route | Notes |
+|---|---|---|
+| GET | `/api/v1/external-services` | Owner-scoped list; optional `search` and `kind` filters |
+| GET | `/api/v1/external-services/{id}` | Single service or 404 |
+| POST | `/api/v1/external-services` | Creates a third-party destination; name unique per owner; returns 201 |
+| PUT | `/api/v1/external-services/{id}` | Updates metadata; returns 204 |
+| DELETE | `/api/v1/external-services/{id}` | Permanent delete; cascades that service's dependencies; returns 204 |
+
+An external service records a destination that lives outside this deployment: `Name`, `Kind`, `Endpoint`, `Provider`, `Protocol`, `Port`, `Environment`, and `Notes`. Names are unique per owner catalog, so two teams may both register "Stripe" as separate rows without seeing each other's entry. `Port`, when present, must be 1–65535.
+
 ### Topology and dependencies
 
 | Method | Route | Notes |
@@ -70,7 +82,23 @@ Direct grants accept only Viewer or Editor permissions. Token-backed grants are 
 | POST/PUT | `/api/v1/topology/state` | Validates and saves the complete state; returns 204 |
 | PUT | `/api/v1/dependencies/sync` | Idempotently synchronizes dependency references |
 
+Each `DependencyItemDto` carries **exactly one destination**: either `DestAppId` + `DestinationPortMappingId` (internal), or `ExternalServiceId` (third-party). Sending neither, or both, returns 400. The database enforces the same rule through `ck_app_dependencies_single_destination`, because the application layer is not the only possible writer.
+
 Topology application nodes use `PortMappingId` as stable node identity and also expose typed `AppId`, `ServerId`, and `PortMappingId`. Server nodes expose `ServerId`. A connection retains `SourceAppId`, `TargetAppId`, `DestinationPortMappingId`, and `DestinationServerId`. State nodes preserve node/frame type, parent, position, size, label, and reference; edges preserve endpoints, handles, type, label, and reference. Validation rejects empty IDs, missing or cross-owner references, invalid parents, cycles, self-loops, duplicate identities, and destination mappings that do not belong to the destination application. Separate `/frames` and `/topology/sync` routes are not part of the canonical contract.
+
+### Administration console
+
+| Method | Route | Access | Notes |
+|---|---|---|---|
+| GET | `/api/v1/admin/users` | SystemAdmin | Paged user list with `search` |
+| POST | `/api/v1/admin/users` | SystemAdmin | Creates a managed identity; returns 201 |
+| PUT | `/api/v1/admin/users/{id}/status` | SystemAdmin | Locks or activates an account |
+| PUT | `/api/v1/admin/users/{id}/roles` | SystemAdmin | Grants or revokes `SystemAdmin` |
+| GET | `/api/v1/admin/users/{ownerUserId}/catalog` | SystemAdmin | **Read-only** snapshot of another user's servers, applications, external services, dependencies, and labels |
+| GET/POST | `/api/v1/admin/users/{ownerUserId}/grants?labelId={labelId}` | SystemAdmin | Lists or creates Viewer/Editor grants on that user's behalf |
+| PUT/DELETE | `/api/v1/admin/users/{ownerUserId}/grants/{grantId}?labelId={labelId}` | SystemAdmin | Changes or revokes a grant; optimistic version conflicts return 409 |
+
+The catalog route declares **only `[HttpGet]`**. There is no write verb on it, and an integration test asserts that POST, PUT, and DELETE cannot change a single row. An administrator can therefore see what a user recorded and repair that user's sharing, without ever gaining a path to modify the user's catalog data. A non-administrator receives 403 on every route above.
 
 ### Inventory import, export, and errors
 

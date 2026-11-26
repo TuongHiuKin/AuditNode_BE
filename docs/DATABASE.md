@@ -112,14 +112,42 @@ The critical bridge between servers and applications, allowing many-to-many rela
 - `port_number` (INT)
 - `protocol` (VARCHAR)
 
-### `app_dependencies`
-Logical connections between applications.
+### `external_services`
+Third-party destinations that live outside this deployment. Owner-scoped, so two teams may each register the same provider without seeing each other's row.
 - `id` (UUID, PK)
+- `owner_user_id` (VARCHAR, NOT NULL) - *catalog partition*
+- `name` (VARCHAR) - *UNIQUE per `owner_user_id`*
+- `kind` (VARCHAR) - *e.g. payment, identity, storage*
+- `endpoint` (VARCHAR, nullable)
+- `provider` (VARCHAR, nullable)
+- `protocol` (VARCHAR)
+- `port` (INT, nullable) - *1–65535 when present*
+- `environment` (VARCHAR)
+- `notes` (VARCHAR, nullable)
+
+### `app_dependencies`
+Logical connections between applications, or from an application to an external service.
+- `id` (UUID, PK)
+- `owner_user_id` (VARCHAR, NOT NULL)
 - `source_app_id` (FK → applications.id)
-- `dest_app_id` (FK → applications.id)
-- `dest_port_id` (FK → port_mappings.id)
+- `dest_app_id` (FK → applications.id, **nullable**)
+- `dest_port_id` (FK → port_mappings.id, **nullable**)
+- `external_service_id` (FK → external_services.id, **nullable**)
 - `connection_type` (VARCHAR)
 - `created_at` (TIMESTAMP)
+
+`dest_app_id`, `dest_port_id`, and `external_service_id` are nullable because a dependency has exactly one destination of one kind. The invariant is enforced in the database, not only in the application layer, by:
+
+```
+CONSTRAINT ck_app_dependencies_single_destination CHECK (
+  (dest_app_id IS NOT NULL AND dest_port_id IS NOT NULL AND external_service_id IS NULL) OR
+  (dest_app_id IS NULL AND dest_port_id IS NULL AND external_service_id IS NOT NULL)
+)
+```
+
+Inserting a row with both destinations set, or neither, raises `23514` (check violation). Deleting an external service cascades its own dependencies; the application and port foreign keys keep their existing behavior.
+
+Identity tables (`app_users`, `asp_net_*`, `refresh_tokens`) are created by `IdentityDbContext<AppUser, IdentityRole, string>` and use snake_case names. `refresh_tokens` stores a SHA-256 hash of the opaque token, never the token itself.
 
 ---
 
