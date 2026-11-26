@@ -20,7 +20,7 @@ public sealed class LabelGrantsController(
         Guid labelId,
         CancellationToken cancellationToken = default)
     {
-        var result = await grants.ListAsync(labelId, cancellationToken);
+        var result = await grants.ListAsync(labelId, cancellationToken: cancellationToken);
         return result is null ? NotFound(DeniedError()) : Ok(result);
     }
 
@@ -34,7 +34,7 @@ public sealed class LabelGrantsController(
         [FromBody] CreateLabelGrantDto request,
         CancellationToken cancellationToken = default)
     {
-        var result = await grants.CreateAsync(labelId, request, cancellationToken);
+        var result = await grants.CreateAsync(labelId, request, cancellationToken: cancellationToken);
         return result.Status switch
         {
             LabelGrantMutationStatus.Success when result.Grant is not null =>
@@ -57,7 +57,7 @@ public sealed class LabelGrantsController(
         [FromBody] UpdateLabelGrantDto request,
         CancellationToken cancellationToken = default)
     {
-        var result = await grants.UpdateAsync(labelId, grantId, request, cancellationToken);
+        var result = await grants.UpdateAsync(labelId, grantId, request, cancellationToken: cancellationToken);
         return result.Status switch
         {
             LabelGrantMutationStatus.Success when result.Grant is not null => Ok(result.Grant),
@@ -82,7 +82,7 @@ public sealed class LabelGrantsController(
         if (!version.HasValue || version.Value < 1)
             return BadRequest(new { error = "A positive grant version is required." });
 
-        var result = await grants.RevokeAsync(labelId, grantId, version.Value, cancellationToken);
+        var result = await grants.RevokeAsync(labelId, grantId, version.Value, cancellationToken: cancellationToken);
         return result.Status switch
         {
             LabelGrantMutationStatus.Success => NoContent(),

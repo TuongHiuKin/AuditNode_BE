@@ -18,14 +18,15 @@ public sealed class LabelGrantService(
 {
     public async Task<IReadOnlyList<LabelGrantDto>?> ListAsync(
         Guid labelId,
+        string? actingOwnerUserId = null,
         CancellationToken cancellationToken = default)
     {
-        var actorUserId = currentUser.UserId;
-        if (string.IsNullOrWhiteSpace(actorUserId)) return null;
+        var ownerUserId = await ResolveActingOwnerAsync(actingOwnerUserId, cancellationToken);
+        if (ownerUserId is null) return null;
         var labelKind = await context.Labels.IgnoreQueryFilters().AsNoTracking()
             .Where(label => label.Id == labelId &&
                             label.OwnerUserId != null &&
-                            label.OwnerUserId == actorUserId)
+                            label.OwnerUserId == ownerUserId)
             .Select(label => label.Kind)
             .SingleOrDefaultAsync(cancellationToken);
         if (labelKind is null) return null;
@@ -40,10 +41,13 @@ public sealed class LabelGrantService(
     public async Task<LabelGrantMutationResult> CreateAsync(
         Guid labelId,
         CreateLabelGrantDto request,
+        string? actingOwnerUserId = null,
         CancellationToken cancellationToken = default)
     {
         var actorUserId = currentUser.UserId;
         if (string.IsNullOrWhiteSpace(actorUserId)) return Denied();
+        var ownerUserId = await ResolveActingOwnerAsync(actingOwnerUserId, cancellationToken);
+        if (ownerUserId is null) return Denied();
         if (!ValidPermission(request.Permission) ||
             string.IsNullOrWhiteSpace(request.GranteeUserId) ||
             !ValidExpiry(request.ExpiresAt))
@@ -51,14 +55,14 @@ public sealed class LabelGrantService(
 
         // Authenticate the catalog owner before consulting the identity directory so callers
         // cannot use this service to probe whether an arbitrary account exists or is enabled.
-        if (!await IsOwnerAsync(labelId, actorUserId, cancellationToken)) return Denied();
+        if (!await IsOwnerAsync(labelId, ownerUserId, cancellationToken)) return Denied();
 
         var identity = await identities.GetUserAsync(request.GranteeUserId, cancellationToken);
         if (identity is null || !identity.Enabled) return Invalid();
 
         await using var transaction = await BeginMutationAsync(cancellationToken);
         var label = await LockLabelAsync(labelId, cancellationToken);
-        if (!OwnedBy(label, actorUserId) || request.GranteeUserId == actorUserId) return Denied();
+        if (!OwnedBy(label, ownerUserId) || request.GranteeUserId == ownerUserId) return Denied();
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var existing = await LockUnrevokedUserGrantAsync(labelId, request.GranteeUserId, cancellationToken);
@@ -121,18 +125,21 @@ public sealed class LabelGrantService(
         Guid labelId,
         Guid grantId,
         UpdateLabelGrantDto request,
+        string? actingOwnerUserId = null,
         CancellationToken cancellationToken = default)
     {
         var actorUserId = currentUser.UserId;
         if (string.IsNullOrWhiteSpace(actorUserId)) return Denied();
+        var ownerUserId = await ResolveActingOwnerAsync(actingOwnerUserId, cancellationToken);
+        if (ownerUserId is null) return Denied();
         if (!ValidPermission(request.Permission) || request.Version < 1 || !ValidExpiry(request.ExpiresAt))
             return Invalid();
 
-        if (!await IsOwnerAsync(labelId, actorUserId, cancellationToken)) return Denied();
+        if (!await IsOwnerAsync(labelId, ownerUserId, cancellationToken)) return Denied();
         var granteeUserId = await context.LabelGrants.IgnoreQueryFilters().AsNoTracking()
             .Where(grant => grant.Id == grantId &&
                             grant.LabelId == labelId &&
-                            grant.OwnerUserId == actorUserId &&
+                            grant.OwnerUserId == ownerUserId &&
                             grant.GranteeUserId != null &&
                             grant.TokenHash == null &&
                             grant.RevokedAt == null)
@@ -147,7 +154,7 @@ public sealed class LabelGrantService(
 
         await using var transaction = await BeginMutationAsync(cancellationToken);
         var label = await LockLabelAsync(labelId, cancellationToken);
-        if (!OwnedBy(label, actorUserId)) return Denied();
+        if (!OwnedBy(label, ownerUserId)) return Denied();
 
         var grant = await LockGrantAsync(labelId, grantId, cancellationToken);
         if (!ConsistentUnrevokedUserGrant(label!, grant)) return Denied();
@@ -171,14 +178,17 @@ public sealed class LabelGrantService(
         Guid labelId,
         Guid grantId,
         long version,
+        string? actingOwnerUserId = null,
         CancellationToken cancellationToken = default)
     {
         var actorUserId = currentUser.UserId;
         if (string.IsNullOrWhiteSpace(actorUserId) || version < 1) return Denied();
+        var ownerUserId = await ResolveActingOwnerAsync(actingOwnerUserId, cancellationToken);
+        if (ownerUserId is null) return Denied();
 
         await using var transaction = await BeginMutationAsync(cancellationToken);
         var label = await LockLabelAsync(labelId, cancellationToken);
-        if (!OwnedBy(label, actorUserId)) return Denied();
+        if (!OwnedBy(label, ownerUserId)) return Denied();
 
         var grant = await LockGrantAsync(labelId, grantId, cancellationToken);
         if (!ConsistentUnrevokedUserGrant(label!, grant)) return Denied();
@@ -198,6 +208,29 @@ public sealed class LabelGrantService(
 
     private bool ValidExpiry(DateTimeOffset? expiresAt) =>
         expiresAt is null || expiresAt > timeProvider.GetUtcNow();
+
+    /// <summary>
+    /// Resolves whose catalog the caller is acting on.
+    ///
+    /// Without <paramref name="actingOwnerUserId"/> the actor is the owner, which is the
+    /// normal path. When it is supplied it must differ from the actor and the actor must
+    /// hold SystemAdmin: only then may an administrator manage another user's sharing.
+    /// </summary>
+    private async Task<string?> ResolveActingOwnerAsync(
+        string? actingOwnerUserId,
+        CancellationToken cancellationToken)
+    {
+        var actorUserId = currentUser.UserId;
+        if (string.IsNullOrWhiteSpace(actorUserId)) return null;
+        if (string.IsNullOrWhiteSpace(actingOwnerUserId)) return actorUserId;
+
+        var target = actingOwnerUserId.Trim();
+        if (string.Equals(target, actorUserId, StringComparison.Ordinal)) return actorUserId;
+
+        var actor = await identities.GetUserAsync(actorUserId, cancellationToken);
+        if (actor is null || !actor.Enabled || !actor.IsSystemAdmin) return null;
+        return target;
+    }
 
     private static bool ValidPermission(string permission) =>
         permission is LabelGrantPermissions.Viewer or LabelGrantPermissions.Editor;
